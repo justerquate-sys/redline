@@ -3607,10 +3607,18 @@ chrome.runtime.onMessage.addListener(m => {
       r.entries.endresume01 = { position: 55, duration: 100, completed: false, updatedAt: now }; await chrome.storage.local.set({ yourTubeProgressV1: r }); }, Date.now());
     await page.goto('https://www.youtube.com/results?search_query=resume+past+the+end+2', { waitUntil: 'commit' });
     await page.waitForSelector('#ytc-list .c');
-    await page.waitForTimeout(300); // the stored records are read
-    await page.evaluate(() => { history.pushState(null, '', '/watch?v=endresume01'); dispatchEvent(new PopStateEvent('popstate')); });
-    seen.endresume01 = await startOutcome();
-    const notes = seen.endresume01.panel ? '' : await playerNotes();
+    // The page reads the stored records at boot: on a busy machine that can come after the first try, which
+    // then starts at 0 without using the record; try again until the record was used.
+    let notes = '';
+    for (let i = 0; i < 6; i++) {
+      await page.waitForTimeout(300);
+      await page.evaluate(() => { history.pushState(null, '', '/watch?v=endresume01'); dispatchEvent(new PopStateEvent('popstate')); });
+      seen.endresume01 = await startOutcome();
+      notes = seen.endresume01.panel ? '' : await playerNotes();
+      if (seen.endresume01.panel || /start 55\.00 s is at the end/.test(notes)) break;
+      await page.evaluate(() => { history.pushState(null, '', '/results?search_query=resume+past+the+end+2'); dispatchEvent(new PopStateEvent('popstate')); });
+      await page.waitForSelector('#ytc-list .c');
+    }
     // Back to a video that played to its end: the tab remembers where it stopped (the end).
     await page.goto('https://www.youtube.com/watch?v=endback0001', { waitUntil: 'commit' });
     await waitT(() => document.documentElement.dataset.ytcFirstFrame, null, 8000);
@@ -3629,6 +3637,9 @@ chrome.runtime.onMessage.addListener(m => {
   // Defence in depth: a media error before the first frame is retried in place (a fresh
   // MediaSource, then fresh URLs + indexes, then another format); the panel only after those.
   await step('own player: a media error before the first frame is retried by itself (fresh MediaSource, then fresh URLs) and plays, never the panel; when every retry fails, the panel names the automatic retries', async () => {
+    // No VISIONOS hedge on a busy machine: its identical second request would be another player response.
+    await page.evaluate(() => localStorage.setItem('ytc-test-nohedge', '1'));
+    try {
     const inc0 = incidents.length, n0 = visCalls('mediaerr001').length;
     await page.goto('https://www.youtube.com/watch?v=mediaerr001', { waitUntil: 'commit' });
     const o = await startOutcome();
@@ -3652,6 +3663,7 @@ chrome.runtime.onMessage.addListener(m => {
     assert.ok(vids.size >= 2, 'the last retry tried another format: ' + [...vids]);
     for (let i = 0; i < 50 && !incidents.slice(inc1).some(x => x.kind === 'player-failed'); i++) await page.waitForTimeout(100);
     assert.equal(incidents.slice(inc1).filter(x => x.kind === 'player-failed').length, 1);
+    } finally { await page.evaluate(() => localStorage.removeItem('ytc-test-nohedge')).catch(() => {}); }
   });
 
   await step('own player: media intent dwell overlaps a slow VISIONOS response instead of starting again after it', async () => {

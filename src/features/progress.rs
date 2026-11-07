@@ -32,7 +32,7 @@ fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 128 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
-fn near_end(position: f64, duration: f64) -> bool {
+pub(crate) fn near_end(position: f64, duration: f64) -> bool {
     duration - position <= END_SLACK.min(duration * 0.02).max(2.0)
 }
 

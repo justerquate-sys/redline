@@ -384,6 +384,9 @@ pub struct Own {
     /// first such error with when it happened (reported once the picture comes).
     media_retries: u32,
     media_err: Option<(String, f64)>,
+    /// The player response being refreshed is a media-error retry's: a failed answer keeps the URLs
+    /// (like a stuck retry's) so the next retry can try another format.
+    media_refresh: bool,
     /// Every route was bot-checked shortly before (the app's block): only this player's route is
     /// tried, no parallel recovery; the panel's Try again does the full recovery.
     pub no_recover: bool,
@@ -671,6 +674,7 @@ impl Own {
             mse_rebuilt: false,
             media_retries: 0,
             media_err: None,
+            media_refresh: false,
             no_recover: false,
             vision_cfg: None,
             route: VisionRoute::Anon,
@@ -910,7 +914,8 @@ impl Own {
             }
             Vision::Cached(_) => {}
         }
-        if !matches!(vision, Vision::Cached(_)) {
+        // (`ytc-test-nohedge`, localStorage, tests and measurements only: no second request.)
+        if !matches!(vision, Vision::Cached(_)) && !bridge::local_flag("ytc-test-nohedge") {
             // A slow or hung `player` request is asked again (the first usable answer plays).
             self.timer(Tm::VisionHedge, throttle::VISION_HEDGE_MS as u32);
         }
@@ -1109,7 +1114,7 @@ impl Own {
             if recovering {
                 return self.recover_step(format!("{} (HTTP {status})", route.label()), true);
             }
-            if self.refreshing && self.stuck.is_some() {
+            if self.refreshing && (self.stuck.is_some() || self.media_refresh) {
                 // A retry while stuck: not a verdict; keep the URLs we have and the schedule going.
                 self.note(format!("fresh player response HTTP {status}: keeping the current URLs"));
                 return self.end_refresh();
@@ -1127,7 +1132,7 @@ impl Own {
         if ps != "OK" {
             let reason = json.pointer("/playabilityStatus/reason").and_then(Value::as_str).unwrap_or("");
             let bot = bot_check(ps, reason);
-            if self.refreshing && self.stuck.is_some() {
+            if self.refreshing && (self.stuck.is_some() || self.media_refresh) {
                 self.note(format!("fresh player response {ps}: keeping the current URLs"));
                 if bot {
                     self.out.push(Out::Blocked);
@@ -1205,6 +1210,7 @@ impl Own {
     /// A refresh answered (new URLs applied, or kept): requests continue.
     fn end_refresh(&mut self) {
         self.refreshing = false;
+        self.media_refresh = false;
         for t in &mut self.tracks {
             t.retry_wait = false;
         }
@@ -2959,7 +2965,10 @@ impl Own {
             self.media_err = Some((reason.clone(), bridge::now()));
         }
         let why = format!("{reason} before the first frame (automatic retry {n} of {})", fail::MEDIA_RETRIES);
+        // The stuck path's own one-time MediaSource rebuild stays available.
+        let rebuilt = self.mse_rebuilt;
         self.rebuild_mse(&why);
+        self.mse_rebuilt = rebuilt;
         match retry {
             fail::MediaRetry::FreshSource => {}
             fail::MediaRetry::FreshUrls => {
@@ -2973,7 +2982,11 @@ impl Own {
                         self.retry_heads.push((itag, k));
                     }
                 }
+                // Not the player's one refresh for an expired URL (a 403 later in the video still gets it).
+                let refreshes = self.refreshes;
+                self.media_refresh = true;
                 self.fresh_urls("media error before the first frame");
+                self.refreshes = refreshes;
                 if !self.refreshing {
                     // No player response to refresh with: the indexes again on the URLs we have.
                     self.end_refresh();

@@ -3018,13 +3018,18 @@ impl App {
 
     fn stop_player(&mut self) {
         if let Some(mut p) = self.player.take() {
+            let mut dur = 0.0;
             if let Some((t, d)) = p.position() {
                 let v = p.v.clone();
+                dur = d;
                 self.fx_position(&v, t, d, false, true);
             }
             let t = p.stop();
             self.bw = p.bw;
-            if t > 5.0 {
+            // Watched to (nearly) the end: the next open starts over, like YouTube and the saved progress.
+            if dur > 0.0 && crate::features::progress::near_end(t, dur) {
+                self.resume.remove(&p.v);
+            } else if t > 5.0 {
                 if self.resume.len() > 200 {
                     self.resume.clear();
                 }
