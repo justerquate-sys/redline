@@ -221,9 +221,10 @@ let media = null;
 const GV = 'https://rr1---sn-fixture.googlevideo.com/videoplayback';
 const playerGen = new Map();
 // The googlevideo URLs' `expire=` (Unix seconds): six hours ahead, like YouTube's (a fixed date would
-// have passed); staleurl001's first URLs expire in 20 minutes (a forgotten tab's).
+// have passed); staleurl…'s first URLs and expirenoext's expire in 20 minutes (the player goes by
+// expiresInSeconds, not by this date against the device clock).
 const EXPIRE = Math.floor(Date.now() / 1000) + 6 * 3600;
-const expireFor = (v, gen) => v === 'staleurl001' && gen === 1 ? Math.floor(Date.now() / 1000) + 20 * 60 : EXPIRE;
+const expireFor = (v, gen) => (v.startsWith('staleurl') && gen === 1) || v === 'expirenoext' ? Math.floor(Date.now() / 1000) + 20 * 60 : EXPIRE;
 // AV1 renditions of the fixture's VP9 ones (av1fault…: each rung also as AV1 at 60 fps, so the
 // ladder prefers it). Their bytes are the VP9 files: the browser refuses them for an AV1
 // SourceBuffer ("Video stream codec vp9 doesn't match SourceBuffer codecs"), an AV1-only failure.
@@ -260,7 +261,9 @@ function visionFixture(v) {
   playerGen.set(v, gen);
   const fmts = v.startsWith('av1fault') ? [...media.formats, ...media.formats.filter(f => AV1_OF[f.itag]).map(f => ({ ...f, itag: AV1_OF[f.itag], mimeType: 'video/webm; codecs="av01.0.05M.08"', fps: 60 }))] : media.formats;
   const adaptiveFormats = fmts.map(f => ({ ...f, url: `${GV}?expire=${expireFor(v, gen)}&ei=E2E&ip=0.0.0.0&id=o-fixture&mn=sn-fixture%2Csn-fixture2&fvip=1&itag=${f.itag}&source=youtube&v=${v}&gen=${gen}&mime=${encodeURIComponent(f.mimeType.split(';')[0])}&clen=${f.contentLength}&c=VISIONOS` }));
-  return { responseContext: {}, playabilityStatus: { status: 'OK' }, streamingData: { expiresInSeconds: '21540', adaptiveFormats },
+  // staleurl… (first response) and expirenoext (every response): URLs that run out in 20 minutes.
+  const life = (v.startsWith('staleurl') && gen === 1) || v === 'expirenoext' ? '1200' : '21540';
+  return { responseContext: {}, playabilityStatus: { status: 'OK' }, streamingData: { expiresInSeconds: life, adaptiveFormats },
     videoDetails: { videoId: v, title: 'Fixture video', lengthSeconds: String(SECONDS), author: 'Fixture' } };
 }
 // A Japanese video: ASR + human Japanese tracks, YouTube can translate to English.
@@ -3785,44 +3788,59 @@ chrome.runtime.onMessage.addListener(m => {
     MIDERR.go = false;
   }, true));
 
-  // A forgotten tab: URLs near their expiry, or no media activity for a long time (`ytc-test-idle`: 1 s instead
-  // of 10 min). The first URLs' later segments never answer (stale), so only fresh URLs asked before the
-  // play needs data keep it playing without a stall.
-  await step('own player: a video left paused with stale URLs refreshes them on play (URLs near their expiry) or when the tab is shown (a long idle) before it needs data, never a stall or the panel', () => noHedge(async () => {
+  // A forgotten tab: URLs near their expiry (their own lifetime, `expiresInSeconds`: 20 min). The first URLs'
+  // later segments never answer (stale), so only fresh URLs asked before the play needs data keep it playing
+  // without a stall. (Condition waits only: no timing bounds.)
+  const visWait = async (v, n0, n) => { for (let i = 0; i < 50 && visCalls(v).length - n0 < n; i++) await page.waitForTimeout(100); return visCalls(v).length - n0; };
+  await step('own player: a video left paused with URLs near their expiry refreshes them on play or when the tab is shown, before it needs data, never a stall or the panel', () => noHedge(async () => {
     for (const [v, how] of [['staleurl001', 'play'], ['staleurl002', 'show']]) {
       const inc0 = incidents.length, n0 = visCalls(v).length;
-      if (how === 'show') await page.evaluate(() => localStorage.setItem('ytc-test-idle', '1'));
-      try {
-        await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
-        await waitT(() => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video').currentTime > 1.5, null, 15000);
-        await page.evaluate(() => document.getElementById('ytc-video').pause());
-        assert.equal(visCalls(v).length - n0, 1, `${v}: one player response so far`);
-        if (how === 'show') {
-          await page.waitForTimeout(1500);
-          // The tab comes back (the bridge's visibilitychange handler; a headless page is never really hidden).
-          const ts = Date.now();
-          await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-          for (let i = 0; i < 10 && visCalls(v).length - n0 < 2; i++) await page.waitForTimeout(100);
-          assert.equal(visCalls(v).length - n0, 2, `${v}: fresh URLs when the tab is shown, before any play`);
-          assert.ok(visCalls(v).at(-1).t - ts < 700, `${v}: at once (${visCalls(v).at(-1).t - ts} ms)`);
-        }
-        const tp = Date.now(), t0 = (await vel()).t;
-        await page.evaluate(() => document.getElementById('ytc-video').play());
-        if (how === 'play') {
-          for (let i = 0; i < 10 && visCalls(v).length - n0 < 2; i++) await page.waitForTimeout(100);
-          assert.equal(visCalls(v).length - n0, 2, `${v}: fresh URLs asked on play`);
-          assert.ok(visCalls(v).at(-1).t - tp < 1000, `${v}: at once (${visCalls(v).at(-1).t - tp} ms)`);
-        }
-        const seen = [];
-        for (let i = 0; i < 120; i++) { const r = await vel(); seen.push(r); if (r.f || r.t > t0 + 6) break; await page.waitForTimeout(100); }
-        const last = seen.at(-1);
-        assert.ok(!last.f && last.t > t0 + 6, `${v}: plays on past the stale URLs' end: ${JSON.stringify(last)} after ${Date.now() - tp} ms`);
-        assert.ok(!seen.some(r => r.stuck), `${v}: no "Still loading"`);
-        assert.ok(log.gv.some(g => g.v === v && g.gen === 2 && g.a > 0), `${v}: the media came from the fresh URLs`);
-        assert.equal(incidents.slice(inc0).filter(x => x.kind === 'player-stuck' || x.kind === 'player-failed').length, 0, JSON.stringify(incidents.slice(inc0).map(x => [x.kind, x.reason])));
-      } finally { await page.evaluate(() => localStorage.removeItem('ytc-test-idle')).catch(() => {}); }
+      await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+      await waitT(() => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video').currentTime > 1.5, null, 15000);
+      await page.evaluate(() => document.getElementById('ytc-video').pause());
+      // Paused a while: the requests for the next segments got no answer (asked again on the wake).
+      await page.waitForTimeout(3500);
+      assert.equal(visCalls(v).length - n0, 1, `${v}: one player response so far`);
+      if (how === 'show') {
+        // The tab comes back (the bridge's visibilitychange handler; a headless page is never really hidden).
+        await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        assert.equal(await visWait(v, n0, 2), 2, `${v}: fresh URLs when the tab is shown, before any play`);
+      }
+      const t0 = (await vel()).t;
+      await page.evaluate(() => document.getElementById('ytc-video').play());
+      assert.equal(await visWait(v, n0, 2), 2, `${v}: fresh URLs ${how === 'play' ? 'on play' : 'once'}`);
+      const seen = [];
+      for (let i = 0; i < 120; i++) { const r = await vel(); seen.push(r); if (r.f || r.t > t0 + 6) break; await page.waitForTimeout(100); }
+      const last = seen.at(-1);
+      assert.ok(!last.f && last.t > t0 + 6, `${v}: plays on past the stale URLs' end: ${JSON.stringify(last)}`);
+      assert.ok(!seen.some(r => r.stuck), `${v}: no "Still loading"`);
+      assert.ok(log.gv.some(g => g.v === v && g.gen === 2 && g.a > 0), `${v}: the media came from the fresh URLs`);
+      assert.equal(visCalls(v).length - n0, 2, `${v}: one refresh`);
+      assert.equal(incidents.slice(inc0).filter(x => x.kind === 'player-stuck' || x.kind === 'player-failed').length, 0, JSON.stringify(incidents.slice(inc0).map(x => [x.kind, x.reason])));
     }
   }, true));
+
+  // Healthy playback never loops on refreshes: URLs that stay short-lived (every answer's expiresInSeconds is
+  // 20 min: a refresh that does not lengthen them) get exactly one proactive refresh, then none, and playing
+  // is never held for it.
+  await step('own player: URLs that stay near their expiry get one proactive refresh, then none (no loop); playback goes on', () => noHedge(async () => {
+    const v = 'expirenoext', inc0 = incidents.length, n0 = visCalls(v).length;
+    await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+    await waitT(() => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video').currentTime > 1, null, 15000);
+    for (let k = 0; k < 4; k++) {
+      await page.evaluate(() => document.getElementById('ytc-video').pause());
+      await page.waitForTimeout(200);
+      await page.evaluate(() => document.getElementById('ytc-video').play());
+      if (k === 0) assert.equal(await visWait(v, n0, 2), 2, 'one proactive refresh');
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await page.waitForTimeout(400);
+    }
+    assert.equal(visCalls(v).length - n0, 2, 'no further refresh after one that did not lengthen the URLs');
+    const t1 = (await vel()).t;
+    await waitT(t => document.getElementById('ytc-video').currentTime > t + 2, t1, 10000);
+    assert.match(await playerNotes(), /no more proactive refreshes/);
+    assert.equal(incidents.slice(inc0).filter(x => ['player-stuck', 'player-failed', 'player-recovered'].includes(x.kind)).length, 0);
+  }));
 
   await step('own player: media intent dwell overlaps a slow VISIONOS response instead of starting again after it', async () => {
     const ids = ['mediarest01', 'mediarest02', 'mediarest03'];

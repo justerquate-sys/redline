@@ -104,6 +104,15 @@ const VISION_TIMEOUT_MS: u32 = 8000;
 const START_END_SLACK: f64 = 0.5;
 /// A recovered media error counts as recovered once the picture stayed this long without another.
 const MEDIA_SETTLE_MS: f64 = 1500.0;
+/// A SourceBuffer error waits at most this long for the element's error and its message.
+const SB_ERR_WAIT_MS: u32 = 100;
+/// A wake asks again (with fresh URLs) the requests that got no answer in this long.
+const STALE_MS: f64 = 3000.0;
+
+/// `streamingData.expiresInSeconds` of a player response.
+fn expires_in(json: &Value) -> Option<f64> {
+    json.pointer("/streamingData/expiresInSeconds").and_then(|v| v.as_str().and_then(|s| s.parse().ok()).or_else(|| v.as_f64()))
+}
 const IDLE_MS: f64 = 2500.0;
 /// TV: the overlay stays this long after the last key while playing (a remote is slower than a mouse).
 const TV_IDLE_MS: f64 = 4000.0;
@@ -289,6 +298,8 @@ enum Tm {
     SeekPre(u32),
     /// The first frame is on screen: the warm first frame's canvas (`warm.rs`) goes.
     Poster,
+    /// A SourceBuffer error waited this long for the element's error and its message (`sb_err`).
+    SbErr,
 }
 
 struct Rep {
@@ -395,14 +406,23 @@ pub struct Own {
     /// A media error while hidden and paused, recovered when the tab is shown or played:
     /// (reason, track, the browser's message).
     deferred: Option<(String, Option<usize>, String)>,
-    /// The last media activity (an append, playback, a seek): a long idle refreshes the URLs on wake.
-    active_at: f64,
+    /// A SourceBuffer error waiting (`SB_ERR_WAIT_MS`) for the element's error that follows it: the
+    /// browser's words ("Video stream codec … doesn't match") come only with that one.
+    sb_err: Option<(String, usize)>,
     /// The last position played (the element can read 0 once its MediaSource is gone).
     play_t: f64,
     /// The playhead and since when it has not moved while playing (the decoder watchdog).
     still: (f64, f64),
-    /// When the URLs' expiry was last checked on the tick (a long video outlives its URLs).
+    /// When the URLs' expiry was last checked on the tick (a long video outlives its URLs), when
+    /// the URLs in use run out (`fail::url_deadline`, ms; 0 = not known yet), a proactive refresh
+    /// in flight, and no more proactive refreshes for this player (one failed, was bot-checked
+    /// or brought URLs as short-lived: never a request a minute on healthy playback).
     exp_at: f64,
+    url_deadline: f64,
+    proactive: bool,
+    exp_off: bool,
+    /// `ytc-test-nothrottle` (tests only), read once.
+    no_throttle: bool,
     /// Video codecs not to use: the app's tab-session verdicts, and a codec fault in this player.
     pub avoid: Vec<Codec>,
     /// The player response being refreshed is a media-error retry's: a failed answer keeps the URLs
@@ -697,10 +717,14 @@ impl Own {
             recov: Vec::new(),
             media_err: None,
             deferred: None,
-            active_at: bridge::now(),
+            sb_err: None,
             play_t: 0.0,
             still: (0.0, 0.0),
             exp_at: bridge::now(),
+            url_deadline: 0.0,
+            proactive: false,
+            exp_off: false,
+            no_throttle: bridge::local_flag("ytc-test-nothrottle"),
             avoid: Vec::new(),
             media_refresh: false,
             no_recover: false,
@@ -1018,7 +1042,7 @@ impl Own {
         self.tel_bot();
         if self.no_recover {
             // Every route met the bot check moments ago: this route only (Try again recovers fully).
-            self.out.push(Out::Blocked);
+            self.blocked();
             return self.fail(format!("VISIONOS LOGIN_REQUIRED: {reason} · tried: {} (bot check; every route was bot-checked shortly before)", self.route.label()));
         }
         let Some(cfg) = self.vision_cfg.clone() else { return self.fail(format!("VISIONOS LOGIN_REQUIRED: {reason}")) };
@@ -1051,7 +1075,7 @@ impl Own {
         }
         let r = self.recover.take().unwrap_or_default();
         if r.all_bot {
-            self.out.push(Out::Blocked);
+            self.blocked();
         }
         self.fail(format!("VISIONOS LOGIN_REQUIRED: {} · tried: {}", r.reason, r.steps.join(", ")));
     }
@@ -1145,6 +1169,7 @@ impl Own {
             if self.refreshing && (self.stuck.is_some() || self.media_refresh) {
                 // A retry while stuck: not a verdict; keep the URLs we have and the schedule going.
                 self.note(format!("fresh player response HTTP {status}: keeping the current URLs"));
+                self.exp_off |= self.proactive;
                 return self.end_refresh();
             }
             self.fail(format!("VISIONOS player HTTP {status}"));
@@ -1162,8 +1187,9 @@ impl Own {
             let bot = bot_check(ps, reason);
             if self.refreshing && (self.stuck.is_some() || self.media_refresh) {
                 self.note(format!("fresh player response {ps}: keeping the current URLs"));
+                self.exp_off |= self.proactive;
                 if bot {
-                    self.out.push(Out::Blocked);
+                    self.blocked();
                 }
                 return self.end_refresh();
             }
@@ -1174,7 +1200,7 @@ impl Own {
                 return self.recover(reason);
             }
             if bot {
-                self.out.push(Out::Blocked);
+                self.blocked();
             }
             self.fail(format!("VISIONOS {ps}: {reason}"));
             return;
@@ -1213,11 +1239,20 @@ impl Own {
                     f.url = n.url.clone();
                 }
             }
+            // The new URLs' lifetime; a proactive refresh that did not lengthen it is not repeated.
+            let deadline = fail::url_deadline(bridge::now(), expires_in(&json), 0.0);
+            if self.proactive && !fail::refresh_helped(true, (deadline - bridge::now()) / 1000.0) {
+                self.exp_off = true;
+                self.note("the fresh URLs expire as soon: no more proactive refreshes".into());
+            }
+            self.url_deadline = deadline;
             self.note(format!("player refreshed ({ms:.0} ms)"));
             self.end_refresh();
             return;
         }
         self.vision_ms = Some(ms);
+        // A cached response's age is not known here: counted as the cache's limit (30 min).
+        self.url_deadline = fail::url_deadline(bridge::now(), expires_in(&json), if self.from_cache { 1800.0 } else { 0.0 });
         if ms > 0.0 {
             self.vision_ok = Some(std::rc::Rc::new(body.to_vec()));
         }
@@ -1239,6 +1274,7 @@ impl Own {
     fn end_refresh(&mut self) {
         self.refreshing = false;
         self.media_refresh = false;
+        self.proactive = false;
         for t in &mut self.tracks {
             t.retry_wait = false;
         }
@@ -1836,7 +1872,6 @@ impl Own {
                         tr.updating = true;
                         tr.quota = false;
                         tr.mid = !last;
-                        self.active_at = bridge::now();
                         return;
                     }
                     if r == "QuotaExceededError" && !tr.quota {
@@ -1867,7 +1902,6 @@ impl Own {
                     if r.is_empty() {
                         tr.updating = true;
                         tr.quota = false;
-                        self.active_at = bridge::now();
                         return;
                     }
                     if r == "QuotaExceededError" && !tr.quota {
@@ -2506,7 +2540,10 @@ impl Own {
                 }
                 // The MediaSource ended or closed without us (the element failed or dropped it):
                 // a media error like any other (a replaced MediaSource's events have another handle).
-                "sourceended" if !self.eos => self.media_error("MediaSource ended unexpectedly".into(), None, &bridge::media_str(self.vid, "error.message")),
+                // (`sourceended` alone can be our own endOfStream's, queued after a seek or a switch
+                // reset `eos`: only one that comes with an element error counts.)
+                _ if self.sb_err.is_some() => {} // part of the SourceBuffer error being handled
+                "sourceended" if bridge::media_get(self.vid, "error.code") > 0.0 => self.media_error("MediaSource ended unexpectedly".into(), None, &bridge::media_str(self.vid, "error.message")),
                 "sourceclose" if self.ms_open => self.media_error("MediaSource closed unexpectedly".into(), None, &bridge::media_str(self.vid, "error.message")),
                 _ => {}
             }
@@ -2526,7 +2563,13 @@ impl Own {
                 _ => {
                     let why = format!("SourceBuffer {ev} ({})", self.tracks[k].mime);
                     let detail = bridge::media_str(self.vid, "error.message");
-                    self.media_error(why, Some(k), &detail);
+                    if detail.is_empty() && self.sb_err.is_none() {
+                        // The element's error (with the browser's message) follows in a moment.
+                        self.sb_err = Some((why, k));
+                        self.timer(Tm::SbErr, SB_ERR_WAIT_MS);
+                    } else if self.sb_err.is_none() {
+                        self.media_error(why, Some(k), &detail);
+                    }
                 }
             }
             return true;
@@ -2613,7 +2656,6 @@ impl Own {
             "canplay" => self.waiting = false,
             "seeking" => {
                 self.snap = true;
-                self.active_at = now;
                 self.sb_seeking();
                 self.on_seeking();
             }
@@ -2621,7 +2663,6 @@ impl Own {
                 self.sb_check();
                 if !self.paused {
                     let t = self.time();
-                    self.active_at = now;
                     if t > 0.0 {
                         self.play_t = t;
                     }
@@ -2646,7 +2687,11 @@ impl Own {
                     return true; // no error on the element any more: a stale event of a replaced MediaSource
                 }
                 let msg = bridge::media_str(self.vid, "error.message");
-                self.media_error(format!("media error {code} {msg}"), None, &msg);
+                match self.sb_err.take() {
+                    // The SourceBuffer's error, now with the browser's words.
+                    Some((why, k)) => self.media_error(why, Some(k), &msg),
+                    None => self.media_error(format!("media error {code} {msg}"), None, &msg),
+                }
                 return true;
             }
             "volumechange" => {
@@ -2734,6 +2779,12 @@ impl Own {
         }
         match t {
             Tm::Poster => self.drop_poster(),
+            Tm::SbErr => {
+                if let Some((why, k)) = self.sb_err.take() {
+                    let msg = bridge::media_str(self.vid, "error.message");
+                    self.media_error(why, Some(k), &msg);
+                }
+            }
             Tm::Tick => {
                 self.tick();
                 if !self.failed {
@@ -2896,9 +2947,8 @@ impl Own {
         // they run out (a long video, a tab left open for hours), not on the 403.
         if now - self.exp_at > 60_000.0 {
             self.exp_at = now;
-            let left = self.urls_left();
-            if self.first_frame.is_some() && self.live.is_none() && !self.refreshing && left.is_some_and(|l| l < fail::EXPIRY_MARGIN_S) {
-                self.recovery_refresh(&format!("URLs expire in {:.0} min", left.unwrap_or(0.0) / 60.0));
+            if self.first_frame.is_some() {
+                self.proactive_refresh("the tick", false);
             }
         }
         // Safety net: stuck within 0.5 s of the end with nothing buffered ahead
@@ -3042,9 +3092,19 @@ impl Own {
     /// only after those. `kind`: the track it came from (None: the element); `detail`: the
     /// browser's own message.
     fn media_error(&mut self, reason: String, kind: Option<usize>, detail: &str) {
-        if self.failed {
+        // A SourceBuffer error is waiting for the element's: what follows it (an append refused by
+        // the closed MediaSource) is the same failure.
+        if self.failed || self.sb_err.is_some() {
             return;
         }
+        // The browser's words as they are now (a MediaSource closed before the element's error came).
+        let now_msg;
+        let detail = if detail.is_empty() {
+            now_msg = bridge::media_str(self.vid, "error.message");
+            now_msg.as_str()
+        } else {
+            detail
+        };
         if self.live.is_some() || self.vision_ms.is_none() {
             return self.fail(reason);
         }
@@ -3060,12 +3120,11 @@ impl Own {
             return;
         }
         self.recov.retain(|r| now - r.0 < fail::MEDIA_WINDOW_MS);
-        let done: Vec<fail::MediaRetry> = self.recov.iter().map(|r| r.1).collect();
-        let av1 = self.format(self.tracks[V].rep, V).and_then(|f| f.codec) == Some(Codec::Av1);
-        let mut fault = fail::fault(kind.map(|k| k == A), detail, av1);
+        let done = fail::recent(&self.recov, now);
+        let mut fault = fail::fault(kind.map(|k| k == A), detail);
         // No other codec family offered: a codec fault is recovered like any other.
         fault.codec &= self.other_codec().is_some();
-        let old = self.urls_old(now);
+        let old = self.urls_left().is_some_and(fail::urls_old);
         let t = self.time();
         let t = if t > 0.0 { t } else { self.play_t };
         let at = if mid { format!(" at {}", ui::clock(t)) } else { " before the first frame".to_string() };
@@ -3147,7 +3206,8 @@ impl Own {
             let old = self.tracks[A].rep;
             self.bad.push(old);
             self.build_ladder();
-            match self.audio.clone().filter(|f| f.itag != old) {
+            let lang = self.format(old, A).map(|f| f.audio_id.clone()).unwrap_or_default();
+            match self.audio.clone().filter(|f| f.itag != old && f.audio_id == lang) {
                 Some(f) => {
                     self.note(format!("audio itag {old} given up: {}", f.itag));
                     self.start_track_on(A, f);
@@ -3200,39 +3260,75 @@ impl Own {
         true
     }
 
-    /// The URLs in use are old: no media activity for `fail::IDLE_MS`, or near their `expire`.
-    fn urls_old(&self, now: f64) -> bool {
-        let limit = if bridge::local_flag("ytc-test-idle") { 1000.0 } else { fail::IDLE_MS };
-        fail::urls_old(now - self.active_at, limit, self.urls_left())
-    }
-
-    /// Seconds until the earliest `expire=` of the URLs in use (negative: expired), if they carry one.
+    /// Seconds until the URLs in use run out (their own lifetime from when they came), if known.
     fn urls_left(&self) -> Option<f64> {
-        let exp = [V, A].iter().filter_map(|&k| self.reps.get(&self.tracks[k].rep).and_then(|r| fail::url_expiry(&r.f.url))).reduce(f64::min)?;
-        Some(exp - bridge::epoch() / 1000.0)
+        (self.url_deadline > 0.0).then(|| (self.url_deadline - bridge::now()) / 1000.0)
     }
 
-    /// The tab was shown again, or playback resumed after a pause: after a long idle (or with URLs
-    /// near their expiry), the element and the MediaSource are checked (broken: recovered now) and
-    /// fresh URLs asked, before playback needs data. A media error that waited (hidden and paused)
-    /// is recovered now.
+    /// Fresh URLs before the ones in use run out (within `fail::EXPIRY_MARGIN_S`), in the
+    /// background: requests in flight go on and playback is not held; the new URLs serve the next
+    /// requests. With `drop_stale` (a wake after a pause), requests that never got an answer in
+    /// `STALE_MS` are asked again with the new URLs. Never while the bot check blocks VISIONOS,
+    /// and once one did not help, no more for this player.
+    fn proactive_refresh(&mut self, why: &str, drop_stale: bool) {
+        if self.failed || self.live.is_some() || self.vision_ms.is_none() || self.refreshing || self.exp_off || self.no_recover {
+            return;
+        }
+        let Some(left) = self.urls_left().filter(|l| fail::urls_old(*l)) else { return };
+        let Some(cfg) = self.vision_cfg.clone() else { return };
+        if drop_stale {
+            let now = bridge::now();
+            let stale: Vec<u32> = self.fetches.iter().filter(|(_, f)| matches!(f.req, Req::Head { .. } | Req::Seg { .. }) && f.ttfb.is_none() && now - f.sent > STALE_MS).map(|(id, _)| *id).collect();
+            for id in stale {
+                let Some(f) = self.fetches.remove(&id) else { continue };
+                bridge::abort(id);
+                match f.req {
+                    Req::Head { itag, kind } => {
+                        self.heads.retain(|&x| x != itag);
+                        if !self.reps.contains_key(&itag) && !self.retry_heads.contains(&(itag, kind)) {
+                            self.retry_heads.push((itag, kind));
+                        }
+                        self.tracks[kind].retry_wait = true;
+                    }
+                    Req::Seg { kind, .. } => {
+                        if self.tracks[kind].inflight == Some(id) {
+                            self.tracks[kind].inflight = None;
+                        }
+                        self.tracks[kind].retry_wait = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.refreshing = true;
+        self.media_refresh = true;
+        self.proactive = true;
+        self.note(format!("{why}: URLs run out in {:.0} min: fresh player response in the background", left / 60.0));
+        let route = self.route.clone();
+        self.send_vision(&cfg, &route);
+    }
+
+    /// VISIONOS answered with the bot check: the app blocks it for a while; no proactive refreshes.
+    fn blocked(&mut self) {
+        self.exp_off = true;
+        self.out.push(Out::Blocked);
+    }
+
+    /// The tab was shown again, or playback resumed after a pause (once the picture was there):
+    /// the element and the MediaSource are checked (broken: recovered now), and URLs near their
+    /// expiry are replaced before playback needs data. A media error that waited (hidden and
+    /// paused) is recovered now.
     fn wake_check(&mut self, why: &str) {
-        if self.failed || self.live.is_some() || self.vision_ms.is_none() {
+        if self.failed || self.live.is_some() || self.vision_ms.is_none() || self.first_frame.is_none() {
             return;
         }
         if let Some((reason, kind, detail)) = self.deferred.take() {
             return self.media_error(reason, kind, &detail);
         }
-        let now = bridge::now();
-        if !self.urls_old(now) || self.refreshing {
-            return;
-        }
-        let idle = (now - self.active_at) / 60_000.0;
         if let Some(state) = self.broken() {
-            return self.media_error(format!("{state} ({why} after {idle:.0} min idle)"), None, "");
+            return self.media_error(format!("{state} (found on {why})"), None, "");
         }
-        self.active_at = now;
-        self.recovery_refresh(&format!("{why} after {idle:.0} min idle (or URLs near their expiry)"));
+        self.proactive_refresh(why, true);
     }
 
     /// The tab is visible again (`App::on_show`).
@@ -3273,7 +3369,8 @@ impl Own {
         }
         if fail::decoder_stalled(now - self.still.1, av, aa) {
             self.still = (t, now);
-            self.media_error(format!("decoder stopped: the playhead stayed at {} for {:.0} s with media buffered", ui::clock(t), fail::DECODER_STALL_MS / 1000.0), Some(V), "decoder");
+            // (No codec fault: a stall says nothing about the codec.)
+            self.media_error(format!("decoder stopped: the playhead stayed at {} for {:.0} s with media buffered", ui::clock(t), fail::DECODER_STALL_MS / 1000.0), Some(V), "-");
         }
     }
 
@@ -3351,7 +3448,6 @@ impl Own {
         self.ms_open = false;
         self.sbs_made = false;
         self.eos = false;
-        self.active_at = bridge::now();
         self.ms = next_id();
         bridge::media_source(self.ms, self.vid);
         if self.first_frame.is_some() {

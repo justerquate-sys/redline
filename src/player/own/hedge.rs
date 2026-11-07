@@ -122,7 +122,7 @@ impl Own {
     /// Every streamed googlevideo request in flight: is one throttled?
     pub(super) fn hedge_check(&mut self, now: f64) {
         // (`ytc-test-nothrottle`, localStorage, tests only: requests held on purpose are no throttling.)
-        if self.failed || self.live.is_some() || bridge::local_flag("ytc-test-nothrottle") {
+        if self.failed || self.live.is_some() || self.no_throttle {
             return;
         }
         let started = self.first_frame.is_some();

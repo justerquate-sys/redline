@@ -184,17 +184,22 @@ pub const MEDIA_RETRIES_MAX: u32 = 8;
 pub struct Fault {
     /// The audio track (its SourceBuffer, its appends, or a message about audio).
     pub audio: bool,
-    /// The video decoder or codec: an AV1 track (decoders that fail after a sleep or a long idle,
-    /// owner report 7 Nov 2026), or a message naming decoding or the codec.
+    /// The video decoder or codec, by the browser's own words (decoding, the codec, a hardware
+    /// decoder): never the codec in use alone (an AV1 parse error is a data error) nor a stall.
     pub codec: bool,
 }
 
 /// `audio`: the error came from the audio track (Some(false): the video track; None: the element).
-pub fn fault(audio: Option<bool>, detail: &str, av1: bool) -> Fault {
+pub fn fault(audio: Option<bool>, detail: &str) -> Fault {
     let d = detail.to_ascii_lowercase();
     let audio = audio.unwrap_or_else(|| d.contains("audio") && !d.contains("video"));
     let hint = ["decod", "codec", "vda", "videotoolbox", "dav1d", "vpx", "ffmpeg", "gpu"].iter().any(|h| d.contains(h));
-    Fault { audio, codec: !audio && (av1 || hint) }
+    Fault { audio, codec: !audio && hint }
+}
+
+/// The recoveries within the sliding window ending at `now` (`recov`: when, what; oldest first).
+pub fn recent(recov: &[(f64, MediaRetry)], now: f64) -> Vec<MediaRetry> {
+    recov.iter().filter(|r| now - r.0 < MEDIA_WINDOW_MS).map(|r| r.1).collect()
 }
 
 /// The next recovery after the ones `done` within the window (oldest first) and `total` in this
@@ -221,23 +226,29 @@ pub fn media_retried(steps: &[MediaRetry]) -> String {
     format!("{n} automatic {} ({})", if n == 1 { "retry" } else { "retries" }, steps.iter().map(|s| s.label()).collect::<Vec<_>>().join(", "))
 }
 
-/// A googlevideo URL's `expire=` (Unix seconds), if it has one.
-pub fn url_expiry(url: &str) -> Option<f64> {
-    let q = url.split_once('?')?.1;
-    q.split('&').find_map(|kv| kv.strip_prefix("expire=")).and_then(|v| v.parse::<f64>().ok()).filter(|x| *x > 0.0)
+/// URLs this close to their expiry (or past it) count as old.
+pub const EXPIRY_MARGIN_S: f64 = 30.0 * 60.0;
+/// A player response without `expiresInSeconds`: googlevideo URLs live about six hours.
+pub const URL_LIFE_S: f64 = 5.5 * 3600.0;
+
+/// When URLs received at `received_ms` (monotonic ms, `bridge::now`) run out: their own lifetime
+/// (`streamingData.expiresInSeconds`), never the absolute `expire=` against this device's clock (a TV
+/// box without NTP can be hours off). `age_s`: how old the response already was (a cached one).
+pub fn url_deadline(received_ms: f64, expires_in_s: Option<f64>, age_s: f64) -> f64 {
+    let life = expires_in_s.filter(|s| *s > 0.0).unwrap_or(URL_LIFE_S);
+    received_ms + (life - age_s) * 1000.0
 }
 
-/// No media activity this long (a paused video in a forgotten tab, a background tab): the tab
-/// shown again or the play that follows checks the element and the MediaSource and asks fresh URLs
-/// first, before playback needs data.
-pub const IDLE_MS: f64 = 10.0 * 60.0 * 1000.0;
-/// URLs this close to their `expire` (or past it) count as old.
-pub const EXPIRY_MARGIN_S: f64 = 30.0 * 60.0;
+/// Whether URLs with `left_s` seconds to go should be replaced now.
+pub fn urls_old(left_s: f64) -> bool {
+    left_s < EXPIRY_MARGIN_S
+}
 
-/// Whether the URLs should be refreshed now: idle for `idle_ms` (≥ `limit_ms`), or `left_s` seconds
-/// until the earliest `expire` of the URLs in use within `EXPIRY_MARGIN_S` (negative: expired).
-pub fn urls_old(idle_ms: f64, limit_ms: f64, left_s: Option<f64>) -> bool {
-    idle_ms >= limit_ms || left_s.is_some_and(|l| l < EXPIRY_MARGIN_S)
+/// Whether a proactive refresh helped: the new URLs last past the margin. If not (the answer
+/// failed, was bot-checked, or brought URLs as short-lived), no more proactive refreshes for
+/// this player: never a request a minute on healthy playback.
+pub fn refresh_helped(ok: bool, new_left_s: f64) -> bool {
+    ok && !urls_old(new_left_s)
 }
 
 /// A decoder that stopped: playing (not paused, the tab visible), media buffered ahead of the
@@ -254,7 +265,7 @@ mod tests {
     #[test]
     fn media_errors_are_recovered_three_times_in_a_window() {
         use MediaRetry::*;
-        let plain = fault(Some(false), "", false);
+        let plain = fault(Some(false), "");
         assert_eq!(plain, Fault { audio: false, codec: false });
         assert_eq!(media_retry(&[], 0, false, plain), Some(FreshSource));
         assert_eq!(media_retry(&[FreshSource], 1, false, plain), Some(FreshUrls));
@@ -275,37 +286,54 @@ mod tests {
     #[test]
     fn codec_faults_step_down_to_another_codec_family() {
         use MediaRetry::*;
-        // The owner's report: a video SourceBuffer error on AV1.
-        let av1 = fault(Some(false), "", true);
+        // A video error the browser puts down to the codec (an AV1 track refused, a decoder failing).
+        let av1 = fault(Some(false), "PipelineStatus::CHUNK_DEMUXER_ERROR_APPEND_FAILED: Video stream codec vp9 doesn't match SourceBuffer codecs.");
         assert!(av1.codec && !av1.audio);
+        assert!(!fault(Some(false), "").codec, "AV1 in use alone is no codec fault (a parse error, a stall)");
         assert_eq!(media_retry(&[], 0, false, av1), Some(FreshSource), "a fresh decoder first");
         assert_eq!(media_retry(&[FreshSource], 1, false, av1), Some(NextCodec), "then another codec, before fresh URLs");
         assert_eq!(media_retry(&[FreshSource, NextCodec], 2, false, av1), Some(FreshUrls));
         // Decoder messages of any codec; parse errors are no codec fault.
-        assert!(fault(None, "PipelineStatus::PIPELINE_ERROR_DECODE: VDA Error 4", false).codec);
-        assert!(fault(None, "PipelineStatus::CHUNK_DEMUXER_ERROR_APPEND_FAILED: Video stream codec vp9 doesn't match SourceBuffer codecs.", false).codec);
-        assert!(!fault(None, "PipelineStatus::CHUNK_DEMUXER_ERROR_APPEND_FAILED: Append: stream parsing failed.", false).codec);
+        assert!(fault(None, "PipelineStatus::PIPELINE_ERROR_DECODE: VDA Error 4").codec);
+        assert!(!fault(None, "PipelineStatus::CHUNK_DEMUXER_ERROR_APPEND_FAILED: Append: stream parsing failed.").codec);
         // Audio: its own track, never a video codec change.
-        let a = fault(None, "PIPELINE_ERROR_DECODE: audio decode error", true);
+        let a = fault(None, "PIPELINE_ERROR_DECODE: audio decode error");
         assert!(a.audio && !a.codec);
-        assert!(fault(Some(true), "", true).audio);
+        assert!(fault(Some(true), "codec").audio);
         assert_eq!(media_retry(&[FreshSource, FreshUrls], 2, false, a), Some(NextFormat));
     }
 
     #[test]
     fn old_urls_and_stopped_decoders() {
-        let url = "https://rr1---sn-x.googlevideo.com/videoplayback?expire=1793600000&ei=E2E&itag=243";
-        assert_eq!(url_expiry(url), Some(1793600000.0));
-        assert_eq!(url_expiry("https://x/videoplayback?itag=1&expire="), None);
-        assert_eq!(url_expiry("https://x/videoplayback"), None);
-        assert!(!urls_old(60_000.0, IDLE_MS, Some(6.0 * 3600.0)), "fresh and recently active");
-        assert!(urls_old(IDLE_MS, IDLE_MS, None), "a long idle");
-        assert!(urls_old(0.0, IDLE_MS, Some(20.0 * 60.0)), "20 min to the expiry");
-        assert!(urls_old(0.0, IDLE_MS, Some(-5.0)), "expired");
-        assert!(!urls_old(0.0, IDLE_MS, None));
+        // The URLs' own lifetime from when they came, not the device clock.
+        assert_eq!(url_deadline(1000.0, Some(21540.0), 0.0), 1000.0 + 21_540_000.0);
+        assert_eq!(url_deadline(0.0, None, 0.0), URL_LIFE_S * 1000.0);
+        assert_eq!(url_deadline(0.0, Some(3600.0), 1800.0), 1_800_000.0, "a cached response is older");
+        assert!(!urls_old(6.0 * 3600.0));
+        assert!(urls_old(20.0 * 60.0), "20 min to the expiry");
+        assert!(urls_old(-5.0), "expired");
+        assert!(refresh_helped(true, 6.0 * 3600.0));
+        assert!(!refresh_helped(false, 6.0 * 3600.0), "failed or bot-checked: no more proactive refreshes");
+        assert!(!refresh_helped(true, 20.0 * 60.0), "as short-lived as before: no more either");
         assert!(decoder_stalled(DECODER_STALL_MS, 4.0, 3.0));
         assert!(!decoder_stalled(DECODER_STALL_MS - 1.0, 4.0, 3.0));
         assert!(!decoder_stalled(DECODER_STALL_MS * 2.0, 0.5, 3.0), "nothing buffered: a network stall, not the decoder");
+    }
+
+    #[test]
+    fn the_window_slides_and_the_life_cap_holds() {
+        use MediaRetry::*;
+        let plain = fault(Some(false), "");
+        let r = [(0.0, FreshSource), (10_000.0, FreshUrls), (20_000.0, NextFormat)];
+        assert_eq!(recent(&r, 30_000.0), vec![FreshSource, FreshUrls, NextFormat]);
+        assert_eq!(media_retry(&recent(&r, 30_000.0), 3, false, plain), None, "three within 2 min: the panel");
+        assert_eq!(recent(&r, MEDIA_WINDOW_MS + 5_000.0), vec![FreshUrls, NextFormat], "the oldest slid out");
+        assert_eq!(media_retry(&recent(&r, MEDIA_WINDOW_MS + 5_000.0), 3, false, plain), Some(FreshSource));
+        assert_eq!(recent(&r, MEDIA_WINDOW_MS + 30_000.0), vec![]);
+        for total in 0..MEDIA_RETRIES_MAX {
+            assert!(media_retry(&[], total, false, plain).is_some());
+        }
+        assert_eq!(media_retry(&[], MEDIA_RETRIES_MAX, false, plain), None, "errors coming back slowly end at the cap");
     }
 
     #[test]
