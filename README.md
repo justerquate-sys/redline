@@ -207,7 +207,9 @@ README's screenshots come from `node tools/screenshots/shoot.cjs` (signed out, a
 Redline has **no server, no analytics and no account of its own**. What it stores stays in your browser's
 extension storage on this device: preferences, your last 100 searches, resume positions for up to 2,000 videos,
 your topics and blocked websites, and the optional Deepgram key. Feeds, descriptions and recommendations stay in
-memory and in the current tab's session only. The public build records and sends no telemetry.
+memory and in the current tab's session only. The public build records and sends no telemetry. (Redline for TV
+has an opt-in developer switch under About & updates that sends speed timings to a debug center on your own
+network; it is off unless you turn it on.)
 
 It talks only to these services:
 
