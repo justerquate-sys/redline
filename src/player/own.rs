@@ -300,6 +300,8 @@ enum Tm {
     Poster,
     /// A SourceBuffer error waited this long for the element's error and its message (`sb_err`).
     SbErr,
+    /// A background URL refresh (`proactive_refresh`, generation) got no answer.
+    Proactive(u32),
 }
 
 struct Rep {
@@ -414,12 +416,15 @@ pub struct Own {
     /// The playhead and since when it has not moved while playing (the decoder watchdog).
     still: (f64, f64),
     /// When the URLs' expiry was last checked on the tick (a long video outlives its URLs), when
-    /// the URLs in use run out (`fail::url_deadline`, ms; 0 = not known yet), a proactive refresh
-    /// in flight, and no more proactive refreshes for this player (one failed, was bot-checked
-    /// or brought URLs as short-lived: never a request a minute on healthy playback).
+    /// the URLs in use came (wall clock, `bridge::epoch`; 0 = not known yet) and their lifetime (s,
+    /// `fail::url_left`), a proactive refresh in flight (its timeout's generation), and no more
+    /// proactive refreshes for this player (one failed, timed out, was bot-checked or brought
+    /// URLs as short-lived: never a request a minute on healthy playback).
     exp_at: f64,
-    url_deadline: f64,
+    urls_epoch: f64,
+    urls_life: f64,
     proactive: bool,
+    proactive_gen: u32,
     exp_off: bool,
     /// `ytc-test-nothrottle` (tests only), read once.
     no_throttle: bool,
@@ -721,8 +726,10 @@ impl Own {
             play_t: 0.0,
             still: (0.0, 0.0),
             exp_at: bridge::now(),
-            url_deadline: 0.0,
+            urls_epoch: 0.0,
+            urls_life: 0.0,
             proactive: false,
+            proactive_gen: 0,
             exp_off: false,
             no_throttle: bridge::local_flag("ytc-test-nothrottle"),
             avoid: Vec::new(),
@@ -1240,19 +1247,21 @@ impl Own {
                 }
             }
             // The new URLs' lifetime; a proactive refresh that did not lengthen it is not repeated.
-            let deadline = fail::url_deadline(bridge::now(), expires_in(&json), 0.0);
-            if self.proactive && !fail::refresh_helped(true, (deadline - bridge::now()) / 1000.0) {
+            let life = fail::url_life(expires_in(&json), 0.0);
+            if self.proactive && !fail::refresh_helped(true, life) {
                 self.exp_off = true;
                 self.note("the fresh URLs expire as soon: no more proactive refreshes".into());
             }
-            self.url_deadline = deadline;
+            self.urls_epoch = bridge::epoch();
+            self.urls_life = life;
             self.note(format!("player refreshed ({ms:.0} ms)"));
             self.end_refresh();
             return;
         }
         self.vision_ms = Some(ms);
         // A cached response's age is not known here: counted as the cache's limit (30 min).
-        self.url_deadline = fail::url_deadline(bridge::now(), expires_in(&json), if self.from_cache { 1800.0 } else { 0.0 });
+        self.urls_epoch = bridge::epoch();
+        self.urls_life = fail::url_life(expires_in(&json), if self.from_cache { 1800.0 } else { 0.0 });
         if ms > 0.0 {
             self.vision_ok = Some(std::rc::Rc::new(body.to_vec()));
         }
@@ -2779,6 +2788,18 @@ impl Own {
         }
         match t {
             Tm::Poster => self.drop_poster(),
+            Tm::Proactive(g) => {
+                if self.proactive && self.refreshing && g == self.proactive_gen {
+                    let ids: Vec<u32> = self.fetches.iter().filter(|(_, f)| matches!(f.req, Req::Vision(_))).map(|(id, _)| *id).collect();
+                    for id in ids {
+                        self.fetches.remove(&id);
+                        bridge::abort(id);
+                    }
+                    self.exp_off = true;
+                    self.note(format!("background URL refresh: no answer in {} s: keeping the URLs, no more proactive refreshes", VISION_TIMEOUT_MS / 1000));
+                    self.end_refresh();
+                }
+            }
             Tm::SbErr => {
                 if let Some((why, k)) = self.sb_err.take() {
                     let msg = bridge::media_str(self.vid, "error.message");
@@ -3262,7 +3283,7 @@ impl Own {
 
     /// Seconds until the URLs in use run out (their own lifetime from when they came), if known.
     fn urls_left(&self) -> Option<f64> {
-        (self.url_deadline > 0.0).then(|| (self.url_deadline - bridge::now()) / 1000.0)
+        (self.urls_epoch > 0.0).then(|| fail::url_left(self.urls_epoch, bridge::epoch(), self.urls_life))
     }
 
     /// Fresh URLs before the ones in use run out (within `fail::EXPIRY_MARGIN_S`), in the
@@ -3303,6 +3324,9 @@ impl Own {
         self.refreshing = true;
         self.media_refresh = true;
         self.proactive = true;
+        // Its own timeout (the player's VISIONOS timeout only guards the start).
+        self.proactive_gen += 1;
+        self.timer(Tm::Proactive(self.proactive_gen), VISION_TIMEOUT_MS);
         self.note(format!("{why}: URLs run out in {:.0} min: fresh player response in the background", left / 60.0));
         let route = self.route.clone();
         self.send_vision(&cfg, &route);
@@ -3325,8 +3349,13 @@ impl Own {
         if let Some((reason, kind, detail)) = self.deferred.take() {
             return self.media_error(reason, kind, &detail);
         }
-        if let Some(state) = self.broken() {
-            return self.media_error(format!("{state} (found on {why})"), None, "");
+        // A recovery still on its way (a fresh MediaSource before its metadata reads "lost its
+        // media"): not a second fault.
+        let pending = self.media_err.as_ref().is_some_and(|e| e.3 == 0.0) || !self.ms_open;
+        if !pending {
+            if let Some(state) = self.broken() {
+                return self.media_error(format!("{state} (found on {why})"), None, "");
+            }
         }
         self.proactive_refresh(why, true);
     }

@@ -231,12 +231,22 @@ pub const EXPIRY_MARGIN_S: f64 = 30.0 * 60.0;
 /// A player response without `expiresInSeconds`: googlevideo URLs live about six hours.
 pub const URL_LIFE_S: f64 = 5.5 * 3600.0;
 
-/// When URLs received at `received_ms` (monotonic ms, `bridge::now`) run out: their own lifetime
-/// (`streamingData.expiresInSeconds`), never the absolute `expire=` against this device's clock (a TV
-/// box without NTP can be hours off). `age_s`: how old the response already was (a cached one).
-pub fn url_deadline(received_ms: f64, expires_in_s: Option<f64>, age_s: f64) -> f64 {
-    let life = expires_in_s.filter(|s| *s > 0.0).unwrap_or(URL_LIFE_S);
-    received_ms + (life - age_s) * 1000.0
+/// Seconds left of URLs that arrived at `arrived_ms` (wall clock, `Date.now`) with `life_s` to live
+/// (`streamingData.expiresInSeconds`, else `URL_LIFE_S`; minus a cached response's age), at `now_ms`.
+/// Only the difference of two wall-clock readings is used: it counts a system sleep (the monotonic
+/// clock stops during one on macOS), and a device clock that is hours off cancels out. A clock set
+/// back (a negative difference) counts as run out: one refresh puts it right.
+pub fn url_left(arrived_ms: f64, now_ms: f64, life_s: f64) -> f64 {
+    let elapsed = now_ms - arrived_ms;
+    if elapsed < 0.0 {
+        return -1.0;
+    }
+    life_s - elapsed / 1000.0
+}
+
+/// A response's URL lifetime (s): `expiresInSeconds` when given, else `URL_LIFE_S`, minus `age_s`.
+pub fn url_life(expires_in_s: Option<f64>, age_s: f64) -> f64 {
+    expires_in_s.filter(|s| *s > 0.0).unwrap_or(URL_LIFE_S) - age_s
 }
 
 /// Whether URLs with `left_s` seconds to go should be replaced now.
@@ -305,10 +315,15 @@ mod tests {
 
     #[test]
     fn old_urls_and_stopped_decoders() {
-        // The URLs' own lifetime from when they came, not the device clock.
-        assert_eq!(url_deadline(1000.0, Some(21540.0), 0.0), 1000.0 + 21_540_000.0);
-        assert_eq!(url_deadline(0.0, None, 0.0), URL_LIFE_S * 1000.0);
-        assert_eq!(url_deadline(0.0, Some(3600.0), 1800.0), 1_800_000.0, "a cached response is older");
+        // The URLs' own lifetime from when they came: wall-clock elapsed, so a sleep counts.
+        assert_eq!(url_life(Some(21540.0), 0.0), 21540.0);
+        assert_eq!(url_life(None, 0.0), URL_LIFE_S);
+        assert_eq!(url_life(Some(3600.0), 1800.0), 1800.0, "a cached response is older");
+        let t0 = 1.0e12; // any device clock, right or hours off: only the difference counts
+        assert_eq!(url_left(t0, t0 + 3_600_000.0, 21540.0), 21540.0 - 3600.0);
+        assert!(urls_old(url_left(t0, t0 + 5.6 * 3_600_000.0, 21540.0)), "a laptop asleep for 5.6 h: near the end");
+        assert!(urls_old(url_left(t0, t0 - 60_000.0, 21540.0)), "the clock set back: refresh once");
+        assert!(urls_old(url_left(t0, t0 + 30.0 * 86_400_000.0, 21540.0)), "a jump forward: run out");
         assert!(!urls_old(6.0 * 3600.0));
         assert!(urls_old(20.0 * 60.0), "20 min to the expiry");
         assert!(urls_old(-5.0), "expired");

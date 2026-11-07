@@ -262,7 +262,7 @@ function visionFixture(v) {
   const fmts = v.startsWith('av1fault') ? [...media.formats, ...media.formats.filter(f => AV1_OF[f.itag]).map(f => ({ ...f, itag: AV1_OF[f.itag], mimeType: 'video/webm; codecs="av01.0.05M.08"', fps: 60 }))] : media.formats;
   const adaptiveFormats = fmts.map(f => ({ ...f, url: `${GV}?expire=${expireFor(v, gen)}&ei=E2E&ip=0.0.0.0&id=o-fixture&mn=sn-fixture%2Csn-fixture2&fvip=1&itag=${f.itag}&source=youtube&v=${v}&gen=${gen}&mime=${encodeURIComponent(f.mimeType.split(';')[0])}&clen=${f.contentLength}&c=VISIONOS` }));
   // staleurl… (first response) and expirenoext (every response): URLs that run out in 20 minutes.
-  const life = (v.startsWith('staleurl') && gen === 1) || v === 'expirenoext' ? '1200' : '21540';
+  const life = (v.startsWith('staleurl') && gen === 1) || v === 'expirenoext' || v === 'expirehang1' ? '1200' : '21540';
   return { responseContext: {}, playabilityStatus: { status: 'OK' }, streamingData: { expiresInSeconds: life, adaptiveFormats },
     videoDetails: { videoId: v, title: 'Fixture video', lengthSeconds: String(SECONDS), author: 'Fixture' } };
 }
@@ -611,6 +611,8 @@ async function handle(route) {
     // (The Home document's answer: the same data inside YouTube's page.)
     const ct = homeDocReq ? 'text/html; charset=utf-8' : 'application/json';
     const wrap = out => homeDocReq ? homeDoc(out, docN) : out;
+    // expirehang1: every VISIONOS request after its first never answers (a background refresh that hangs).
+    if (ep === 'player' && body.videoId === 'expirehang1' && body.context?.client?.clientName === 'VISIONOS' && log.api.filter(a => a.ep === 'player' && a.body.videoId === 'expirehang1' && a.body.context?.client?.clientName === 'VISIONOS').length > 1) return new Promise(() => {});
     const hs = HEDGE.stall;
     if (hs && hs.n > 0 && ep === hs.ep && !body.continuation && !isCheck(url) && (hs.home ? body.browseId === 'FEwhat_to_watch' : hs.q ? body.query === hs.q : body.videoId === hs.v)) {
       hs.n--;
@@ -3719,6 +3721,8 @@ chrome.runtime.onMessage.addListener(m => {
       midRelease();
       const seen = [];
       for (let i = 0; i < 150; i++) {
+        // Paused: the tab "shown" again and again while the recovery is on its way is no second fault.
+        if (paused && i < 15) await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
         const r = await vel();
         seen.push(r);
         if (r.f) break;
@@ -3840,6 +3844,24 @@ chrome.runtime.onMessage.addListener(m => {
     await waitT(t => document.getElementById('ytc-video').currentTime > t + 2, t1, 10000);
     assert.match(await playerNotes(), /no more proactive refreshes/);
     assert.equal(incidents.slice(inc0).filter(x => ['player-stuck', 'player-failed', 'player-recovered'].includes(x.kind)).length, 0);
+  }));
+
+  // A background refresh that never answers ends by its own timeout (8 s): the URLs stay, no more proactive
+  // refreshes, and the player is not left "refreshing" (a 403 later would wait for it for good).
+  await step('own player: a background URL refresh that never answers times out: URLs kept, no more proactive refreshes, playback goes on', () => noHedge(async () => {
+    const v = 'expirehang1', inc0 = incidents.length, n0 = visCalls(v).length;
+    await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+    await waitT(() => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video').currentTime > 1, null, 15000);
+    await page.evaluate(() => document.getElementById('ytc-video').pause());
+    await page.evaluate(() => document.getElementById('ytc-video').play());
+    assert.equal(await visWait(v, n0, 2), 2, 'one background refresh (it hangs)');
+    let notes = '';
+    for (let i = 0; i < 40 && !/background URL refresh: no answer/.test(notes); i++) { await page.waitForTimeout(500); notes = await playerNotes(); }
+    assert.match(notes, /background URL refresh: no answer in 8 s/);
+    for (let k = 0; k < 3; k++) { await page.evaluate(() => { const e = document.getElementById('ytc-video'); e.pause(); e.play(); document.dispatchEvent(new Event('visibilitychange')); }); await page.waitForTimeout(300); }
+    assert.equal(visCalls(v).length - n0, 2, 'no further refresh');
+    await waitT(() => { const e = document.getElementById('ytc-video'); return !e.paused && e.currentTime > 4; }, null, 15000);
+    assert.equal(incidents.slice(inc0).filter(x => ['player-stuck', 'player-failed'].includes(x.kind)).length, 0);
   }));
 
   await step('own player: media intent dwell overlaps a slow VISIONOS response instead of starting again after it', async () => {

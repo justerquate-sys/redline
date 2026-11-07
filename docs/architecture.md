@@ -927,7 +927,10 @@ played (a background tab may hold its decoders back; recovering then could spend
 streams still show the panel at once.
 *URLs that run out, a forgotten tab* (`own.rs` `proactive_refresh`, `wake_check`, `App::on_show`). The URLs' deadline is
 their own lifetime from when they came (`streamingData.expiresInSeconds`, else 5.5 h; a cached response counts as 30 min
-old), never `expire=` against the device clock (a TV box without NTP can be hours off). When the tab is shown again or
+old), measured as wall-clock time elapsed since they arrived (a system sleep counts; the monotonic clock stops during one
+on macOS), never `expire=` against the device clock (a TV box without NTP can be hours off; a clock set back counts as
+run out: one refresh). A background refresh has its own 8 s timeout (no answer: URLs kept, no more proactive refreshes),
+and the health check on a wake skips a recovery still on its way. When the tab is shown again or
 playback resumes after a pause (once the picture was there), the element and the MediaSource are checked (an error on
 the element, a closed MediaSource, an element that lost its media: recovered as above at once); and on those wakes and
 once a minute, URLs within 30 min of their deadline are refreshed **in the background**: requests in flight go on and
