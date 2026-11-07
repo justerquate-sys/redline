@@ -1,6 +1,6 @@
 [package]
 name = "ytc-client"
-version = "0.13.7"
+version = "0.13.8"
 edition = "2024"
 description = "Lumen: your own YouTube front-end at youtube.com, written in Rust (Wasm) as a browser extension"
 license = "MIT"
