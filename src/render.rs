@@ -31,7 +31,29 @@ pub fn suggestions(list: &[String]) -> String {
 
 /// The header logo: a link Home and a hover zone (`logo`: resting on it goes Home, `app/logo.rs`).
 pub const LOGO_ID: &str = "ytc-logo";
-const LOGO: &str = "<svg viewBox=\"0 0 28 20\" aria-hidden=\"true\"><rect width=\"28\" height=\"20\" rx=\"5\"/><path d=\"M11 5.5v9l8-4.5z\"/></svg>";
+/// The product's name, wherever the interface shows it.
+pub const NAME: &str = "Redline";
+
+/// The Redline mark, viewBox 0 0 32 24: a red rounded parallelogram leaning forward with a chevron cut out
+/// (one even-odd path, so the cut shows whatever is behind it). Its one source is `browser/icons/redline.svg`
+/// (a test keeps them equal); the toolbar icons and the TV launcher art are rendered from that file.
+macro_rules! mark_path {
+    () => {
+        "M12.54 2L27.54 2C30.03 2 31.23 4.01 30.22 6.5L25.78 17.5C24.77 19.99 21.95 22 19.46 22L4.46 22C1.97 22 0.77 19.99 1.78 17.5L6.22 6.5C7.23 4.01 10.05 2 12.54 2ZM12.44 6.64C12.09 6.29 12.21 6 12.7 6L16.5 6C17 6 17.69 6.29 18.04 6.64L22.64 11.24C23.06 11.66 23.06 12.34 22.64 12.76L18.04 17.36C17.69 17.71 17 18 16.5 18L12.7 18C12.21 18 12.09 17.71 12.44 17.36L17.29 12.51C17.57 12.23 17.57 11.77 17.29 11.49Z"
+    };
+}
+pub const MARK_PATH: &str = mark_path!();
+/// The mark as inline SVG (`class`: the place's own sizing; the fill is the brand red, `--brand`).
+macro_rules! mark_svg {
+    ($class:literal) => {
+        concat!("<svg class=\"", $class, "\" viewBox=\"0 0 32 24\" aria-hidden=\"true\"><path fill-rule=\"evenodd\" d=\"", mark_path!(), "\"/></svg>")
+    };
+}
+const LOGO: &str = mark_svg!("mk");
+/// The mark in the TV rail and on the TV's full-screen pages.
+pub const MARK: &str = mark_svg!("lmk");
+/// The browser toolbar popup's header.
+pub const POPUP_MARK: &str = mark_svg!("mk");
 
 // ---------------------------------------------------------------- hooks
 //
@@ -149,9 +171,6 @@ pub fn side_insets(i: usize) -> (String, String) {
     (format!("{}px", i * SIDE_ROW), format!("{}px", (SIDE.len() - 1 - i) * SIDE_ROW))
 }
 
-/// The Lumen mark (also the TV launcher icon, tv/scripts/banner.cjs): a mint squircle, a charcoal L and its
-/// light point.
-pub const MARK: &str = "<svg class=\"lmk\" viewBox=\"0 0 48 48\" aria-hidden=\"true\"><rect width=\"48\" height=\"48\" rx=\"14\"/><path d=\"M17.5 12.5v21h14\"/><circle cx=\"32\" cy=\"15.5\" r=\"4\"/></svg>";
 const GLASS: &str = "M15.5 15.5 21 21M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z";
 /// About & updates: two arrows turning round (an update).
 const UPDATE: &str = "M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5";
@@ -179,10 +198,10 @@ pub fn tv_rail_item(out: &mut String, nav: &str, label: &str, icon: &str, href: 
     out.push_str(if href.is_empty() { "</button>" } else { "</a>" });
 }
 
-/// TV: the rail (Lumen mark, Search, the pages, the account at the bottom) instead of the sidebar.
+/// TV: the rail (the Redline mark, Search, the pages, the account at the bottom) instead of the sidebar.
 fn tv_rail(out: &mut String, at: usize) {
     let (t, b) = side_insets(at);
-    out.push_str(&format!("<nav id=\"ytc-side\" class=\"tvr\" aria-label=\"Browse\"><span class=\"rmk\">{MARK}<b>Lumen</b></span><div class=\"rls\"><i id=\"{SIDE_PILL}\" class=\"sdi\" aria-hidden=\"true\" style=\"--st:{t};--sb:{b}\"></i>"));
+    out.push_str(&format!("<nav id=\"ytc-side\" class=\"tvr\" aria-label=\"Browse\"><span class=\"rmk\">{MARK}<b>{NAME}</b></span><div class=\"rls\"><i id=\"{SIDE_PILL}\" class=\"sdi\" aria-hidden=\"true\" style=\"--st:{t};--sb:{b}\"></i>"));
     for (nav, label, icon, href) in TV_RAIL {
         tv_rail_item(out, nav, label, icon, href, "tv-search");
     }
@@ -215,10 +234,10 @@ pub fn shell(route: &Route, _url: &str, main: Option<&str>) -> String {
         sidebar(&mut side, side_index(route.nav_key()).unwrap_or(0));
     }
     format!(
-        "<head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Lumen</title>\
+        "<head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{NAME}</title>\
 <link rel=\"preconnect\" href=\"https://i.ytimg.com\"><link rel=\"preconnect\" href=\"https://yt3.ggpht.com\"></head>\
 <body id=\"ytc\" data-nav=\"{nav}\"><header id=\"ytc-top\">\
-<a id=\"{LOGO_ID}\" class=\"logo\" href=\"/\" aria-label=\"YouTube home\" data-hov=\"logo\">{LOGO}<span>YouTube</span></a>\
+<a id=\"{LOGO_ID}\" class=\"logo\" href=\"/\" aria-label=\"{NAME} home\" data-hov=\"logo\">{LOGO}<span>{NAME}</span></a>\
 <form id=\"ytc-search\" role=\"search\" action=\"/results\"{key_input}><i class=\"qf\" aria-hidden=\"true\"></i>{tv_query}<input id=\"ytc-q\" name=\"search_query\" type=\"{query_type}\" placeholder=\"Search\" aria-label=\"Search\" autocomplete=\"off\" spellcheck=\"false\" role=\"combobox\" aria-autocomplete=\"list\" aria-controls=\"ytc-sug\" aria-expanded=\"false\" data-input=\"q\" data-focus=\"q\" value=\"{q}\"><button type=\"button\" class=\"qx\" data-act=\"fx-qx\" data-keep-focus aria-label=\"Clear search\" tabindex=\"-1\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m7 7 10 10M17 7 7 17\"/></svg></button><span id=\"ytc-qv\" class=\"qv\" aria-hidden=\"true\"></span><button type=\"button\" id=\"ytc-mic\" class=\"qm\" data-hov=\"mic\" data-act=\"vk-mic\" data-ctx=\"vk\" data-pop=\"vk\" data-keep-focus aria-label=\"Voice search\" aria-pressed=\"false\" aria-keyshortcuts=\"Alt\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"9\" y=\"3\" width=\"6\" height=\"11.5\" rx=\"3\"/><path d=\"M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21\"/></svg><i class=\"wv\" aria-hidden=\"true\"><b></b><b></b><b></b><b></b><b></b></i></button>{tv_keyboard}<ul id=\"ytc-sug\" class=\"sug\" role=\"listbox\" aria-label=\"Search history and suggestions\" data-keep-focus></ul><button type=\"submit\" class=\"qs\" aria-label=\"Search\"><svg viewBox=\"0.5 0.5 24 24\" aria-hidden=\"true\"><circle cx=\"10.5\" cy=\"10.5\" r=\"6.5\"/><path d=\"M15.5 15.5 21 21\"/></svg></button></form><div id=\"ytc-vk\" class=\"vk\" data-pop=\"vk\" role=\"dialog\" aria-label=\"Voice search\"></div>\
 <div class=\"tr\"><div id=\"ytc-hfx\"></div>{acct}</div>\
 </header>{side}<div id=\"{PILL}\"></div><main id=\"{MAIN}\">{main}</main><div id=\"{KEYS}\" role=\"dialog\" aria-label=\"Keyboard shortcuts\"></div><div id=\"ytc-imp\" class=\"imp\"></div><div id=\"{DEBUG}\" hidden></div></body>",
@@ -642,7 +661,7 @@ pub fn home_nudge(nudge: &str, signed_in: bool) -> String {
             // YouTube's own reason (e.g. history off), as a calm card with a way on.
             tv_prompt("Nothing on Home yet", nudge, &[("tv-search", "Search", true)])
         } else {
-            tv_prompt("Make Lumen yours", "Sign in with your phone to see your recommendations, subscriptions, history and Watch later here. Search works without an account.", &[("tv-signin", "Sign in with your phone", true), ("tv-search", "Search", false)])
+            tv_prompt("Make Redline yours", "Sign in with your phone to see your recommendations, subscriptions, history and Watch later here. Search works without an account.", &[("tv-signin", "Sign in with your phone", true), ("tv-search", "Search", false)])
         };
     }
     // TV: no autofocus (a focused field opens the on-screen keyboard, which takes the remote's arrows).
@@ -682,7 +701,7 @@ pub fn qr_svg(url: &str) -> String {
 /// TV sign-in / account screen (full screen over the app). `code`: (user code, verification URL) while a
 /// device sign-in runs; `status`: a line under the code.
 pub fn tv_panel(code: Option<(&str, &str)>, signed_in: bool, status: &str) -> String {
-    let mut out = format!("<div class=\"tvp\"><span class=\"rmk\">{MARK}<b>Lumen</b></span><div class=\"tvl\">");
+    let mut out = format!("<div class=\"tvp\"><span class=\"rmk\">{MARK}<b>{NAME}</b></span><div class=\"tvl\">");
     let mut new_code = false;
     match code {
         Some((c, url)) => {
@@ -736,7 +755,7 @@ pub fn tv_panel(code: Option<(&str, &str)>, signed_in: bool, status: &str) -> St
 /// `dev`: the Developer section (`tv_dev`), or "" while it is hidden.
 pub fn tv_about(info: Option<&crate::tv::ShellInfo>, running: u64, running_client: &str, now: f64, note: &str, dev: &str) -> String {
     use crate::tv::UpdateView as V;
-    let mut out = format!("<div class=\"tvp\"><span class=\"rmk\">{MARK}<b>Lumen</b></span><div class=\"tvl tvab\"><h2>About &amp; updates</h2><dl class=\"tvv\">");
+    let mut out = format!("<div class=\"tvp\"><span class=\"rmk\">{MARK}<b>{NAME}</b></span><div class=\"tvl tvab\"><h2>About &amp; updates</h2><dl class=\"tvv\">");
     let row = |out: &mut String, k: &str, v: &str| {
         out.push_str("<dt>");
         esc_into(out, k);
@@ -747,7 +766,7 @@ pub fn tv_about(info: Option<&crate::tv::ShellInfo>, running: u64, running_clien
     let view = info.map(|i| crate::tv::update_view(i, running));
     match info {
         Some(i) => {
-            row(&mut out, "App", &format!("Lumen for TV {}", i.version));
+            row(&mut out, "App", &format!("Redline for TV {}", i.version));
             // (The interface this screen runs; a newer one in the shell is the update.)
             let (client, build) = if running > 0 && !running_client.is_empty() { (running_client, running) } else { (i.client.as_str(), i.seq) };
             // (The build id in brackets is for bug reports: the version and the build number say enough here.)
@@ -767,18 +786,18 @@ pub fn tv_about(info: Option<&crate::tv::ShellInfo>, running: u64, running_clien
     out.push_str("</dl>");
     // The state, and the buttons it offers (the first is focused).
     let (cls, head, detail, buttons): (&str, String, String, Vec<(&str, &str, bool)>) = match &view {
-        None | Some(V::NotChecked) => ("", "Check for a new version".into(), "Lumen also checks by itself when it starts and every 6 hours.".into(), vec![("tv-check", "Check for updates", true)]),
+        None | Some(V::NotChecked) => ("", "Check for a new version".into(), "Redline also checks by itself when it starts and every 6 hours.".into(), vec![("tv-check", "Check for updates", true)]),
         Some(V::Checking) => ("busy", "Checking for updates…".into(), "Asking GitHub for the latest release.".into(), vec![("tv-check", "Check for updates", true)]),
-        Some(V::UpToDate) => ("ok", "Lumen is up to date".into(), info.map(|i| format!("App {} · interface {} (build {}).", i.version, i.client.split(" (").next().unwrap_or(&i.client), i.seq)).unwrap_or_default(), vec![("tv-check", "Check again", true)]),
+        Some(V::UpToDate) => ("ok", "Redline is up to date".into(), info.map(|i| format!("App {} · interface {} (build {}).", i.version, i.client.split(" (").next().unwrap_or(&i.client), i.seq)).unwrap_or_default(), vec![("tv-check", "Check again", true)]),
         Some(V::Ready) => (
             "new",
             "Update ready".into(),
             info.map(|i| format!("A new interface ({}, build {}) is downloaded and verified. Update now restarts the screen with it; you stay signed in.", i.client.split(" (").next().unwrap_or(&i.client), i.seq)).unwrap_or_default(),
             if info.and_then(|i| i.apk.as_ref()).is_some() { vec![("tv-apply", "Update now", true), ("tv-install", "Install app update", false)] } else { vec![("tv-apply", "Update now", true)] },
         ),
-        Some(V::App(v)) => ("new", format!("Lumen {v} is available"), "Install update downloads it, checks its signature and opens Android's installer. When Android has installed it, choose Open.".into(), vec![("tv-install", "Install update", true)]),
+        Some(V::App(v)) => ("new", format!("Redline {v} is available"), "Install update downloads it, checks its signature and opens Android's installer. When Android has installed it, choose Open.".into(), vec![("tv-install", "Install update", true)]),
         Some(V::Downloading(p)) => ("busy", match p { Some(p) => format!("Downloading the update… {p} %"), None => "Downloading the update…".into() }, "Android's installer opens when it is complete.".into(), vec![]),
-        Some(V::Installing) => ("busy", "Opening Android's installer…".into(), "Choose Install, then Open. (The first time, Android asks to allow installs from Lumen: allow it, then come back.)".into(), vec![("tv-install", "Install again", true)]),
+        Some(V::Installing) => ("busy", "Opening Android's installer…".into(), "Choose Install, then Open. (The first time, Android asks to allow installs from this app: allow it, then come back.)".into(), vec![("tv-install", "Install again", true)]),
         Some(V::NeedsApp) => ("", "A new version needs a newer app".into(), "It will be offered here as soon as it is published.".into(), vec![("tv-check", "Check again", true)]),
         Some(V::Failed(e)) => ("err", crate::tv::update_error(e).into(), e.clone(), vec![("tv-check", "Retry", true)]),
     };
@@ -815,7 +834,7 @@ pub fn tv_about(info: Option<&crate::tv::ShellInfo>, running: u64, running_clien
 pub fn tv_dev(t: Option<&crate::tv::TelInfo>, note: &str, err: bool) -> String {
     let mut out = String::from("<section class=\"tvus tvdv\" aria-label=\"Developer\"><b>Developer · speed telemetry</b><p>");
     let Some(t) = t else {
-        out.push_str("This app version cannot send telemetry: install the newest Lumen for TV first.</p></section>");
+        out.push_str("This app version cannot send telemetry: install the newest Redline for TV first.</p></section>");
         return out;
     };
     let addr = crate::tv::tel_addr(&t.url);
@@ -1078,7 +1097,7 @@ pub struct DebugInfo<'a> {
 }
 
 pub fn debug(d: &DebugInfo) -> String {
-    let mut s = format!("<b>Lumen {} debug</b> (press ` or Shift+D to close)\n", env!("CARGO_PKG_VERSION"));
+    let mut s = format!("<b>Redline {} debug</b> (press ` or Shift+D to close)\n", env!("CARGO_PKG_VERSION"));
     s.push_str(&format!("route  {}\n", esc(d.route)));
     s.push_str(&format!(
         "client WEB {} · visitor {} · SAPISID cookie {} · server loggedOut {} · authuser {}\n",
@@ -1105,6 +1124,19 @@ pub fn debug(d: &DebugInfo) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_mark_is_the_one_in_its_source_file_and_the_name_is_redline() {
+        let svg = include_str!("../browser/icons/redline.svg");
+        assert!(svg.contains(&format!("d=\"{MARK_PATH}\"")), "browser/icons/redline.svg and render.rs carry the same mark");
+        assert!(svg.contains("viewBox=\"0 0 32 24\"") && svg.contains("fill-rule=\"evenodd\""));
+        for m in [LOGO, MARK, POPUP_MARK] {
+            assert!(m.contains(MARK_PATH) && m.contains("viewBox=\"0 0 32 24\"") && m.contains("aria-hidden=\"true\""));
+        }
+        let page = shell(&Route::Home, "/", Some(""));
+        assert!(page.contains("<title>Redline</title>") && page.contains("aria-label=\"Redline home\""));
+        assert!(!page.contains("Lumen") && !page.contains("<span>YouTube</span>"));
+    }
+
     #[test]
     fn tv_details_keep_safe_links_and_chapter_actions() {
         let mut w = Watch {

@@ -1,6 +1,6 @@
 // Live: does the shape of the Home request change YouTube's answer? In one signed-out profile
 // (tools/bench/profile.cjs), without the extension, Home is asked in turns with YouTube's own context
-// (ytcfg's INNERTUBE_CONTEXT, what its web app sends) and with Lumen's (and variants), and the
+// (ytcfg's INNERTUBE_CONTEXT, what its web app sends) and with Redline's (and variants), and the
 // answers are compared: overlap of the top 24 within and across shapes, and how often YouTube's
 // sticky picks appear. Talks to the real youtube.com: run by hand, rarely.
 //   node tools/bench/home-parity.cjs [--n=8] [--shapes=youtube,lumen,lumen+tz]
@@ -17,7 +17,7 @@ const overlap = (a, b) => { a = a.slice(0, 24); b = b.slice(0, 24); const B = ne
   await page.waitForFunction(() => window.ytcfg && ytcfg.get('INNERTUBE_CONTEXT'), null, { timeout: 30000 });
   const ask = shape => page.evaluate(async shape => {
     const yc = ytcfg.get('INNERTUBE_CONTEXT'), vd = ytcfg.get('VISITOR_DATA'), ver = ytcfg.get('INNERTUBE_CLIENT_VERSION');
-    // Lumen's request as src/api.rs builds it (context + headers).
+    // Redline's request as src/api.rs builds it (context + headers).
     const lumen = { client: { clientName: 'WEB', clientVersion: ver, hl: 'en', platform: 'DESKTOP', originalUrl: 'https://www.youtube.com/', visitorData: vd }, user: { lockedSafetyMode: false } };
     const c = yc.client;
     const ctx = shape === 'youtube' ? yc

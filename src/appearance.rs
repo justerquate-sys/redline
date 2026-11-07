@@ -1,45 +1,23 @@
-//! Bounded appearance and SponsorSkip preferences. Patches preserve the rest of the config.
+//! The toolbar's preference patches (SponsorSkip). Patches preserve the rest of the config, including
+//! fields this version no longer reads (e.g. `theme` from 0.13.3–0.13.8: Redline has one palette, in
+//! client.css; a stored `theme` is ignored and never an error).
 
 use crate::{config::Config, player::sponsor};
 use serde_json::{Value, json};
 
-/// `localStorage` flag: the YouTube palette was the last one applied.
-const HINT: &str = "ytc-palette-youtube";
+/// The `localStorage` flag 0.13.3–0.13.8 kept for a new tab's first frame while the (removed) YouTube palette
+/// was chosen. Redline has one palette, so nothing is needed before `chrome.storage` answers; a flag
+/// left from those versions is removed once (one synchronous read per boot, nothing written when absent).
+const OLD_HINT: &str = "ytc-palette-youtube";
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Palette {
-    #[default]
-    Lumen,
-    Youtube,
-}
-
-impl Palette {
-    pub fn key(self) -> &'static str {
-        match self { Self::Lumen => "lumen", Self::Youtube => "youtube" }
-    }
-
-    pub fn from_key(key: &str) -> Option<Self> {
-        match key { "lumen" => Some(Self::Lumen), "youtube" => Some(Self::Youtube), _ => None }
-    }
-
-    pub fn apply(self) {
-        crate::bridge::root_attr("data-ytc-palette", Some(self.key().into()));
-        // Remembered for the first frame of the next new tab, which has no config yet (one flag, the palette only).
-        let yt = self == Self::Youtube;
-        if crate::bridge::local_flag(HINT) != yt {
-            crate::bridge::local_flag_set(HINT, yt);
-        }
-    }
-
-    /// The palette to paint before `chrome.storage` answers: the one this browser applied last.
-    pub fn hint() -> Self {
-        if crate::bridge::local_flag(HINT) { Self::Youtube } else { Self::Lumen }
+pub fn forget_old_hint() {
+    if crate::bridge::local_flag(OLD_HINT) {
+        crate::bridge::local_flag_set(OLD_HINT, false);
     }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Patch {
-    pub palette: Option<Palette>,
     pub sponsor_on: Option<bool>,
     pub skip_on: u16,
     pub skip_off: u16,
@@ -49,7 +27,6 @@ impl Patch {
     pub fn empty(self) -> bool { self == Self::default() }
 
     pub fn merge(&mut self, next: Self) {
-        if next.palette.is_some() { self.palette = next.palette; }
         if next.sponsor_on.is_some() { self.sponsor_on = next.sponsor_on; }
         self.skip_on = (self.skip_on & !next.skip_off) | next.skip_on;
         self.skip_off = (self.skip_off & !next.skip_on) | next.skip_off;
@@ -58,10 +35,6 @@ impl Patch {
     /// Re-read before writing; change only explicitly edited fields and category bits.
     pub fn apply(self, stored: &str) -> String {
         let mut v: Value = serde_json::from_str(stored).ok().filter(Value::is_object).unwrap_or_else(|| json!({}));
-        if let Some(palette) = self.palette {
-            if palette == Palette::Lumen { v.as_object_mut().unwrap().remove("theme"); }
-            else { v["theme"] = palette.key().into(); }
-        }
         if self.sponsor_on.is_some() || self.skip_on != 0 || self.skip_off != 0 {
             let old = Config::from_json(stored).prefs;
             if !v.get("p").is_some_and(Value::is_object) { v["p"] = json!({}); }
@@ -85,9 +58,10 @@ mod tests {
 
     #[test]
     fn patches_preserve_unrelated_and_concurrent_preferences() {
-        let old = r#"{"v":"2.20261030.01.00","vd":"visitor","au":2,"future":7,"p":{"vol":0.3,"cc":false,"cs":{"v":2,"x":0.2},"future":"kept"}}"#;
-        let patch = Patch { palette: Some(Palette::Youtube), sponsor_on: Some(false), skip_on: sponsor::Cat::Intro.bit(), ..Default::default() };
+        let old = r#"{"v":"2.20261030.01.00","vd":"visitor","au":2,"future":7,"theme":"youtube","p":{"vol":0.3,"cc":false,"cs":{"v":2,"x":0.2},"future":"kept"}}"#;
+        let patch = Patch { sponsor_on: Some(false), skip_on: sponsor::Cat::Intro.bit(), ..Default::default() };
         let v: Value = serde_json::from_str(&patch.apply(old)).unwrap();
+        // A field this version no longer reads stays as it was.
         assert_eq!(v["theme"], "youtube");
         assert_eq!(v["future"], 7);
         assert_eq!(v["p"]["vol"], 0.3);
@@ -96,7 +70,6 @@ mod tests {
         assert_eq!(v["p"]["future"], "kept");
         assert_eq!(v["p"]["sbo"], false);
         let cfg = Config::from_json(&v.to_string());
-        assert_eq!(cfg.palette, Palette::Youtube);
         assert_ne!(cfg.prefs.sb_skip & sponsor::Cat::Intro.bit(), 0);
         let concurrent = r#"{"p":{"vol":0.8,"sb":"sponsor,selfpromo,interaction,outro"}}"#;
         let changed = patch.apply(concurrent);
@@ -108,13 +81,21 @@ mod tests {
 
     #[test]
     fn latest_edits_win_and_defaults_stay_compact() {
-        let mut p = Patch { palette: Some(Palette::Youtube), sponsor_on: Some(false), skip_on: sponsor::Cat::Intro.bit(), ..Default::default() };
-        p.merge(Patch { palette: Some(Palette::Lumen), sponsor_on: Some(true), skip_off: sponsor::Cat::Intro.bit(), ..Default::default() });
-        let v: Value = serde_json::from_str(&p.apply(r#"{"theme":"youtube","p":{"sbo":false,"sb":"sponsor,selfpromo,interaction,intro"}}"#)).unwrap();
-        assert!(v.get("theme").is_none());
+        let mut p = Patch { sponsor_on: Some(false), skip_on: sponsor::Cat::Intro.bit(), ..Default::default() };
+        p.merge(Patch { sponsor_on: Some(true), skip_off: sponsor::Cat::Intro.bit(), ..Default::default() });
+        let v: Value = serde_json::from_str(&p.apply(r#"{"theme":"lumen","p":{"sbo":false,"sb":"sponsor,selfpromo,interaction,intro"}}"#)).unwrap();
         assert!(v["p"].get("sbo").is_none());
         assert!(v["p"].get("sb").is_none());
-        assert!(Palette::from_key("other").is_none());
-        assert_eq!(Config::from_json(r#"{"theme":"other"}"#).palette, Palette::Lumen);
+    }
+
+    #[test]
+    fn a_stored_palette_choice_is_harmless() {
+        // 0.13.3–0.13.8 stored `theme` ("youtube"; "lumen" never, but any value is tolerated): read as if absent.
+        for raw in [r#"{"theme":"lumen","au":1,"p":{"vol":0.5}}"#, r#"{"theme":"youtube","au":1,"p":{"vol":0.5}}"#, r#"{"theme":7,"au":1,"p":{"vol":0.5}}"#, r#"{"theme":null,"au":1,"p":{"vol":0.5}}"#] {
+            let cfg = Config::from_json(raw);
+            assert_eq!((cfg.auth_user, cfg.prefs.volume), (1, 0.5), "{raw}");
+            // The client's own config writes no longer carry it.
+            assert!(!cfg.to_json().contains("theme"), "{raw}");
+        }
     }
 }

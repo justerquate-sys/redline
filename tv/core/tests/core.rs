@@ -174,6 +174,62 @@ fn manifest_signature() {
 
 /// A fake GitHub release served locally: a newer bundle is downloaded, verified, cached and chosen;
 /// the APK is offered; a tampered file or a bundle needing a newer shell is not installed.
+/// The repository was renamed (justerquate-sys/lumen → justerquate-sys/redline). Apps built before have the old
+/// name compiled in: GitHub answers the old API path with a 301 to `/repositories/<id>/…` and the assets'
+/// `browser_download_url` carry the new name, answered with a 302 to the file's storage. The shell's `Http`
+/// follows both, so an installed app keeps finding, verifying and downloading updates.
+#[test]
+fn update_through_a_renamed_repository() {
+    let files: Vec<(&str, Vec<u8>)> = vec![
+        ("content.js", b"console.log('v3')".to_vec()),
+        ("client.css", b"a{}".to_vec()),
+        ("native.css", b"b{}".to_vec()),
+        ("rules.json", b"[]".to_vec()),
+    ];
+    let apk = b"PK-renamed".to_vec();
+    let refs: Vec<(&str, &[u8])> = files.iter().map(|(n, b)| (*n, b.as_slice())).collect();
+    let man = manifest(300, &refs, 1, Some(("lumen-tv-0.5.0.apk", &apk, 5000)));
+    let base = Arc::new(Mutex::new(String::new()));
+    let b2 = base.clone();
+    let m = mock::start(Arc::new(move |_m, path, _b| {
+        let base = b2.lock().unwrap().clone();
+        let names = ["lumen-tv-manifest.json", "lumen-tv-manifest.json.sig", "content.js", "client.css", "native.css", "rules.json", "lumen-tv-0.5.0.apk"];
+        match path {
+            "/repos/justerquate-sys/lumen/releases?per_page=10" => (301, format!("{base}/repositories/42/releases?per_page=10"), b"{\"message\":\"Moved Permanently\"}".to_vec()),
+            "/repositories/42/releases?per_page=10" => {
+                let assets: Vec<Value> = names
+                    .iter()
+                    .map(|n| json!({"name": n, "browser_download_url": format!("{base}/justerquate-sys/redline/releases/download/lumen-tv-0.5.0-300/{n}")}))
+                    .collect();
+                (200, "application/json".into(), json!([{"tag_name": "lumen-tv-0.5.0-300", "assets": assets}]).to_string().into_bytes())
+            }
+            p if p.starts_with("/justerquate-sys/redline/releases/download/") => (302, format!("{base}/objects/{}", p.rsplit('/').next().unwrap()), Vec::new()),
+            "/objects/lumen-tv-manifest.json" => (200, "application/json".into(), man.clone()),
+            "/objects/lumen-tv-manifest.json.sig" => (200, "text/plain".into(), sign(&man).into_bytes()),
+            "/objects/lumen-tv-0.5.0.apk" => (200, "application/octet-stream".into(), apk.clone()),
+            p => match files.iter().find(|(f, _)| p == format!("/objects/{f}")) {
+                Some((_, b)) => (200, "text/plain".into(), b.clone()),
+                None => (404, "text/plain".into(), Vec::new()),
+            },
+        }
+    }));
+    *base.lock().unwrap() = m.base.clone();
+    // What a 0.4.0 shell builds from its compiled-in REPO.
+    let api = format!("{}/repos/justerquate-sys/lumen/releases?per_page=10", m.base);
+    let pk = key().verifying_key().to_bytes();
+    let dir = std::env::temp_dir().join(format!("lumen-tv-renamed-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = release::check(&http(), &api, &pk, &dir.join("bundle"), 100, 4000).unwrap();
+    assert_eq!(out.bundle.expect("bundle installed through the redirects").file("content.js"), "console.log('v3')");
+    let offer = out.apk.expect("APK offered");
+    let p = release::download_apk(&http(), &offer, &dir).unwrap();
+    assert_eq!(std::fs::read(p).unwrap(), b"PK-renamed");
+    let log = m.log.lock().unwrap();
+    assert!(log.iter().any(|(_, p, _)| p == "/repos/justerquate-sys/lumen/releases?per_page=10") && log.iter().any(|(_, p, _)| p.starts_with("/objects/")));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn update_from_a_fake_release() {
     let files: Vec<(&str, Vec<u8>)> = vec![

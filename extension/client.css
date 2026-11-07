@@ -1,4 +1,4 @@
-/* Lumen: the whole page is ours (YouTube's app is stopped). Charcoal + mint.
+/* Redline: the whole page is ours (YouTube's app is stopped). Graphite, white and red.
    THE MOTION LAW (.claude/skills/lumen-motion/SKILL.md): motion never delays anything. Content and
    state are final on the first frame; animation is a compositor-only layer on top (transform/opacity),
    always interruptible (transitions retarget from the current value), feedback on pointerdown,
@@ -17,22 +17,17 @@
    icon-only buttons ≤ 40 px .95 (3 % of 36 px is one pixel, so they would not read); a glyph that squeezes
    inside a fixed control (Like icon, Watch-later bookmark) .84. */
 :root{--pd:.03;--pd-card:.015;--pd-icon:.05;--pd-glyph:.16}
-/* Palette: charcoal + mint by default. Surfaces step up in
+/* Palette (the only one): graphite surfaces, white text, selection and focus, red for the brand and playback,
+   blue for content links; SponsorBlock's category colors keep their meanings. Surfaces step up in
    lightness bg < pn < rs < cb; one hover wash (--hv), one selected tint for rows (--on + --ac text) and one
-   for chips/segments (solid --ac + --bg text). Text on every surface it sits on: --tx ≥ 10:1,
-   --mu ≥ 5:1, --fa (tertiary/disabled) ≥ 4.5:1 on bg/pn/rs, --er ≥ 5.7:1 (WCAG AA). */
-:root{--bg:#101315;--pn:#151a1d;--rs:#1c2428;--cb:#212b2e;--hv:#293936;--on:#233d36;--onh:#2b4a41;--fi:#171e21;--bd:#2c3639;--tk:#3b4649;
-  --ln:rgba(211,231,229,.09);--wa:rgba(237,243,243,.12);--sc:rgba(10,13,14,.78);
-  --tx:#edf3f3;--mu:#a0afb1;--fa:#7d8c90;--ac:#b7ebca;--ach:#cdf3da;--rd:#d93a3f;--er:#ff9a8f;
-  --brand:var(--ac);--brand-ink:var(--bg);--progress:var(--ac);--link:var(--ac);--link-h:var(--ach);
-  --sh:0 8px 28px rgba(0,0,0,.55);--r-card:14px;--r-pop:12px;--r-ctl:10px}
-/* YouTube's graphite/white/red colors, with the same layout and motion. Red belongs to the
-   logo and playback; selection and focus stay white, links blue, semantic segment colors intact. */
-html[data-ytc-palette=youtube]{--bg:#0f0f0f;--pn:#181818;--rs:#212121;--cb:#272727;--hv:#3f3f3f;
+   for chips/segments (solid --ac + --bg text). Text on every surface it sits on (WCAG AA, e2e-checked): --tx and
+   --mu, --fa (tertiary/disabled), --link and --er ≥ 4.5:1 on bg/pn/rs, --mu also on cb/hv; --ac under --bg text. */
+:root{--bg:#0f0f0f;--pn:#181818;--rs:#212121;--cb:#272727;--hv:#3f3f3f;
   --on:#303030;--onh:#454545;--fi:#121212;--bd:#3f3f3f;--tk:#717171;
   --ln:rgba(255,255,255,.1);--wa:rgba(255,255,255,.15);--sc:rgba(15,15,15,.84);
   --tx:#f1f1f1;--mu:#aaa;--fa:#999;--ac:#f1f1f1;--ach:#fff;--rd:#cc0000;--er:#ff9a8f;
-  --brand:#ff0033;--brand-ink:#fff;--progress:#ff0033;--link:#3ea6ff;--link-h:#80c5ff}
+  --brand:#ff0033;--brand-ink:#fff;--progress:#ff0033;--link:#3ea6ff;--link-h:#80c5ff;
+  --sh:0 8px 28px rgba(0,0,0,.55);--r-card:14px;--r-pop:12px;--r-ctl:10px}
 html{background:var(--bg);color-scheme:dark;overscroll-behavior:none;overflow-x:clip}
 body{overscroll-behavior:none;overflow-x:clip}
 #ytc{--sw:224px;margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
@@ -48,13 +43,13 @@ body{overscroll-behavior:none;overflow-x:clip}
 /* Header: logo | centered search (≤560px) | escape hatch */
 #ytc-top{position:sticky;top:0;z-index:10;display:grid;grid-template-columns:1fr minmax(0,720px) 1fr;align-items:center;gap:16px;height:64px;padding:0 20px;background:var(--bg)}
 #ytc .logo{justify-self:start;margin-left:10px;display:flex;align-items:center;gap:6px;font-weight:700;font-size:20px;letter-spacing:-.4px;transition:transform var(--d-press) var(--e-out)}
-.logo svg{display:block;width:32px;height:23px;overflow:visible}.logo rect{fill:var(--brand)}.logo path{fill:var(--brand-ink)}
-/* Logo: the tile swells a touch and the play mark leans forward on hover (spring); a press gives. */
-.logo rect,.logo path{transform-box:fill-box;transform-origin:center;transition:transform var(--d-spring) var(--spring)}
-@media (hover:hover) and (pointer:fine){#ytc .logo:hover rect{transform:scale(calc(1 + .07 * var(--mv)))}#ytc .logo:hover path{transform:translateX(calc(1.2px * var(--mv))) scale(calc(1 + .12 * var(--mv)))}}
+.logo svg{display:block;width:32px;height:24px;overflow:visible;fill:var(--brand)}
+/* Logo: the mark leans forward a touch on hover (spring), like it is about to go; a press gives. */
+.logo svg{transform-origin:center;transition:transform var(--d-spring) var(--spring)}
+@media (hover:hover) and (pointer:fine){#ytc .logo:hover svg{transform:translateX(calc(1.5px * var(--mv))) scale(calc(1 + .06 * var(--mv)))}}
 #ytc .logo:active{transform:scale(calc(1 - var(--pd) * var(--mv)))}
-#ytc .logo:active path{transform:scale(calc(1 - .16 * var(--mv)));transition-duration:var(--d-press)}
-/* Zero-click Home (app/logo.rs): resting on the logo fills a mint pill behind it left to right over the dwell
+#ytc .logo:active svg{transform:scale(calc(1 - .1 * var(--mv)));transition-duration:var(--d-press)}
+/* Zero-click Home (app/logo.rs): resting on the logo fills a soft accent pill behind it left to right over the dwell
    (logo::DWELL_MS; linear: it is a timer, like the player's Speed/Quality rows), then Home opens. Leaving
    early retracts and fades it; nothing waits for it. Reduced motion: a fade over the same time. */
 #ytc .logo{position:relative;isolation:isolate}
@@ -64,7 +59,7 @@ body{overscroll-behavior:none;overflow-x:clip}
 /* Search: one field surface under the input and the button (.qf: a border layer and a fill layer, both
    clipped). At rest the pill sits --qw inside the form on each side with the button and × tucked in; focus
    widens it to the form's full box on the house spring (clip-path keeps the 21 px ends exact on every frame)
-   and the button turns mint. The text never moves and nothing waits: typing paints on its own frame. Focus
+   and the button turns to the accent. The text never moves and nothing waits: typing paints on its own frame. Focus
    from a key (`/`, Tab) and the blur after Enter are instant (`.now`, set from Rust). */
 #ytc-search{--qw:calc(8px * var(--mv));position:relative;isolation:isolate;display:flex;min-width:0;height:42px}
 #ytc-search .qf{position:absolute;inset:0;z-index:-1;pointer-events:none}
@@ -98,9 +93,9 @@ body{overscroll-behavior:none;overflow-x:clip}
 #ytc-search.now :is(.qs,.qx,.qx svg,.qm),#ytc-search.now .qf::before,#ytc-search.now .qf::after{transition:none}
 /* Voice search (features/voice.rs, app/voiceglue.rs; no sound anywhere). The mic is one persistent button whose box
    is the listening pill (80×36). At rest its clip-path, which also clips hit-testing, leaves only a 32 px circle at the
-   pill's right end, so the hover target is exactly what is drawn. Hover: the wash is instant and the glyph turns mint
+   pill's right end, so the hover target is exactly what is drawn. Hover: the wash is instant and the glyph turns to the accent
    over exactly the 200 ms dwell (`voice::DWELL_MS`); then dictation starts and the circle stretches leftwards into the
-   pill on the house spring (a bigger target under the still pointer; the glyph never moves), tinted mint, with five bars
+   pill on the house spring (a bigger target under the still pointer; the glyph never moves), tinted with the accent, with five bars
    showing the live level: `--lv` (0..1) is written on the button by the bridge at most 30×/s and each bar is a scaleY of
    it on the compositor, each with its own weight and response so the row ripples. Leaving ends dictation and folds the
    pill back faster (--e-out). Keyboard dictation (held ⌥ Option, Enter on the mic: `data-v="key"`) shows the pill at
@@ -170,7 +165,7 @@ body{overscroll-behavior:none;overflow-x:clip}
    link gives on pointerdown and its icon squeezes. Active: one persistent pill (`.sdi`, a strip as tall as the
    six links clipped to the active row; Rust writes --st/--sb). A pointer navigation moves its two edges on the
    house spring, the leading edge quicker (`data-dir`), so it stretches toward the new page and settles while
-   the label turns mint. Keyboard g+letter, back/forward and restored pages move it at once (data-still). */
+   the label turns to the accent. Keyboard g+letter, back/forward and restored pages move it at once (data-still). */
 /* The sidebar starts where the content does (its first row on the chip row), rows the chips' height, the logo's
    tile centred over the icon column. */
 #ytc-side{position:fixed;top:64px;left:0;bottom:0;width:var(--sw);box-sizing:border-box;padding:8px 20px;overflow:auto}
@@ -233,7 +228,7 @@ body{overscroll-behavior:none;overflow-x:clip}
    Leaving springs everything back from wherever it is. */
 .th>img,.th>.pv{transition:scale var(--d-spring-soft) var(--spring)}
 #ytc .th>img.ldf,#ytc .th>.pv.ldf{transition:opacity var(--d-panel) var(--e-out),scale var(--d-spring-soft) var(--spring)}
-.th::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(237,243,243,.07),transparent 36%,transparent 52%,rgba(6,9,10,.4));opacity:0;transition:opacity var(--d-panel) var(--e-out)}
+.th::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(241,241,241,.07),transparent 36%,transparent 52%,rgba(0,0,0,.4));opacity:0;transition:opacity var(--d-panel) var(--e-out)}
 .chc .th::after{content:none}
 .th i{transform-origin:0 100%;transition:transform var(--d-spring) var(--spring)}
 @media (hover:hover) and (pointer:fine){
@@ -416,12 +411,12 @@ body{overscroll-behavior:none;overflow-x:clip}
 .ptip b{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-weight:600}.ptip b:empty{display:none}
 .ptip span{font-variant-numeric:tabular-nums}.ptip b:not(:empty)+span{color:var(--mu)}
 .player.glide .ppos,.player.glide .pknob{transition:transform 250ms linear}
-/* Press ripple: where the pointer lands on the bar, a mint dot swells and fades (one-shot, bridge replay). */
+/* Press ripple: where the pointer lands on the bar, a red dot swells and fades (one-shot, bridge replay). */
 .prip{position:absolute;left:-9px;top:50%;width:18px;height:18px;margin-top:-9px;border-radius:50%;background:var(--progress);pointer-events:none;opacity:0;transform:translateX(calc(var(--r,0) * 100cqw))}
 .prip.on{animation:ytcrip 520ms var(--e-out) both}
 @keyframes ytcrip{from{opacity:.45;scale:calc(1 - .7 * var(--mv))}to{opacity:0;scale:calc(1 + .5 * var(--mv))}}
 /* Buffering during playback (not the first load: the poster is the only loading state): after .6 s the
-   empty track breathes mint, calmly; nothing spins. */
+   empty track breathes, calmly; nothing spins. */
 .pbar::before{content:"";position:absolute;inset:0;background:var(--progress);opacity:0}
 .player.stall .pbar::before{animation:ytcbreath 1.1s var(--e-io) .6s infinite alternate}
 @keyframes ytcbreath{to{opacity:.32}}
@@ -464,7 +459,7 @@ body{overscroll-behavior:none;overflow-x:clip}
 .plbl{font:600 13px/1 Arial,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none}
 .plbl.pq{padding:3px 4px 2px;border:1.5px solid currentColor;border-radius:4px;font-size:11px;letter-spacing:.02em}
 .pb svg.i-ccon{fill:currentColor;stroke:none}
-/* Volume: a mint fill up to the thumb's centre (--v, written by Rust with the value); the thumb grows under the
+/* Volume: an accent fill up to the thumb's centre (--v, written by Rust with the value); the thumb grows under the
    pointer and more while held, on the UI spring (like the Filters length slider). */
 .pvol{-webkit-appearance:none;appearance:none;width:68px;height:16px;margin:0 2px;background:none;cursor:pointer}
 .pvol::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--ac) calc(6px + var(--v,1) * (100% - 12px)),rgba(255,255,255,.3) 0)}
@@ -547,8 +542,8 @@ body{overscroll-behavior:none;overflow-x:clip}
 .msw i{position:relative;width:30px;height:16px;border-radius:8px;background:var(--tk);transition:background-color var(--d-hover) var(--e-out)}.msw i::after{content:"";position:absolute;left:2px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--tx);transition:transform calc(var(--d-spring) * var(--mv)) var(--spring),background-color var(--d-hover) var(--e-out)}
 .msw[aria-checked=true] i{background:var(--ac)}.msw[aria-checked=true] i::after{transform:translateX(14px);background:var(--bg)}
 .msw:focus-visible i,.msw:focus-visible i::after{transition-duration:0s}
-/* SponsorBlock (player/sponsor.rs). Category colors: SponsorBlock's own hues, softened for charcoal and kept apart
-   from the mint progress fill (sponsor is a deeper, saturated green; pure blue/purple lifted to stay legible). */
+/* SponsorBlock (player/sponsor.rs). Category colors: SponsorBlock's own hues, softened for the dark surfaces and kept apart
+   from the red progress fill (highlight stays pink; pure blue/purple lifted to stay legible). */
 #ytc-player .k0{--k:#34c77b}#ytc-player .k1{--k:#f0d454}#ytc-player .k2{--k:#dc79f2}#ytc-player .k3{--k:#48d6e3}#ytc-player .k4{--k:#7088ff}
 #ytc-player .k5{--k:#4ba3e3}#ytc-player .k6{--k:#ffa94d}#ytc-player .k7{--k:#9a80ff}#ytc-player .k8{--k:#ff5c9d}
 /* Ranges sit inside each chapter segment, above the fills (positions local to the segment, which runs --g past its
@@ -605,7 +600,7 @@ body{overscroll-behavior:none;overflow-x:clip}
 #ytc:not([data-still="1"]) #ytc-nt-b.r1 svg{animation:ytcring1 700ms var(--e-out)}#ytc:not([data-still="1"]) #ytc-nt-b.r2 svg{animation:ytcring2 700ms var(--e-out)}
 @keyframes ytcring1{12%{transform:rotate(calc(16deg * var(--mv)))}28%{transform:rotate(calc(-13deg * var(--mv)))}44%{transform:rotate(calc(9deg * var(--mv)))}60%{transform:rotate(calc(-5deg * var(--mv)))}76%{transform:rotate(calc(2deg * var(--mv)))}}
 @keyframes ytcring2{12%{transform:rotate(calc(16deg * var(--mv)))}28%{transform:rotate(calc(-13deg * var(--mv)))}44%{transform:rotate(calc(9deg * var(--mv)))}60%{transform:rotate(calc(-5deg * var(--mv)))}76%{transform:rotate(calc(2deg * var(--mv)))}}
-/* Avatar: the photo leans in on hover; an open account menu rings it in mint. */
+/* Avatar: the photo leans in on hover; an open account menu rings it in the accent. */
 #ytc .yac-av::after{content:"";position:absolute;inset:1px;border:2px solid var(--ac);border-radius:50%;pointer-events:none;opacity:0;transform:scale(calc(1 - .14 * var(--mv)));transition:opacity var(--d-pop-out) var(--e-out),transform var(--d-pop-out) var(--e-out)}
 #ytc .yac-av[aria-expanded=true]::after{opacity:1;transform:none;transition:opacity var(--d-pop) var(--e-out),transform var(--d-spring) var(--spring)}
 @media (hover:hover) and (pointer:fine){#ytc #ytc-nt-b:hover svg{transform:rotate(calc(12deg * var(--mv)))}#ytc .yac-av:hover img{transform:scale(calc(1 + .06 * var(--mv)))}}
@@ -676,7 +671,7 @@ body{overscroll-behavior:none;overflow-x:clip}
 #ytc :is(.ya-b,.ya-sub,.yac-b,.yac-av,.pill,.ya-cp,.ya-new button,button.fx-ch,a.fx-ch,.fx-fb,.fx-add button,.fx-sw,.fx-list button,.sgx,.fx-blk,.ych a,.lnk2,.ycrb,.fx-clr):hover{transition-duration:var(--d-press),0s,0s,0s,var(--d-hover)}
 #ytc :is(.ya-b,.ya-sub,.pill,.ya-cp,.ya-new button,button.fx-ch,a.fx-ch,.fx-fb,.fx-add button,.fx-sw):active{transform:scale(calc(1 - var(--pd) * var(--mv)))}
 #ytc :is(.yac-b,.yac-av,.fx-tx,.fx-list button,.sgx):active{transform:scale(calc(1 - var(--pd-icon) * var(--mv)))}
-/* Mint primaries (Subscribe, New videos, Play now, Copy, Create, Add) lighten on hover. */
+/* Accent primaries (Subscribe, New videos, Play now, Copy, Create, Add) lighten on hover. */
 #ytc :is(.pill,.ya-cp,.ya-new button,.fx-add button,.ya-sub:not(.on):not(.confirm)):hover{background:var(--ach)}
 /* The joined Like|Dislike pill does not split on press: its icon squeezes instead and springs back. */
 #ytc .ya-ld .ya-b:active{transform:none}
@@ -685,7 +680,7 @@ body{overscroll-behavior:none;overflow-x:clip}
 #ytc .ya-b svg{width:20px;height:20px;fill:transparent;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round}
 #ytc .ya-b.on svg{fill:var(--ac);stroke:var(--ac)}
 #ytc .ya-b.dis svg{transform:rotate(180deg)}
-/* Save: a bookmark that fills bottom-up in mint while the video is in any playlist (clip-path on a filled
+/* Save: a bookmark that fills bottom-up in the accent while the video is in any playlist (clip-path on a filled
    copy, soft spring; emptying drains faster); keyboard changes (.now) switch at once. */
 #ytc .ya-bm{display:grid;width:20px;height:20px;flex:none}
 #ytc .ya-bm svg{grid-area:1/1;display:block;transition:stroke var(--d-hover) var(--e-out)}
@@ -718,7 +713,7 @@ body{overscroll-behavior:none;overflow-x:clip}
 #ytc .ya-opt{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:none;color:var(--tx);text-align:left;font-size:14px;cursor:pointer}
 #ytc .ya-opt span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #ytc .ya-opt small{color:var(--fa);font-size:12px}
-/* Checkboxes: the box fills mint and its check mark draws itself in (stroke-dashoffset on a persistent path);
+/* Checkboxes: the box fills with the accent and its check mark draws itself in (stroke-dashoffset on a persistent path);
    unchecking erases it faster; a press squeezes the box and it springs back. Keys toggle it at once (.now). */
 #ytc .ya-ck{flex:none;display:flex;width:16px;height:16px;border:2px solid var(--mu);border-radius:4px;box-sizing:border-box;transition:background-color var(--d-hover) var(--e-out),border-color var(--d-hover) var(--e-out),scale var(--d-spring) var(--spring)}
 #ytc .ya-ck svg{display:block;width:12px;height:12px;fill:none;stroke:var(--bg);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1 1.5;stroke-dashoffset:1.2;transition:stroke-dashoffset var(--d-press) var(--e-out)}
@@ -733,7 +728,7 @@ body{overscroll-behavior:none;overflow-x:clip}
 #ytc #ytc-share-p{width:340px;padding:12px 6px 6px}
 #ytc .ya-sh{display:flex;gap:6px;margin:0 6px 6px}
 /* Copy → "✓ Copied": one persistent button (its width fits both labels). The label rolls up and blurs away,
-   the confirmation rises in, its check draws itself, the mint fill settles to the tinted "done" look; it rolls
+   the confirmation rises in, its check draws itself, the accent fill settles to the tinted "done" look; it rolls
    back after a moment. */
 #ytc .ya-cp{display:inline-grid;align-items:center;justify-items:center}
 #ytc .ya-cp>span{grid-area:1/1;display:flex;align-items:center;gap:4px;transition:opacity var(--d-pop) var(--e-out),translate var(--d-spring) var(--spring),filter var(--d-pop) var(--e-out)}
@@ -812,7 +807,7 @@ body{overscroll-behavior:none;overflow-x:clip}
 #ytc .yc-sort button:not(.on):hover{background:var(--hv);transition-duration:0s,0s,var(--d-press)}
 #ytc .yc-sort button:active{transform:scale(calc(1 - var(--pd) * var(--mv)))}
 #ytc .yc-sort button.on{background:var(--ac);color:var(--bg)}
-/* Top/Newest: the mint pill is one persistent mark behind the tabs (bridge mark_slide, `.ycsk`); a pointer
+/* Top/Newest: the accent pill is one persistent mark behind the tabs (bridge mark_slide, `.ycsk`); a pointer
    switch springs it across while the labels' colors follow on the same curve (keyboard: instant). */
 .ycsk{position:absolute;left:0;top:0;width:100%;z-index:-1;pointer-events:none;background:var(--ac);transition:clip-path calc(var(--d-spring) * var(--mv)) var(--spring)}
 /* While the pill is placed, each tab's grey surface is its ::before one layer below the pill (and the press scales
@@ -951,7 +946,7 @@ body{overscroll-behavior:none;overflow-x:clip}
 .fx-row{display:flex;flex-wrap:wrap;gap:6px}
 .fx-row .fx-ch{padding:5px 10px;font-size:13px;line-height:18px;border-radius:8px}
 .fx-sl{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mu)}
-/* Minimum-length slider: a mint fill up to the thumb's centre (--v = value / max, written by Rust with the
+/* Minimum-length slider: an accent fill up to the thumb's centre (--v = value / max, written by Rust with the
    value); the thumb grows a little under the pointer and more while held, on the UI spring. */
 .fx-sl input{-webkit-appearance:none;appearance:none;flex:1;height:16px;margin:0;background:none;cursor:pointer}
 .fx-sl input::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--ac) calc(7px + var(--v,0) * (100% - 14px)),var(--tk) 0)}
@@ -1070,7 +1065,7 @@ details.pl:not([open]) summary::after{transform:translateY(2px) rotate(-135deg)}
 .upbar{position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--ac);transform-origin:0 50%;animation:ytccd var(--cd,5s) linear both}
 @keyframes ytccd{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 .upc b{font-weight:600}
-/* Play now fills with mint as the countdown runs (linear: it is time): a copy of the label in the filled look is
+/* Play now fills with the accent as the countdown runs (linear: it is time): a copy of the label in the filled look is
    revealed left to right by a clip-path, so the text inverts exactly at the fill's edge. */
 #ytc .upc .pill.upnow{position:relative;overflow:hidden;background:var(--on);color:var(--ac);box-shadow:none}
 #ytc .upc .pill.upnow:hover{background:var(--onh)}
@@ -1117,27 +1112,27 @@ details.pl:not([open]) summary::after{transform:translateY(2px) rotate(-135deg)}
    resolution: the root font-size is 1/60 of the viewport width, so 1rem = 16 CSS px on the 960×540 WebView most
    Google TV sets report (32 device px at DPR 2), 32 px at 1920×1080 and 64 px at 3840: everything below is in rem
    and looks the same on all of them. Content and focus rings stay in the overscan-safe area (5 % per side:
-   --sx × --sy); backgrounds and pictures may bleed. One focus style everywhere: a steady mint frame and a raised neutral surface. Remote focus, panels and
+   --sx × --sy); backgrounds and pictures may bleed. One focus style everywhere: a steady white frame (the accent) and a raised neutral surface. Remote focus, panels and
    scrolling are immediate. Video carries the colour; chrome never grows or shifts under the remote. No pointer: no hover affordances, no hover-only controls. */
 @property --sr{syntax:"<length>";inherits:false;initial-value:0px}
 html[data-ytc-tv]{font-size:calc(100vw / 60);--sx:3rem;--sy:1.6875rem;--ring:.1875rem;--tvrow:2.875rem;scroll-padding:5rem 0 var(--sy);overflow-x:clip}
-html[data-ytc-tv] #ytc{--sw:0px;font-size:.875rem;line-height:1.35;--tvf:Roboto,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-family:var(--tvf);--hv:#293134;--on:#252e2e;--onh:#303b3b;--fa:#9aa5a8;--e-out:cubic-bezier(.22,1,.36,1);--mv:0;--d-press:0ms;--d-hover:0ms;--d-pop:0ms;--d-pop-out:0ms;--d-panel:0ms;--d-page:0ms;--d-spring:0ms;--d-spring-soft:0ms;--d-spring-pop:0ms}
+html[data-ytc-tv] #ytc{--sw:0px;font-size:.875rem;line-height:1.35;--tvf:Roboto,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-family:var(--tvf);--e-out:cubic-bezier(.22,1,.36,1);--mv:0;--d-press:0ms;--d-hover:0ms;--d-pop:0ms;--d-pop-out:0ms;--d-panel:0ms;--d-page:0ms;--d-spring:0ms;--d-spring-soft:0ms;--d-spring-pop:0ms}
 html[data-ytc-tv] #ytc :focus-visible{animation:none}
 html[data-ytc-tv] #ytc :focus{outline:none}
 /* One steady focus frame. No geometry changes when a remote key is pressed. */
 html[data-ytc-tv] #ytc :is(.tvb,.fx-ch,.sg a,.sgx,.pill,.lnk2,.fx-sw,.pfbt,.psbt button,.ya-b,.ya-opt,.ya-cp):focus{outline:var(--ring) solid var(--ac);outline-offset:.1875rem;scale:none}
 html[data-ytc-tv] #ytc :is(.tvb,.fx-ch,.pill,.lnk2,.pfbt,.psbt button){transition:none;}
-html[data-ytc-tv] .lmk{display:block;flex:none}html[data-ytc-tv] .lmk rect{fill:var(--ac);stroke:none}html[data-ytc-tv] .lmk path{fill:none;stroke:var(--bg);stroke-width:6.5;stroke-linecap:round;stroke-linejoin:round}html[data-ytc-tv] .lmk circle{fill:var(--bg);stroke:none}
+html[data-ytc-tv] .lmk{display:block;flex:none}html[data-ytc-tv] .lmk path{fill:var(--brand);stroke:none}
 /* Pointer-only or desktop-only parts. */
 html[data-ytc-tv] :is(#ytc .logo,#ytc-mic,#ytc-vk,.qx,#ytc-hfx,.c .ca,.fx-ed,.fx-tx,#ytc-keys,.pct,#ytc-pl,.upn,#ytc-chap){display:none!important}
 
-/* ---- the rail: the Lumen mark, Search, the pages, the account at the bottom. Collapsed it shows the icons; the
+/* ---- the rail: the Redline mark, Search, the pages, the account at the bottom. Collapsed it shows the icons; the
    focus entering it reveals labels over the content at once; the page keeps its position. */
 html[data-ytc-tv] #ytc-side{position:fixed;inset:0 auto 0 0;width:7rem;padding:0;margin:0;overflow:visible;z-index:30;clip-path:none;background:none}
 html[data-ytc-tv] #ytc-side::after{content:"";position:absolute;inset:0 auto 0 0;width:18rem;z-index:-1;background:linear-gradient(90deg,var(--pn) 15.5rem,color-mix(in srgb,var(--pn) 0%,transparent));opacity:0;transform:none;transition:none;pointer-events:none}
 html[data-ytc-tv] #ytc-side:focus-within::after{opacity:1;transform:none;}
 html[data-ytc-tv] .rmk{position:absolute;left:3.75rem;top:var(--sy);display:flex;align-items:center;gap:.625rem;height:2rem}
-html[data-ytc-tv] #ytc .rmk .lmk{width:2rem;height:2rem;stroke:none;transform:none}
+html[data-ytc-tv] #ytc .rmk .lmk{width:2rem;height:1.5rem;stroke:none;transform:none}
 html[data-ytc-tv] .rmk b{font-size:1.125rem;font-weight:600;letter-spacing:0;color:var(--tx);opacity:0;translate:none;transition:none;}
 html[data-ytc-tv] #ytc-side:focus-within .rmk b{opacity:1;translate:0;}
 html[data-ytc-tv] .rls{position:absolute;left:3.375rem;top:5.25rem;width:12.5rem}
@@ -1152,9 +1147,9 @@ html[data-ytc-tv] #ytc-side:focus-within .rl span{opacity:1;translate:0;}
 html[data-ytc-tv] #ytc-side .rl:focus{color:var(--tx);outline:var(--ring) solid var(--ac);outline-offset:.125rem;scale:none}
 html[data-ytc-tv] #ytc-side .rl:focus::before{opacity:1}
 html[data-ytc-tv] #ytc-side .rl:active{transform:none}
-/* An update is ready: a mint dot on About & updates. */
+/* An update is ready: an accent dot on About & updates. */
 html[data-ytc-tv] #ytc-side .rl.upd::after{content:"";position:absolute;left:1.625rem;top:.4375rem;width:.5rem;height:.5rem;border-radius:50%;background:var(--ac);box-shadow:0 0 0 .1875rem var(--bg)}
-/* The page's item: one persistent mint pill (a strip over all seven rows clipped to the active one by --st/--sb,
+/* The page's item: one persistent accent pill (a strip over all seven rows clipped to the active one by --st/--sb,
    written by Rust): navigation and rail expansion update the frame immediately. */
 html[data-ytc-tv] #ytc-side .sdi{position:absolute;top:0;left:0;width:12.5rem;height:calc(7 * var(--tvrow) - .375rem);--sr:10rem;background:var(--on);opacity:1;clip-path:inset(var(--st) var(--sr) var(--sb) 0 round .5rem);transition:none;}
 html[data-ytc-tv] #ytc-side:focus-within .sdi{--sr:0px;}
@@ -1214,7 +1209,7 @@ html[data-ytc-tv] #ytc .pill{height:2.25rem;padding:0 1.25rem;border-radius:.375
 /* ---- calm cards (signed-out Home, sign-in needed, a failed page) */
 html[data-ytc-tv] .tvpc{display:grid;place-items:center;min-height:calc(100vh - 2 * var(--sy) - 4rem)}
 html[data-ytc-tv] .tvcd{width:30rem;box-sizing:border-box;padding:2.25rem 2.5rem;border-radius:1.25rem;background:var(--pn);display:grid;gap:1rem;justify-items:start}
-html[data-ytc-tv] .tvcd .lmk{width:2.5rem;height:2.5rem}
+html[data-ytc-tv] .tvcd .lmk{width:2.5rem;height:1.875rem}
 html[data-ytc-tv] #ytc .tvcd h2{margin:0;font-size:1.75rem;line-height:2.125rem;font-weight:500;letter-spacing:-.015em}
 html[data-ytc-tv] .tvcd p{margin:0;font-size:.875rem;line-height:1.3125rem;color:var(--mu)}
 html[data-ytc-tv] .tvbs{display:flex;gap:1rem;margin-top:.5rem}
@@ -1275,7 +1270,7 @@ html[data-ytc-tv] .player video{object-fit:contain}
 html[data-ytc-tv] .player .pov{cursor:default}
 /* The top: title and channel over a scrim. */
 html[data-ytc-tv] #ytc-info{position:fixed;z-index:11;left:var(--sx);top:var(--sy);width:42rem;padding:0;pointer-events:none;transition:none;}
-html[data-ytc-tv] .watch .wp::before{content:"";position:fixed;z-index:11;left:0;right:0;top:0;height:10rem;background:linear-gradient(rgba(10,13,14,.82),rgba(10,13,14,0));pointer-events:none;transition:none;}
+html[data-ytc-tv] .watch .wp::before{content:"";position:fixed;z-index:11;left:0;right:0;top:0;height:10rem;background:linear-gradient(rgba(15,15,15,.82),rgba(15,15,15,0));pointer-events:none;transition:none;}
 html[data-ytc-tv] .wp:has(#ytc-player.idle)::before,html[data-ytc-tv] .wp:has(#ytc-player.menu)::before,html[data-ytc-tv] #ytc-player.idle~#ytc-info,html[data-ytc-tv] #ytc-player.menu~#ytc-info,html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on) #ytc-info,html[data-ytc-tv] .wp:has(.pfail)::before,html[data-ytc-tv] #ytc-player:has(.pfail)~#ytc-info{opacity:0;transition:none;}
 html[data-ytc-tv] #ytc .wt{margin:0;font-size:1.5rem;line-height:1.875rem;font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 html[data-ytc-tv] #ytc-info .wo{display:flex;align-items:center;gap:.625rem;margin-top:.5rem;min-height:1.5rem}
@@ -1283,7 +1278,7 @@ html[data-ytc-tv] #ytc-info .wo .av{width:1.5rem;height:1.5rem;border-radius:50%
 html[data-ytc-tv] #ytc-info .wc{font-size:.9375rem;color:var(--mu)}
 html[data-ytc-tv] #ytc-info :is(.wn .m,.wsub,.wa,.desc,.ych){display:none}
 /* The bottom: time row, the thick seek bar, the round buttons. */
-html[data-ytc-tv] .pctl{z-index:12;padding:6rem 3.625rem 3.5rem;background:linear-gradient(rgba(10,13,14,0),rgba(10,13,14,.9) 70%);transition:none;}
+html[data-ytc-tv] .pctl{z-index:12;padding:6rem 3.625rem 3.5rem;background:linear-gradient(rgba(15,15,15,0),rgba(15,15,15,.9) 70%);transition:none;}
 html[data-ytc-tv] .player.idle .pctl{transition:none;}
 /* (A pointer's cursor stays while the controls have the focus; only with a pointer: on a remote this :has() restyled
    every element of the player on each button move, ~280 elements three times, ~200 ms per press at a TV's CPU.) */
@@ -1300,7 +1295,7 @@ html[data-ytc-tv] .pseek{height:1.25rem;outline:none!important}
 html[data-ytc-tv] .psegs{height:.25rem;transform-origin:50% 50%;transition:none;}
 html[data-ytc-tv] .pseek:focus .psegs{transform:scaleY(1.5)}
 html[data-ytc-tv] .pbar{border-radius:.125rem}html[data-ytc-tv] .pbar:not(:last-child){--g:.1875rem}
-html[data-ytc-tv] .pbuf{background:rgba(237,243,243,.4)}
+html[data-ytc-tv] .pbuf{background:rgba(241,241,241,.4)}
 html[data-ytc-tv] .pknob::before{left:-.5rem;top:-.5rem;width:1rem;height:1rem;box-shadow:none}
 html[data-ytc-tv] .pseek:focus .pknob::before{opacity:1;transform:none;transition:none;}
 /* Scrubbing (←/→ on the bar): the storyboard frame and the target time ride above the bar. */
@@ -1312,7 +1307,7 @@ html[data-ytc-tv] .ptip b{font-size:.75rem}
 html[data-ytc-tv] .ptip .ptk{font:500 .75rem/1rem var(--tvf)}
 html[data-ytc-tv] .ptk::before{width:.375rem;height:.375rem;margin-right:.3125rem;vertical-align:.0625rem}
 html[data-ytc-tv] .prow{gap:1rem;height:3rem;margin-top:1.5rem}
-html[data-ytc-tv] #ytc .prow .pb,html[data-ytc-tv] #ytc-player .pslot .wl{display:grid;place-items:center;width:3rem;height:3rem;margin:0;padding:0;border:0;border-radius:1.5rem;background:rgba(33,43,46,.85);color:var(--tx);opacity:1;transition:none;}
+html[data-ytc-tv] #ytc .prow .pb,html[data-ytc-tv] #ytc-player .pslot .wl{display:grid;place-items:center;width:3rem;height:3rem;margin:0;padding:0;border:0;border-radius:1.5rem;background:rgba(39,39,39,.85);color:var(--tx);opacity:1;transition:none;}
 html[data-ytc-tv] #ytc .prow .pb.pw{width:auto;min-width:3rem;padding:0 1.125rem;box-sizing:border-box}
 html[data-ytc-tv] #ytc .prow .pb svg,html[data-ytc-tv] #ytc-player .pslot .wl svg{width:1.375rem;height:1.375rem}
 html[data-ytc-tv] #ytc .prow .plbl{font:600 .875rem/1 var(--tvf)}
@@ -1332,7 +1327,7 @@ html[data-ytc-tv] .pstuck{top:calc(var(--sy) + 6.25rem);right:var(--sx);padding:
 html[data-ytc-tv] .pstuck .pfbt{height:2rem;padding:0 .875rem;font-size:.75rem}
 /* Up next: ↓ from the buttons (the focus inside .wr). The countdown after the video sits bottom-right. */
 html[data-ytc-tv] .wr{position:fixed;z-index:13;left:0;right:0;bottom:0;width:auto;max-width:none;margin:0;padding:0;pointer-events:none}
-html[data-ytc-tv] .wr #ytc-list.rel{display:flex;background:linear-gradient(rgba(10,13,14,0),rgba(10,13,14,.92) 2.5rem);gap:1.25rem;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;margin:0;padding:2.75rem 3.75rem calc(var(--sy) + .75rem);scroll-padding:0 3.75rem;opacity:0;transform:none;transition:none;}
+html[data-ytc-tv] .wr #ytc-list.rel{display:flex;background:linear-gradient(rgba(15,15,15,0),rgba(15,15,15,.92) 2.5rem);gap:1.25rem;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;margin:0;padding:2.75rem 3.75rem calc(var(--sy) + .75rem);scroll-padding:0 3.75rem;opacity:0;transform:none;transition:none;}
 html[data-ytc-tv] .wr #ytc-list.rel::before{content:"Up next";position:absolute;left:3.75rem;top:1rem;font-size:.75rem;font-weight:500;letter-spacing:0;text-transform:none;color:var(--mu)}
 html[data-ytc-tv] .watch:has(.wr #ytc-list :focus) .wr #ytc-list.rel{opacity:1;transform:none;pointer-events:auto;}
 html[data-ytc-tv] .watch:has(.wr #ytc-list :focus) .pctl{transform:translateY(-10rem)}
@@ -1489,8 +1484,8 @@ html[data-ytc-tv] .tvs .tvst{margin:1rem 0 0;font-size:.75rem;line-height:1.125r
 html[data-ytc-tv] .tvs .tva{display:grid;place-items:center;width:4.5rem;height:4.5rem;margin-bottom:1.25rem;border-radius:50%;background:var(--on);color:var(--ac)}
 html[data-ytc-tv] .tvs .tva svg{width:2.25rem;height:2.25rem;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
 html[data-ytc-tv] .tvs .tvqr{position:absolute;right:7rem;top:7.25rem;width:13rem;margin:0}
-html[data-ytc-tv] .tvs .tvq{display:block;width:13rem;height:13rem;box-sizing:border-box;padding:.75rem;border-radius:1rem;background:#edf3f3}
-html[data-ytc-tv] .tvs .tvq path{fill:#101315}
+html[data-ytc-tv] .tvs .tvq{display:block;width:13rem;height:13rem;box-sizing:border-box;padding:.75rem;border-radius:1rem;background:#f1f1f1}
+html[data-ytc-tv] .tvs .tvq path{fill:#0f0f0f}
 html[data-ytc-tv] .tvs figcaption{margin:.75rem 0 0;text-align:center;font-size:.75rem;color:var(--mu)}
 html[data-ytc-tv] .tvs .tvbs{position:absolute;left:7.75rem;bottom:3.5rem;margin:0}
 /* ---- About & updates: the versions, the last check, one action (focused). */
@@ -1502,7 +1497,7 @@ html[data-ytc-tv] .tvs .tvus b{font-size:1.25rem;line-height:1.625rem;font-weigh
 html[data-ytc-tv] .tvs .tvus.ok b,html[data-ytc-tv] .tvs .tvus.new b{color:var(--ac)}html[data-ytc-tv] .tvs .tvus.err b{color:var(--er)}
 html[data-ytc-tv] .tvs .tvus p{margin:0;font-size:.875rem;line-height:1.3125rem;color:var(--mu);overflow-wrap:anywhere}
 html[data-ytc-tv] .tvs .tvus .tvun{color:var(--er)}
-html[data-ytc-tv] .tvs .tvpg{display:block;height:.375rem;border-radius:.1875rem;background:rgba(237,243,243,.18);overflow:hidden}
+html[data-ytc-tv] .tvs .tvpg{display:block;height:.375rem;border-radius:.1875rem;background:rgba(241,241,241,.18);overflow:hidden}
 html[data-ytc-tv] .tvs .tvpg i{display:block;height:100%;background:var(--ac);transform-origin:0 50%;transform:scaleX(var(--pg,0));transition:none;}
 /* Developer (hidden until revealed: → five times on the last button; or while telemetry is on): a card on the right. */
 html[data-ytc-tv] .tvs .tvdv{position:absolute;right:3.5rem;top:6.5rem;width:15rem;margin:0}

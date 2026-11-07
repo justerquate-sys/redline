@@ -1106,7 +1106,7 @@ impl Actions {
             bridge::attr(&id, "class", if k == i { "on" } else { "" });
             bridge::attr(&id, "aria-pressed", if k == i { "true" } else { "false" });
         }
-        // The mint pill springs to the new tab (pointer); a keyboard switch moves it at once.
+        // The accent pill springs to the new tab (pointer); a keyboard switch moves it at once.
         bridge::mark_slide(comments::SORT, &comments::sort_id(i), "", "ycsk", !self.kb);
         bridge::attr(CM_LIST, "class", "stale");
         bridge::attr(CM_MORE, "class", "more");

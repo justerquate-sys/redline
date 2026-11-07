@@ -283,7 +283,7 @@ pub fn page(file: &Path, q: &[(String, String)]) -> String {
         }
     });
     let mut h = String::with_capacity(32 * 1024);
-    h.push_str("<!doctype html><meta charset=utf-8><title>Lumen timeline</title><style>\
+    h.push_str("<!doctype html><meta charset=utf-8><title>Redline timeline</title><style>\
 body{background:#111;color:#ddd;font:13px ui-monospace,monospace;margin:20px}h1,h2{font:600 18px system-ui;color:#b7ebca;margin:22px 0 8px}\
 a{color:#9cc8ff}table{border-collapse:collapse;margin:6px 0}td,th{padding:2px 8px;border-bottom:1px solid #222;text-align:right;white-space:nowrap;vertical-align:top}\
 th{color:#999;font-weight:500}td.l{text-align:left;white-space:normal;word-break:break-all}tr:hover td{background:#1b1b1b}tr:target td{background:#26332b}\

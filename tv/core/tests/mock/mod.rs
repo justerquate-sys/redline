@@ -45,10 +45,15 @@ pub fn start(route: Route) -> Mock {
                 let body = String::from_utf8_lossy(&body).to_string();
                 log.lock().unwrap().push((method.clone(), path.clone(), body.clone()));
                 let (status, ctype, out) = route(&method, &path, &body);
-                let head = format!(
-                    "HTTP/1.1 {status} X\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                    out.len()
-                );
+                // A redirect (3xx): the route's second value is the Location.
+                let head = if (300..400).contains(&status) {
+                    format!("HTTP/1.1 {status} X\r\nLocation: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", out.len())
+                } else {
+                    format!(
+                        "HTTP/1.1 {status} X\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        out.len()
+                    )
+                };
                 let _ = s.write_all(head.as_bytes());
                 let _ = s.write_all(&out);
             });

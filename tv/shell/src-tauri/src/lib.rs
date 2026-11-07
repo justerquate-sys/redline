@@ -1,4 +1,4 @@
-//! Lumen (TV): the Google TV / Android TV app. A thin Tauri shell around the shared client
+//! Redline for TV: the Google TV / Android TV app. A thin Tauri shell around the shared client
 //! (`src/`, `browser/`, `extension/`): it opens https://www.youtube.com in the WebView with the
 //! client injected at document start (as the browser extension does) and gives it what the
 //! extension's runtime would — see `shell.rs` (commands, updates), `host.rs` (Android),
@@ -40,8 +40,8 @@ pub fn run() {
             }
             let url = "https://www.youtube.com/".parse().expect("url");
             let b = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
-                .title("Lumen")
-                .background_color(tauri::window::Color(0x10, 0x13, 0x15, 0xff));
+                .title("Redline")
+                .background_color(tauri::window::Color(0x0f, 0x0f, 0x0f, 0xff));
             #[cfg(desktop)]
             let b = b
                 .initialization_script(shell::get().map(|s| s.script()).unwrap_or_default())
@@ -52,5 +52,5 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running Lumen");
+        .expect("error while running Redline");
 }

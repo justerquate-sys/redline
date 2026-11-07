@@ -1,4 +1,4 @@
-// Lumen TV page shim: what the browser extension's runtime gives the shared client, provided by the
+// Redline for TV page shim: what the browser extension's runtime gives the shared client, provided by the
 // TV app's shell. The shell composes the document-start script as
 //   (() => { const CFG = {...}; const CSS = {...}; const ytcClient = () => { <extension content.js> }; <this file> })();
 // and installs it for https://www.youtube.com (tv/shell/src-tauri/src/script.rs).
@@ -28,7 +28,7 @@ if (window.top === window && location.hostname === 'www.youtube.com' && !globalT
     set: (items, cb) => { const p = call('store_set', items).then(() => undefined); if (cb) p.then(cb); return p; },
     remove: (keys, cb) => { const p = call('store_remove', keys).then(() => undefined); if (cb) p.then(cb); return p; },
   };
-  const manifest = Object.freeze({ manifest_version: 3, name: 'Lumen', version: CFG.version, version_name: CFG.version_name, host_permissions: [] });
+  const manifest = Object.freeze({ manifest_version: 3, name: 'Redline', version: CFG.version, version_name: CFG.version_name, host_permissions: [] });
   const inert = { addListener() {}, removeListener() {} };
   const send = CFG.tel ? m => {
     if (m && typeof m === 'object') {
@@ -51,7 +51,7 @@ if (window.top === window && location.hostname === 'www.youtube.com' && !globalT
     const sheet = new CSSStyleSheet();
     sheet.replaceSync(native ? CSS.native : CSS.client);
     document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-  } catch (e) { console.error('[Lumen] stylesheet', e); }
+  } catch (e) { console.error('[Redline] stylesheet', e); }
   // Text fields, remote first: the D-pad may land on a field without the on-screen keyboard popping up (it
   // would take the arrows); OK opens it (VirtualKeyboard API, policy "manual"). Once it was opened, Enter
   // (the keyboard's search key) submits as usual.

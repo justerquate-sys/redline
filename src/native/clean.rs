@@ -144,17 +144,12 @@ fn with<R: Default>(f: impl FnOnce(&mut Clean) -> R) -> R {
 
 pub fn boot() {
     bridge::root_attr("data-ytc-native", Some("1".into()));
-    crate::appearance::Palette::hint().apply();
-    bridge::storage_watch(config::STORAGE_KEY);
+    crate::appearance::forget_old_hint();
     bridge::storage_get(config::STORAGE_KEY);
     bridge::storage_get(KEY_SHORTS);
     with(|c| c.apply());
     bridge::page_guards(PLAYER, KEY_SKIP, WHEEL_SKIP, CAPTION, FRAME, ".ytp-subtitles-button");
     bridge::page_watch("aria-pressed,opened,aria-hidden,hidden");
-}
-
-pub fn on_storage_change(key: &str, json: &str) {
-    if key == config::STORAGE_KEY { Config::from_json(json).palette.apply(); }
 }
 
 pub fn on_storage(key: &str, json: &str) {
@@ -171,7 +166,6 @@ pub fn on_storage(key: &str, json: &str) {
             bridge::storage_set(key, &edit_config(json, cs, cc));
         }
         let cfg = Config::from_json(json);
-        cfg.palette.apply();
         let prefs = cfg.prefs;
         if cs.is_none() && c.grab.is_none() {
             c.style = prefs.cc_style;

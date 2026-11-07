@@ -1,27 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Lumen mark glyph (the charcoal "L" and light point) for the adaptive icon; the mint comes from
-     @color/ic_launcher_background. Same geometry as MARK in tv/scripts/banner.cjs (viewBox 0 0 48 48),
-     scaled 1.5x and offset 18 dp so the 48-unit squircle maps onto the 72 dp visible area of the
-     108 dp canvas: the glyph spans about 39-72 dp, well inside the 66 dp safe zone. -->
+<!-- The Redline mark for the adaptive icon: red, the chevron cut out (even-odd); the graphite comes from
+     @color/ic_launcher_background. The same path as browser/icons/redline.svg (viewBox 0 0 32 24, the one
+     source of the mark), scaled 1.875x and centred on the 108 dp canvas (60 x 45 dp): its farthest corner
+     is about 31 dp from the centre, inside the 66 dp safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:scaleX="1.5"
-        android:scaleY="1.5"
-        android:translateX="18"
-        android:translateY="18">
+        android:scaleX="1.875"
+        android:scaleY="1.875"
+        android:translateX="24"
+        android:translateY="31.5">
         <path
-            android:pathData="M17.5,12.5v21h14"
-            android:fillColor="#00000000"
-            android:strokeColor="#101315"
-            android:strokeWidth="6.5"
-            android:strokeLineCap="round"
-            android:strokeLineJoin="round" />
-        <path
-            android:pathData="M28,15.5a4,4 0,1 1,8 0a4,4 0,1 1,-8 0z"
-            android:fillColor="#101315" />
+            android:pathData="M12.54 2L27.54 2C30.03 2 31.23 4.01 30.22 6.5L25.78 17.5C24.77 19.99 21.95 22 19.46 22L4.46 22C1.97 22 0.77 19.99 1.78 17.5L6.22 6.5C7.23 4.01 10.05 2 12.54 2ZM12.44 6.64C12.09 6.29 12.21 6 12.7 6L16.5 6C17 6 17.69 6.29 18.04 6.64L22.64 11.24C23.06 11.66 23.06 12.34 22.64 12.76L18.04 17.36C17.69 17.71 17 18 16.5 18L12.7 18C12.21 18 12.09 17.71 12.44 17.36L17.29 12.51C17.57 12.23 17.57 11.77 17.29 11.49Z"
+            android:fillColor="#FF0033"
+            android:fillType="evenOdd" />
     </group>
 </vector>

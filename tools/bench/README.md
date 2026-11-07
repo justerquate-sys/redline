@@ -7,10 +7,10 @@ metric and scenario. This is the only place the network is used on purpose: the 
 
 ```sh
 ./build.sh --dev
-cp -R extension /tmp/lumen-a              # benchmark a copy, so rebuilding does not change a running run
-node tools/bench/bench.cjs --runs=8 --ext=/tmp/lumen-a
-node tools/bench/bench.cjs --only=latency --runs=6 --ext=/tmp/lumen-a          # injected slowness, hedging on/off
-node tools/bench/bench.cjs --only=latency --uniform --slow=10 --ext=/tmp/lumen-a
+cp -R extension /tmp/redline-a              # benchmark a copy, so rebuilding does not change a running run
+node tools/bench/bench.cjs --runs=8 --ext=/tmp/redline-a
+node tools/bench/bench.cjs --only=latency --runs=6 --ext=/tmp/redline-a          # injected slowness, hedging on/off
+node tools/bench/bench.cjs --only=latency --uniform --slow=10 --ext=/tmp/redline-a
 node tools/bench/bench.cjs --runs=2 --ndjson=/tmp/run.ndjson   # then: YTC_DEBUG_CENTER_ADDR=127.0.0.1:47399 \
                                                                #   tools/debug-center/target/release/lumen-debug-center /tmp/run.ndjson
 ```
@@ -34,7 +34,7 @@ machine: compare builds in alternating rounds (`--json=` per round, then pool th
 Only numbers, metric names and route kinds are printed or saved; the search terms and channels are the
 script's own fixed ones.
 
-Home (each script's header has its options): `home-reload.cjs` (reload → YouTube's answer painted, Lumen vs YouTube's
+Home (each script's header has its options): `home-reload.cjs` (reload → YouTube's answer painted, Redline vs YouTube's
 own page; `--yt --parity` for the overlap with YouTube's own reloads, `--nodoc` / `--noimp` to switch off the Home
 document or the "shown" signals), `home-newtab.cjs` (a new tab → Home painted: another tab on Home, on a video, playing a video; `--noready`, `--nokeep`; vs video → Home, vs YouTube's own new
 tab), `home-parity.cjs` (how the request's shape changes the answer), `home-drift.cjs` (how fast YouTube's answer

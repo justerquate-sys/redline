@@ -665,7 +665,7 @@ impl App {
         }
     }
 
-    /// An update is ready (a newer interface in the shell, or a newer app offered): the rail's item gets a mint dot
+    /// An update is ready (a newer interface in the shell, or a newer app offered): the rail's item gets an accent dot
     /// and, away from videos, a small notice the remote can reach (top right) until the screen was opened for it.
     fn tv_notice(&mut self) {
         let Some(i) = &self.tv.shell else { return };

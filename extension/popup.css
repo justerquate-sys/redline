@@ -2,27 +2,12 @@
 #ytc.popup{width:360px;min-width:320px;font-size:14px;line-height:20px}
 #ytc-popup{padding:20px}
 #ytc-popup header{display:flex;align-items:center;gap:8px;margin-bottom:24px;font-size:18px;line-height:24px;font-weight:600}
-#ytc-popup header svg{display:block;flex:none;width:28px;height:20px}
-#ytc-popup header rect{fill:var(--brand)}
-#ytc-popup header path{fill:var(--brand-ink)}
-#ytc-popup section+section{margin-top:24px;padding-top:20px;border-top:1px solid var(--ln)}
+#ytc-popup header svg{display:block;flex:none;width:28px;height:21px;fill:var(--brand)}
 #ytc-popup h1{margin:0 0 12px;font-size:14px;line-height:20px;font-weight:600;letter-spacing:0}
 #ytc-popup button{box-sizing:border-box;cursor:pointer;font-size:14px;line-height:20px;border:0}
 #ytc-popup button:focus-visible,#ytc-popup summary:focus-visible{outline:2px solid var(--ac);outline-offset:3px;animation:none}
 #ytc-popup b{display:block;font-weight:600}
 #ytc-popup small{display:block;color:var(--mu);font-size:12px;line-height:16px}
-.palette-list{display:flex;flex-direction:column;gap:8px}
-#ytc-popup .palette-choice{display:flex;align-items:center;gap:12px;width:100%;min-height:72px;padding:12px;border:1px solid var(--bd);border-radius:12px;background:var(--pn);text-align:left}
-#ytc-popup .palette-choice[aria-pressed=true]{border-color:var(--ac);background:var(--on)}
-#ytc-popup .palette-choice>span{flex:1;min-width:0}
-#ytc-popup .palette-choice small{margin-top:2px}
-.palette-preview{--preview-bg:#101315;--preview-panel:#212b2e;--preview-accent:#b7ebca;position:relative;display:grid;grid-template-columns:12px 1fr;grid-template-rows:8px 1fr;gap:4px;box-sizing:border-box;flex:none;width:56px;height:40px;padding:4px;border:1px solid rgba(255,255,255,.16);border-radius:4px;background:var(--preview-bg);overflow:hidden}
-.youtube .palette-preview{--preview-bg:#0f0f0f;--preview-panel:#272727;--preview-accent:#ff0033}
-.palette-preview>i{display:block;background:var(--preview-panel);border-radius:1px}
-.palette-preview>i:first-child{width:12px;background:var(--preview-accent)}
-.palette-preview>i:last-child{grid-column:1/-1;border-bottom:2px solid var(--preview-accent)}
-.palette-check{display:block;flex:none;width:20px;height:20px;fill:none;stroke:var(--ac);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:0}
-[aria-pressed=true]>.palette-check{opacity:1}
 #ytc-popup .popup-sponsor{display:flex;align-items:center;gap:12px;width:100%;padding:0;background:none;text-align:left}
 .popup-sponsor>span{flex:1;min-width:0}
 .popup-sponsor small{margin-top:4px}
@@ -45,14 +30,12 @@
 .popup-source{margin:16px 0 0;color:var(--mu);font-size:12px;line-height:16px}
 #popup-status{margin:12px 0 0;color:var(--er);font-size:12px;line-height:16px}
 #popup-status:empty{display:none}
-/* Color feedback is immediate; only the switch thumb and pointer press move. Keyboard stays instant. */
+/* Color feedback is immediate; only the switch thumb moves. Keyboard stays instant. */
 #ytc-popup button{transition:background-color var(--d-hover) var(--e-out),border-color var(--d-hover) var(--e-out)}
 #ytc-popup .popup-switch::after{transition:transform calc(var(--d-press) * var(--mv)) var(--e-out)}
 #ytc-popup :focus-visible .popup-switch::after{transition:none}
 html[data-ytc-popup-input=keyboard] #ytc-popup button,html[data-ytc-popup-input=keyboard] #ytc-popup .popup-switch::after{transition:none}
 @media (hover:hover) and (pointer:fine){
-  #ytc-popup .palette-choice:hover,#ytc-popup .popup-categories button:hover,#ytc-popup #popup-undo:hover{background:var(--hv);transition-duration:0s}
+  #ytc-popup .popup-categories button:hover,#ytc-popup #popup-undo:hover{background:var(--hv);transition-duration:0s}
   #ytc-popup .popup-sponsor:hover small,#ytc-popup summary:hover{color:var(--tx)}
-  #ytc-popup .palette-preview{transition:transform var(--d-press) var(--e-out)}
-  #ytc-popup .palette-choice:active .palette-preview{transform:scale(calc(1 - var(--pd) * var(--mv)))}
 }

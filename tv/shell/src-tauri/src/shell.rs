@@ -42,10 +42,12 @@ use lumen_tv_core::tel;
 
 /// The release key (`tv/keys/release.pub`): only bundles and APKs it signed are used.
 const RELEASE_KEY: &str = include_str!("../../../keys/release.pub");
-/// Where releases come from (`LUMEN_TV_REPO=owner/name` at build time).
+/// Where releases come from (`LUMEN_TV_REPO=owner/name` at build time). The repository was renamed from
+/// justerquate-sys/lumen; apps built before 0.5.0 ask for that name, and GitHub's redirect for renamed repositories
+/// (followed by `Http`: ureq, up to 10 redirects) brings them to the same releases.
 const REPO: &str = match option_env!("LUMEN_TV_REPO") {
     Some(r) => r,
-    None => "justerquate-sys/lumen",
+    None => "justerquate-sys/redline",
 };
 const CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
 

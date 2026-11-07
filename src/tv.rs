@@ -378,13 +378,13 @@ pub fn update_error(e: &str) -> &'static str {
     if l.contains("403") || l.contains("429") || l.contains("rate limit") {
         "GitHub's limit for update checks was reached. Try again in an hour."
     } else if l.contains("signature") || l.contains("hash mismatch") || l.contains("verify") {
-        "The download did not pass Lumen's signature check, so nothing was installed."
+        "The download did not pass Redline's signature check, so nothing was installed."
     } else if l.contains("dns") || l.contains("connect") || l.contains("resolve") || l.contains("timed out") || l.contains("timeout") || l.contains("network") || l.contains("io:") {
         "No connection to GitHub. Check the TV's network and try again."
     } else if l.contains("apk") || l.contains("larger than") || l.contains("body") {
         "The app update could not be downloaded. Try again."
     } else if l.contains("unknown command") {
-        "This app installs app updates from its own Update Lumen dialog (it appears after a check, once a new app is published); the next one installs from here."
+        "This app installs app updates from its own update dialog (it appears after a check, once a new app is published); the next one installs from here."
     } else {
         "The update check did not work."
     }

@@ -1,8 +1,8 @@
 [package]
 name = "lumen-tv"
-version = "0.4.0"
-description = "Lumen for Google TV / Android TV: a thin Tauri shell around the shared client"
-authors = ["Lumen"]
+version = "0.5.0"
+description = "Redline for Google TV / Android TV: a thin Tauri shell around the shared client"
+authors = ["Redline"]
 license = "MIT"
 edition = "2024"
 rust-version = "1.90"

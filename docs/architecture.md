@@ -1,4 +1,4 @@
-# Lumen architecture and behaviour
+# Redline architecture and behaviour
 
 The design reference for contributors: how the client works, page by page, and why. For installing and
 building see the [README](../README.md); for the motion rules see [motion.md](motion.md); for the
@@ -52,8 +52,8 @@ mode (`boot_native`); client pages are untouched.
 
 - **`native.css`** (hiding and theming, no JavaScript timing): the old `theme.css`, `watch-page.css`,
   `player-controls.css`, `captions.css` and `promotions.css` rules with their verified selectors, gated on
-  `html[data-ytc-native]`. Header without voice search, Create or the locale label, the plain YouTube
-  wordmark instead of the Premium logo; YouTube's guide trimmed to Home, Subscriptions, History, Playlists,
+  `html[data-ytc-native]`. Header without voice search, Create or the locale label, Redline's
+  mark and name instead of the Premium logo (the link leads back to Redline's Home); YouTube's guide trimmed to Home, Subscriptions, History, Playlists,
   Watch later, Liked videos (no Shorts, You/Your channel/Your videos/Downloads/courses/podcasts, channel
   list, Explore, More from YouTube, settings rows, footer); no Playables; Shorts shelves and cards out of
   feeds unless the client's Shorts switch (`shortsInFeeds`) is on (`/shorts/` itself untouched); Premium /
@@ -61,7 +61,8 @@ mode (`boot_native`); client pages are untouched.
   Auto-dubbed badges, hashtags above the title, Summary / How this was made / Games / Transcript / repeated
   channel / Video details sections, and without the related chip row; player without the fullscreen More
   videos grid, quick actions, title overlay, channel watermark, gradients and cinematics, black around the
-  picture; the chosen Lumen or YouTube palette over YouTube’s theme variables, including logo and progress.
+  picture; the client’s palette (graphite, white, red) over YouTube’s theme variables, and Redline’s mark and name
+  as the header logo (it leads back to Redline’s Home).
 - **`src/native/clean.rs`** (what needs logic; pure parts unit-tested): captions in the client's look
   and place (cyan Arial with a dark outline, no backgrounds, upper-left corner and size from the same
   `ytcConfigV1.p.cs` the client player uses, via CSS variables on `<html>`); drag a cue to move it, wheel
@@ -87,7 +88,7 @@ mode (`boot_native`); client pages are untouched.
 
 ## Use
 
-Layout: a top bar with the YouTube logo (→ Home; **resting the pointer on it for 250 ms goes Home without a
+Layout: a top bar with the Redline logo (its mark and name; → Home; **resting the pointer on it for 250 ms goes Home without a
 click**, see below), a centered search box (≤ 720 px; `/` focuses it from
 anywhere) and, on Home and Search, **Filters** left of the bell; a left sidebar with Home, History, Watch later, Subscriptions,
 Playlists, Liked videos (no Shorts entry; Shorts appear only with the Filters **Shorts** switch). The sidebar is gone on watch pages,
@@ -125,11 +126,11 @@ press scale .97 with the icon squeezing. The active pill is one persistent eleme
 the six links clipped to the active row by `--st`/`--sb`, registered `@property` lengths written by
 `App::side_move`): a pointer navigation moves both edges on the house spring, the leading edge on `--d-spring`
 and the trailing one on `--d-spring-soft` (`data-dir`), so it stretches toward the new page and settles while the
-label turns mint; g+letter, back/forward and restored pages move it at once (`data-still`); on a page without a
-link it fades where it is. *Header:* the logo tile swells and its play mark leans forward on hover, the whole
+label turns to the accent; g+letter, back/forward and restored pages move it at once (`data-still`); on a page without a
+link it fades where it is. *Header:* the Redline mark leans forward on hover, the whole
 logo gives on press. **Zero-click Home** (2 Nov 2026: hovering the logo
-activates it, no click needed; `app/logo.rs`): resting the pointer on the logo (tile or word) for 250 ms
-(`logo::DWELL_MS`) opens Home; a mint pill behind the logo fills left to right over that time (a linear clip-path
+activates it, no click needed; `app/logo.rs`): resting the pointer on the logo (mark or word) for 250 ms
+(`logo::DWELL_MS`) opens Home; a soft accent pill behind the logo fills left to right over that time (a linear clip-path
 wipe, like the player's Speed/Quality rows; reduced motion fades it). At the end of the dwell Home paints the
 ready Home response (see "Home reload" under Speed); without one, Home's first page is requested the moment the
 pointer enters the logo, so it has a 250 ms head start. Passing over
@@ -142,7 +143,7 @@ shows a new Home from YouTube: a held **New videos** feed, else the ready Home r
 page stays until YouTube answers); no extra history entry. With a Topic or YouTube chip showing it goes back to
 the plain Home feed as before. The search field is one surface under the input and button (`.qf`: a border layer and a fill
 layer, both clipped): pointer focus widens it 8 px each side (clip-path on the house spring, exact 21 px ends on
-every frame), the button slides flush and turns mint and the magnifier glances once; the text box never moves and
+every frame), the button slides flush and turns to the accent and the magnifier glances once; the text box never moves and
 the first keystroke paints on its keydown frame (e2e). `#ytc-search.now` (set on every key press, cleared on every
 pointer press, i.e. before focus moves) makes keyboard focus and the blur after Enter instant. A clear control (×)
 is there from the first character, empties the field without blurring it (`data-keep-focus`) and spins out. The
@@ -150,7 +151,7 @@ dropdown unfolds from the field (its surface grows from a 14 px strip, `--e-out`
 settle in 25 ms apart, clickable at once; typing, arrows, Escape and Enter change it with no motion. The bell tilts
 on hover and rings once when the unread count rises; the badge is always in the DOM and grows in, pulses on a new
 number (the number itself is final at once) and shrinks away when the list opens. The avatar leans in on hover and
-an open account menu rings it in mint. A keyboard focus ring settles in from 4 px out (`ytcfocus`).
+an open account menu rings it in the accent. A keyboard focus ring settles in from 4 px out (`ytcfocus`).
 
 **Player and watch-page motion** (`src/player/own.rs`, `src/app/motionglue.rs`, client.css "Icon morphs";
 pointer only, every state final first; keyboard changes are instant: a key sets `.kf` on the player for 450 ms).
@@ -158,10 +159,10 @@ pointer only, every state final first; keyboard changes are instant: a key sets 
 state class on the media event: play's triangle halves become the pause bars, the theater frame widens/narrows, the
 fullscreen corners fold inward; the volume waves leave toward the speaker (outer one below 50 %) and the mute cross
 turns in; CC wipes its filled artwork in (clip-path, `--spring-pop` scale). *Center pulse:* a click on the video leaves
-the action's icon growing and fading (560 ms keyframes, `bridge::replay`). *Seek bar:* a press swells a mint ripple
+the action's icon growing and fading (560 ms keyframes, `bridge::replay`). *Seek bar:* a press swells a red ripple
 where it landed; the knob grows while held; the tooltip's surface morphs its width between chapter titles as you sweep
 (`bridge::box_morph`), still centred 1:1 on the pointer; the control-bar chapter label's new title rises in. Volume
-slider: mint fill (`--v`) and a thumb that grows on hover/press. *Menus:* switching Speed/Quality/CC (or the Audio tab,
+slider: accent fill (`--v`) and a thumb that grows on hover/press. *Menus:* switching Speed/Quality/CC (or the Audio tab,
 or a codec) while the panel shows morphs the panel's surface (its `::before`, under a drop-shadow) and content box
 with clip-paths from the old menu's height to the new one's on `--spring`, the new content sliding in from its
 shortcut's side (160 ms); a sweep retargets from the on-screen size; content is final and clickable at once. A
@@ -171,13 +172,13 @@ under the growing player, then the description's lines and the related cards as 
 description links draw their underline from the left (across wrapped lines); Block turns into "Blocked · Undo" growing
 from its left edge. The chapter list's highlight and the playlist panel's current row are persistent marks that spring
 to the new row as playback crosses a chapter or the playlist moves on (instant for keys, back/forward and first
-placement); Top/Newest's mint pill travels over the tabs; a reopened reply thread unrolls from the top; Up next's Play
-now fills with mint as the countdown runs (its label inverts exactly at the fill edge).
+placement); Top/Newest's accent pill travels over the tabs; a reopened reply thread unrolls from the top; Up next's Play
+now fills with the accent as the countdown runs (its label inverts exactly at the fill edge).
 
 **Feed and chip motion** (`src/app/fxglue.rs`, client.css cards/chips/filters; pointer only, every
 write final first). *Cards:* hover eases the picture (and a playing preview) 4.5 % closer inside its fixed
 rounded frame on `--spring` over `--d-spring-soft`; the frame, duration badge and progress bar stay crisp;
-a depth gradient (`.th::after` opacity) rises; the watched bar thickens (scaleY); the title turns mint;
+a depth gradient (`.th::after` opacity) rises; the watched bar thickens (scaleY); the title turns to the accent;
 press gives the frame .985 and settles the picture back. The hover preview fades in once it lands
 (`fade_imgs`). *Entrance wave* (`bridge::stagger`, no layout read, ≤ 15 cards, 24 ms apart, ≤ 7 steps,
 320 ms `--e-out`): when a pointer-initiated load replaces the skeleton, the text rises 8 px into place where
@@ -192,7 +193,7 @@ slide; keyboard selections are instant). Removing/moving/hiding a chip reflows t
 (`bridge::flip_mark`/`flip_play`: survivors slide from their old place, a copy of the removed chip shrinks
 out in 160 ms). *Panels:* Filters and + Topic morph out of their button (clip-path from a button-sized
 rounded box + a 43 px drop on `--spring`, opacity `--d-pop`; back into the button in 110 ms). Switch knobs
-stretch while held; the length slider has a mint fill (`--v`) and a thumb that grows on hover/press; the
+stretch while held; the length slider has an accent fill (`--v`) and a thumb that grows on hover/press; the
 Filters summary's new text slides in (`bridge::nudge`). *Watch later:* the bookmark fills bottom-up
 (clip-path on a filled copy, soft spring) and a pointer save pops once (`--spring-pop`, the one
 underdamped spring, from `motion::pop()`); removing drains it faster. The note under the bar and active
@@ -200,7 +201,7 @@ search-filter chips enter with `@starting-style` (gated by `data-still`).
 
 **Voice search** (2 Nov 2026; `src/features/voice.rs` decides, `src/app/voiceglue.rs` wires it,
 `background.js` relays the socket). A mic sits in the search field before the search button. *Hover:* resting the
-pointer on it 200 ms starts dictation (leaving earlier does nothing); the glyph turns mint over exactly that dwell,
+pointer on it 200 ms starts dictation (leaving earlier does nothing); the glyph turns to the accent over exactly that dwell,
 then the 32 px circle stretches leftwards into an 80×36 listening pill on the house spring, which is also the new,
 bigger hover target (the button's box is the pill; at rest its clip-path, which clips hit-testing too, leaves only
 the circle; the glyph never moves under the pointer). Five bars show the live level: the bridge writes `--lv`
@@ -262,7 +263,7 @@ from memory instantly.
 **Watch-page actions** (`src/actions/`): **Like / Dislike** (YouTube's own count label; click again
 to remove), **Subscribe** beside the channel (unsubscribing needs a second click on "Unsubscribe?"),
 **Share** (youtu.be link, optional "Start at" the current time, Copy), **Save** (a bookmark that is
-filled in mint and reads "Saved" while the video is in any of your playlists: signed in, the membership is
+filled in the accent and reads "Saved" while the video is in any of your playlists: signed in, the membership is
 asked once, quietly, 1.2 s after the watch page opened (`get_add_to_playlist`, kept in memory, the same answer
 the chooser shows, so opening it sends nothing more; a failed quiet check stays quiet); ticking/unticking in
 the chooser fills/empties it at once (optimistic, back on a rollback); the fill sweeps up on the soft spring,
@@ -396,7 +397,7 @@ folds back into it when it expires.
   answers a mask that names a field it does not know with **HTTP 400** for the whole request: then the same request
   goes out at once without the mask (same id; the 400 shows in the telemetry as a `req.next`) and no mask is used
   for the rest of the document. Continuations, search, browse and Home are not masked (Home must stay YouTube's
-  exact answer; search: "Known gaps"). Lumen TV: `next` is the anonymous WEB request there too, so the same mask
+  exact answer; search: "Known gaps"). Redline for TV: `next` is the anonymous WEB request there too, so the same mask
   applies. YouTube's InnerTube answers only in gzip (with `br` or `zstd` alone it sends the body uncompressed), so
   the browser's default `Accept-Encoding` is already the best; HTTP/3 is advertised and reused.
 - **Search ahead** (3 Nov 2026): a typing pause of **250 ms** (was 300) or resting **120 ms** on a suggestion chosen
@@ -404,7 +405,7 @@ folds back into it when it expires.
   aborts the one in flight, unless a submitted search already waits for it), at most 10 a minute
   (`util::budget_take`), kept in memory only (the page cache; never `sessionStorage` or `chrome.storage`; the
   telemetry sees `req.search` `via: prefetch`, never the text). Enter then paints from memory or adopts the request
-  in flight; a pointer resting on a suggestion row prefetches it like any link. Lumen TV types into the same field
+  in flight; a pointer resting on a suggestion row prefetches it like any link. Redline for TV types into the same field
   (the Android keyboard), so the same pause applies there. Measured live (8 runs per build): Enter after a 350 ms
   pause 645 → 615 ms p50 (the request is in flight both times and now starts 50 ms earlier); Enter at once waits for
   YouTube either way (its search answers in 0.7–0.9 s).
@@ -452,7 +453,7 @@ never shown first and then flipped (the only exception is a YouTube that has not
   reloads are its reference, and its page ties the "shown" signals to the document's answer id.
 - **"Shown" signals** (owner decision, 3 Nov 2026; `src/impress.rs`, `app/impglue.rs`; CONTRIBUTING "Privacy"). YouTube's
   own Home page logs which cards it showed (`log_event`, captured live from its page: ~150 events per Home view), and
-  YouTube rotates out what was shown and passed over. Lumen's Home sends the same for its own screen: a
+  YouTube rotates out what was shown and passed over. Redline's Home sends the same for its own screen: a
   `screenCreated` (a new 16-character screen nonce per Home answer, its page type 3854 and the document's
   `EVENT_ID`, also as `serializedClientEventId`), then per card that is at least half in view, once:
   `visualElementStateChanged` (the grid item's tracking id, its column and row) and `visualElementShown` (eventType
@@ -533,7 +534,7 @@ never shown first and then flipped (the only exception is a YouTube that has not
   top-24 overlap with answers to YouTube's own context 36–40 % vs 42–53 % among those; with them 41–49 %, and
   YouTube's sticky picks as often as in its own answers). Not sent (YouTube's own page state, no measured
   effect on the answer): `configInfo`, click tracking, ad signals, experiment ids, gzip request bodies.
-- **Lumen TV** (the same code in the Android WebView): the ready response and the hedge go through `App::send`, so
+- **Redline for TV** (the same code in the Android WebView): the ready response and the hedge go through `App::send`, so
   for a signed-in TV they are the account's TVHTML5 Home request with the access token (`tv::finish`); the account
   key is "signed in" (the token changes every hour; signing in or out clears the tab's session data and reloads).
   The WebView's `sessionStorage` lives as long as its session: it survives page reloads in the app (a client
@@ -559,9 +560,9 @@ never shown first and then flipped (the only exception is a YouTube that has not
   (+7.2 s / +79 s, network path): with the hedge YouTube's answer paints at p50 2.5 s (the hedge won 13 of 13);
   without it at 8.5 s / ~80 s (the dimmed old Home from 4.3 s).
 - **Measured, Home's quality** (3 Nov 2026, signed out, seeded profiles, n = 12 per mode; `home-reload.cjs --yt
-  --parity`): with the Home document and the "shown" signals, Lumen's reload answers share 28 % of their top 24 with
+  --parity`): with the Home document and the "shown" signals, Redline's reload answers share 28 % of their top 24 with
   YouTube's own page reloads (was 21 % with `browse`), as much as YouTube's own reloads share with each other (29–36 %);
-  Lumen's reload-to-reload overlap stays 31 % (YouTube's 29–36 %); vs YouTube's own page at the same moment in the
+  Redline's reload-to-reload overlap stays 31 % (YouTube's 29–36 %); vs YouTube's own page at the same moment in the
   same profile 38 % (was 35 %). The 48 % (`browse`) vs 33 % (page) seen the day before did not come back: that day
   YouTube's signed-out answers varied as much through `browse` (19 % among 8 answers) as on its page (17 %). The
   "shown" signals: in a loop of Home documents 6 s apart, the 12 cards shown and signalled came back in the next
@@ -739,7 +740,7 @@ menu is one persistent panel: the first open fades + scales from `.97` at its sh
 clickable on its first frame), moving between shortcuts only swaps the content (no re-animation), it
 closes in 110 ms; choices toggle classes in place. The
 control bar fades out on idle or when the pointer leaves the player while playing and comes back on the
-same frame; a stall over 0.6 s brings it back softly and the empty track breathes mint (no spinner).
+same frame; a stall over 0.6 s brings it back softly and the empty track breathes softly (no spinner).
 The seek track grows with `scaleY` (instant in, eased out), the knob rides on `translateX`; while playing
 the fill glides at real speed (Rust aims `--p` one 250 ms tick ahead), seeks/drags/pauses land 1:1.
 **Chapters on the player** (like YouTube): the seek bar splits into one segment per chapter with
@@ -799,14 +800,14 @@ quickly (lines that stay never move). Keyboard shortcuts add no motion.
   filler only show. *Seek bar:* every range is drawn in its category's color inside the chapter segments (above the
   fills; they fade in when the data arrives), the highlight as a pink tick, and hovering a range names it in the
   tooltip; a highlight further ahead is offered once as **Highlight at m:ss · Jump**. *Controls:* the browser’s
-  Lumen extension popup owns the **SponsorSkip** switch, eight category choices and the active video’s counts.
+  Redline extension popup owns the **SponsorSkip** switch, eight category choices and the active video’s counts.
   **Undo last skip** appears there while the video’s transient Undo notice is available. Settings no longer
   occupy a video-control button. Off aborts any in-flight lookup and hides ranges/notices; a new video makes no
   lookup at all. Re-enabling looks up the current video. Remembered in `ytcConfigV1` `p`: `sbo:false` only when
   off, `sb` (category keys) only when not the default. The popup reads the latest config before each serialized
   write, patches only edited fields/category bits, and preserves other preferences. Optimistic changes roll
-  back with a visible error if storage rejects the write. Existing client tabs adopt the palette and
-  SponsorSkip settings in place; native-fallback tabs follow palette changes. Status/Undo use
+  back with a visible error if storage rejects the write. Existing client tabs adopt the
+  SponsorSkip settings in place. Status/Undo use
   same-extension messages to the active tab; one local poll per
   second while the popup is visible, no external request.
 - **Caption language**: the source language is YouTube's speech-recognition (ASR) track's
@@ -996,29 +997,71 @@ Other modules plug into the markup without editing `render.rs` or the player:
 | `bridge::wheel(id, name)` → `on_wheel(name, dir)`, `bridge::read_value(id)` | input | Wheel notches over one element (−1 up / 1 down; trackpad deltas add up to a 50 px notch; a handled one does not scroll the page; Ctrl/⌘ stays zoom), bound once per element. The `value` of a textarea/input (the import paste box). |
 | `#ytc[data-still="1"]` | CSS | Set during the first frame of keyboard and back/forward paints: gate every `@starting-style` entrance with `#ytc:not([data-still="1"])`. |
 
-Shared design tokens are CSS variables on `:root` (client.css, two selectable palettes):
+Shared design tokens are CSS variables on `:root` (client.css, one palette for the desktop, the toolbar popup and the TV):
 surfaces `--bg --pn --rs --cb` (background, panel/popover, raised, control), `--hv` (the one hover wash),
 `--on`/`--onh` (selected row tint / its hover), `--fi --bd` (text field, field/outline border), `--tk`
 (switch track), `--ln` (hairline), `--wa` (translucent wash over video), `--sc` (scrim behind badges and
-toasts); text `--tx --mu --fa` (≥ 10:1, ≥ 5:1, ≥ 4.5:1 on bg/pn/rs), accent `--ac` `#b7ebca` / `--ach`
+toasts); text `--tx --mu --fa` (≥ 10:1, ≥ 5:1, ≥ 4.5:1 on bg/pn/rs), accent `--ac` `#f1f1f1` (white) / `--ach`
 (hover), `--rd` (live, destructive), `--er` (error text); `--sh` (popover shadow); radii `--r-card` 14,
 `--r-pop` 12 (popovers, panels), `--r-ctl` 10 (chips, buttons); press depths `--pd` .97, `--pd-card` .985,
 `--pd-icon` .95 (icon-only buttons), `--pd-glyph` .84 (an icon squeezing inside its control). Selected:
 rows get `--on` + accent text; chips and segments solid `--ac` with `--bg` text.
-The default remains charcoal/mint. `html[data-ytc-palette=youtube]` selects graphite surfaces, white controls
-and focus, red logo/progress, and blue content links. `--brand --brand-ink --progress --link --link-h`
-separate these roles; they alias the original mint tokens by default. Geometry and motion are shared.
-`src/appearance.rs` validates the bounded enum and patches preferences; `src/popup.rs` owns the browser
-toolbar UI. `ytcConfigV1.theme` stores only `"youtube"` (default Lumen omitted), so it adds no new storage key
-or page/account data. Its purpose is remembering the user’s chosen color palette. A new tab has no config
-before `chrome.storage` answers, so its first frame takes the palette from one `localStorage` flag
-(`ytc-palette-youtube` = `1`, set only while the YouTube palette is chosen; `Palette::hint`): no flash of the
-other palette, no wait.
+The palette (0.14.0, Redline: owner decision 7 Nov 2026) is graphite surfaces (`--bg` `#0f0f0f`, `--pn` `#181818`,
+`--rs` `#212121`, `--cb` `#272727`), white text, selection and focus (`--ac`), red for the brand and playback
+(`--brand`, `--progress` `#ff0033`) and blue for content links (`--link`); SponsorBlock's category colors keep their
+meanings (highlight pink, never the progress red). `--brand --brand-ink --progress --link --link-h` keep these roles
+apart. Text contrast is WCAG AA on every surface it sits on (an e2e step computes it from the live tokens). There is
+no palette choice any more: the 0.13.3–0.13.8 popup choice, `html[data-ytc-palette]` and the `ytc-palette-youtube`
+`localStorage` hint are gone. The first frame of a new tab is already in the palette (client.css is injected by the
+manifest), so nothing flashes and nothing is read first; a hint an older version left is removed at boot
+(`appearance::forget_old_hint`). A stored `ytcConfigV1.theme` (`"youtube"`, written by those versions) is ignored and
+never an error; the toolbar's patches keep it as it is, and the client's own config writes no longer carry it.
+`src/appearance.rs` holds the toolbar's preference patches (SponsorSkip); `src/popup.rs` owns the toolbar UI.
+
+### The Redline mark
+
+A red rounded parallelogram leaning forward with a chevron cut out (one even-odd path, viewBox `0 0 32 24`): it reads
+as forward and speed, and is deliberately not YouTube's rounded-rectangle play button. The product never shows
+YouTube's logo or play mark and never uses "YouTube" or "Tube" in its own name; descriptions may name YouTube
+nominatively ("a client for YouTube", "not affiliated with YouTube or Google"). The one source is
+`browser/icons/redline.svg`: `src/render.rs` inlines the same path (the top bar, the toolbar popup, the TV rail and
+calm cards; a Rust test keeps them equal), `node browser/icons.cjs` renders the extension's icons
+(`extension/icons/16|32|48|128.png`, the manifest's `icons` and the toolbar's `default_icon`), and
+`node tv/scripts/banner.cjs --all` the TV launcher icons and banner (the adaptive icon's vector,
+`drawable-v24/ic_launcher_foreground.xml`, carries the same path). The wordmark is "Redline" in the interface's
+system font. The top bar's dwell pill (`app/logo.rs`) is the logo link's own `::before`, independent of the mark's
+shape; hovering leans the mark forward on the house spring.
+
+### Names kept for compatibility
+
+The product was called Lumen until 0.13.8 (the TV app "Lumen for TV"). Everything a user reads now says Redline;
+these internal names keep the old one on purpose, because stored data, installed apps or tools depend on them:
+
+- Storage keys and DOM ids/classes: `ytcConfigV1` and every other `ytc*` key, `#ytc*` ids, `data-ytc-*` attributes.
+- The crate and package names `ytc-client`, `lumen-tv` (its library `lumen_tv_lib`, loaded by name from Kotlin),
+  `lumen-tv-core` (`lumen_tv_core`) and `lumen-debug-center`; the agent skill `.claude/skills/lumen-motion`.
+- The extension's internal identifiers: the request-rule set `ytc_rules`, the Trusted Types policy name `lumen`.
+- The TV app: the Android application id and package `app.lumen.tv` (a new id would be a different app that cannot
+  update the installed one), its theme `Theme.lumen_tv`, the JNI names, the shell's internal paths (`/__lumen/client.wasm`)
+  and environment variables (`LUMEN_TV_*`), the user agent `Lumen-TV/1`, the debug-center discovery probe `LUMEN-DC`.
+- TV releases: the signing key and keystore under `~/.config/lumen-tv/`, the release tag prefix `lumen-tv-`, and the
+  asset names `lumen-tv-manifest.json`, `lumen-tv-manifest.json.sig`, `lumen-tv.apk` and `lumen-tv-<version>.apk`
+  (installed apps look for exactly these; the short install link `is.gd/lumentv` too).
+- The GitHub repository: renamed from `justerquate-sys/lumen` to `justerquate-sys/redline`. Apps built before
+  0.5.0 have `justerquate-sys/lumen` compiled in; GitHub redirects a renamed repository's API and download URLs
+  (301 for `api.github.com/repos/{owner}/{repo}/…`, the release assets' `browser_download_url` carry the new name),
+  and the shell's HTTP client (ureq 3, up to 10 redirects, GET kept) follows them, so those apps keep updating
+  (`tv/core/tests/core.rs`, `update_through_a_renamed_repository`). This holds only while no new repository takes
+  the old name `justerquate-sys/lumen`. New builds use `justerquate-sys/redline` (`LUMEN_TV_REPO` overrides it).
+- The debug center's LaunchAgent and data folders (`…/Application Support/Lumen`, `%APPDATA%\Lumen`,
+  `~/.local/share/lumen`), so collected data stays where it is.
 
 ### Google TV interaction layer
 
 The TV platform flag keeps these behaviors separate from the desktop extension. The existing four-column layout,
-charcoal/mint palette and overscan-safe sizing remain; focus uses a stationary mint frame. Remote focus, rail
+the one palette (graphite, white, red) and overscan-safe sizing remain; focus uses a stationary white frame (the
+accent `--ac`: about 13:1 against the focused `--cb` surface and 17:1 against the graphite background; red stays for
+the brand, playback and live, so a focused control never reads as an error or as progress). Remote focus, rail
 expansion, panels and late-arriving page content are immediate, without the desktop's entrance waves or card zoom.
 
 Search uses a Rust-rendered D-pad keyboard (`app/tvkeyboard.rs`, `tv/keyboard.rs`) and a query activation button,
@@ -1069,8 +1112,8 @@ created. Importing twice is harmless (the second run merges into the same record
 | `src/native/` | Native pages: `mod.rs` returns to the client when leaving the fallback video; `clean.rs` the cleanup logic (captions, keys, CC, promotions, Shorts switch). |
 | `content.js` (generated) | `window.stop()` first (except Home's document: `boot()` stops or holds it), then the bridge, the wasm-bindgen glue and the Wasm bytes (base64 in a block comment, read via `Function.prototype.toString`), `initSync`, `boot()`. |
 | `bridge.js` | Generic primitives only: replace the document, set/append HTML/text by id, attributes, CSS variables, history, `location.assign`, scroll, fetch (bytes back to Rust, optional init options; `progress: 1` also reports headers and bytes so far), abort, `chrome.storage`, timers, IntersectionObserver, postMessage, fullscreen, element size, `fade_imgs` (images still loading fade in when they land; cached ones are never hidden); media objects by numeric handle (bind a `<video>` and forward its events, `MediaSource`, `addSourceBuffer`, `appendBuffer`, `remove`, `changeType`, `buffered`, get/set/call properties, `isTypeSupported`); delegated click/dblclick/submit/pointerover/pointermove/keydown/input/drag/popstate/pagehide; voice: microphone → 16 kHz PCM chunks with a level custom property, a WebSocket relayed by the background worker (a stored secret appended there), a held bare key, contextmenu on `[data-ctx]`, secrets (only whether one is set; saved straight from an input). No YouTube or player knowledge: every decision is in Rust. |
-| `rules.json` | Static DNR. YouTube's site bundles are not blocked (YouTube's service worker fetches them outside the page frame, so a block broke the native fallback; `window.stop()` keeps them from running on client pages). `allowAllRequests` for `yt-native=1` and the native paths at priority 2; rule 20 (priority 1) adds a script-free CSP to Home's own document (read by the client, never run); block `log_event`, `/pagead/`, `csi_204` and doubleclick (from youtube.com) at priority 3, so telemetry stays blocked even on native pages; rule 33 lets Lumen's own "shown" batches (`log_event?alt=json&prettyPrint=false`) through; rule 50 sets `Access-Control-Allow-Origin: *` on googlevideo responses to youtube.com, because googlevideo randomly redirects chunk requests to another node and the redirected request carries `Origin: null`. `/s/player/` and `/api/stats/` are never blocked. `background.js` handles auto-update, debug-center delivery and the voice socket relay. |
-| `client.css` | The whole look (charcoal/mint tokens, layout, player), injected by the manifest (no flash). 15 KB (4.7 KB gzip). |
+| `rules.json` | Static DNR. YouTube's site bundles are not blocked (YouTube's service worker fetches them outside the page frame, so a block broke the native fallback; `window.stop()` keeps them from running on client pages). `allowAllRequests` for `yt-native=1` and the native paths at priority 2; rule 20 (priority 1) adds a script-free CSP to Home's own document (read by the client, never run); block `log_event`, `/pagead/`, `csi_204` and doubleclick (from youtube.com) at priority 3, so telemetry stays blocked even on native pages; rule 33 lets Redline's own "shown" batches (`log_event?alt=json&prettyPrint=false`) through; rule 50 sets `Access-Control-Allow-Origin: *` on googlevideo responses to youtube.com, because googlevideo randomly redirects chunk requests to another node and the redirected request carries `Origin: null`. `/s/player/` and `/api/stats/` are never blocked. `background.js` handles auto-update, debug-center delivery and the voice socket relay. |
+| `client.css` | The whole look (graphite/white/red tokens, layout, player), injected by the manifest (no flash). 15 KB (4.7 KB gzip). |
 | `src/route.rs` | URL → page. |
 | `src/config.rs` | Replaces the stopped page's `ytcfg`: client version + visitor data from `/sw.js_data` (2.7 KB, the endpoint YouTube's own service worker uses), cached in `chrome.storage.local` key `ytcConfigV1` for 24 h; fallback version `2.20261030.01.00`; session index `au` (default 0); SAPISID cookies → `SAPISIDHASH`/`SAPISID1PHASH`/`SAPISID3PHASH`. |
 | `src/api.rs` | InnerTube bodies and headers (`X-Youtube-Client-Name/Version`, `X-Origin`, `X-Goog-AuthUser`, `X-Goog-Visitor-Id`, `Authorization`). Same-origin `fetch`, cookies included by the browser. |
@@ -1104,8 +1147,8 @@ only in `chrome.storage.local` `ytcVoiceKeyV1` (local, not synced), read only by
 page, Wasm, logs, incidents, the debug overlay or the repo (e2e checks storage, incidents, the page and the overlay).
 Transcripts live in the field until the search; nothing of the audio or text is kept.
 
-Privacy: only `ytcConfigV1` (client version, visitor data, session index, refresh time, player preferences,
-and the two-value color-palette choice) and
+Privacy: only `ytcConfigV1` (client version, visitor data, session index, refresh time, player preferences;
+a `theme` field older versions wrote is ignored) and
 `ytcPlayerLogV1` (the last 10 player failures: time, video id, position, reason) are persisted. A fresh visitor from the bot-check
 recovery and the chosen VISIONOS route live in memory only (never stored, never in reports).
 SponsorBlock (an outside service, besides YouTube itself): requests carry only the 4-hex SHA-256 prefix
@@ -1245,7 +1288,7 @@ for the hedge deadline.
   and pixel checks, speed timings. Nothing reaches the network.
 - `tests/live-*.cjs`: a few real requests against live YouTube / Deepgram, run by hand and sparingly.
 - `tools/bench/` (live, by hand, rarely; a signed-out profile with a little watch history is seeded once outside
-  the repository by `profile.cjs`): `home-reload.cjs` (reload → first paint of YouTube's answer, Lumen vs YouTube's
+  the repository by `profile.cjs`): `home-reload.cjs` (reload → first paint of YouTube's answer, Redline vs YouTube's
   own page, parity of the two feeds, artificial latency on the first Home request, with or without the ready
   response and the hedge), `home-drift.cjs` (how YouTube's Home answer drifts with time) and `home-parity.cjs`
   (which parts of the request change YouTube's answer).
@@ -1280,7 +1323,7 @@ but use the same rules), Shorts-style looping, storyboard thumbnails on the seek
   that keeps them from being fetched at all: rules.json 20.)
 - Suggestions come from YouTube's `/complete/search` with your cookies (like YouTube's own box).
 - Search answers are not field-masked: ~60 % of a search answer (928 KB decoded, 104 KB gzip) is
-  `expandableMetadata` (key-moment cards, up to 75 KB per result) that Lumen never renders, but a mask can only
+  `expandableMetadata` (key-moment cards, up to 75 KB per result) that Redline never renders, but a mask can only
   list what to keep, so every result renderer type would have to be named (an unknown name is an HTTP 400, a
   forgotten one silently drops results). Parse is 2–3 ms; the gain would be ~60 KB on the wire per search.
 - The YouTube HTML document is still requested (and stopped at the first bytes, except Home with nothing ready,

@@ -1,8 +1,8 @@
-# Lumen for TV: design reference
+# Redline for TV: design reference
 
 `look-sheet.html` is the static composition reference for the TV screens, one 1920×1080 frame each.
 The fixture-driven TV screenshots from `tests/e2e.cjs` verify the shipped interface, including keyboard and comments.
-`node tv/design/render.cjs [dir]` renders the frames to PNGs (default `/tmp/lumen-tv-look/`). The app's TV
+`node tv/design/render.cjs [dir]` renders the frames to PNGs (default `/tmp/redline-tv-look/`). The app's TV
 stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (everything under
 `html[data-ytc-tv]`), and it uses the same numbers.
 
@@ -12,18 +12,18 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
 |---|---|---|
 | Root size | `font-size: 100vw / 60` | 1 rem = 16 CSS px on a 960×540 WebView (DPR 2), 32 px at 1920×1080, 64 px at 3840×2160: one layout at every resolution |
 | Safe area | `--sx: 3rem`, `--sy: 1.6875rem` | 5 % per side (overscan). Content and focus rings stay inside; backgrounds and pictures may bleed |
-| Ring | `--ring: .1875rem` (6 px at 1080p), offset `.1875rem` | mint `#b7ebca`, the only focus ring |
-| Focus | Steady mint frame, no scale | Focus, rail expansion, panels and key feedback are immediate; the focused surface steps to `#212b2e` |
-| Colours | bg `#101315`, panels `#151a1d` / `#1c2428`, surface `#212b2e`, raised `#293134`, selected `#252e2e`, mint `#b7ebca`, text `#edf3f3`, secondary `#a0afb1` | the desktop palette |
+| Ring | `--ring: .1875rem` (6 px at 1080p), offset `.1875rem` | white `#f1f1f1` (the accent `--ac`), the only focus ring |
+| Focus | Steady white frame, no scale | Focus, rail expansion, panels and key feedback are immediate; the focused surface steps to `#272727` (chips: `#3f3f3f`) |
+| Colours | bg `#0f0f0f`, panels `#181818` / `#212121`, surface `#272727`, raised `#3f3f3f`, selected `#303030`, accent white `#f1f1f1`, brand and progress red `#ff0033`, text `#f1f1f1`, secondary `#aaa` | the one palette, the same as the desktop's |
 | Type (1080p px) | titles 48–56 (`1.5–1.75rem`), body 28 (`.875rem`), secondary 24 (`.75rem`), never below 22 (`.6875rem`: duration badges, the failure reason) | card titles 2 lines, ellipsis |
 
 ## Layout
 
 - **Rail**: icons at x = 3.375 rem (2.5 rem tiles, pitch `--tvrow` 2.875 rem from 5.25 rem: Search, Home,
-  Subscriptions, History, Watch later, Playlists, Liked), the Lumen mark on top, and at the bottom (25.875 rem)
-  the account (Sign in / Account) and About & updates (a mint dot while an update is ready).
+  Subscriptions, History, Watch later, Playlists, Liked), the Redline mark on top, and at the bottom (25.875 rem)
+  the account (Sign in / Account) and About & updates (a white dot while an update is ready).
   The focus entering it reveals labels over the content immediately; the selected row has a quiet neutral
-  surface and mint text. The content never moves. Back from the content focuses the rail on the page's own item; →
+  surface and white text. The content never moves. Back from the content focuses the rail on the page's own item; →
   returns to where the focus was.
 - **Pages**: content from x = 7.75 rem to 56.25 rem, starting 2.1875 rem from the top (the chips row or the
   heading, 2.25 rem tall), the grid 1.25 rem below. **4 cards per row**, 11 rem wide (16:9 thumbnail 6.19 rem),
@@ -63,17 +63,22 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
 - **Character:** Calm, legible, responsive.
 - **World:** A dark cinema screen with quiet controls.
 - **Moments:** Real thumbnails in browse; the playing picture in watch.
-- **Signature:** One crisp mint focus frame that shows the next remote action.
+- **Signature:** One crisp white focus frame that shows the next remote action. White, not red: it stands out on
+  every surface it sits on (about 17:1 on the background, 13:1 on the focused `#272727` surface, far above the 3:1 a
+  focus indicator needs), it reads the same over any thumbnail, and red keeps its meanings (the brand, playback
+  progress, live, errors) so a focused control never looks like an error or a progress bar. It matches the desktop's
+  keyboard focus ring.
 
 Text controls have .375–.5 rem corners; icon-only player buttons stay round. Type remains Roboto/system, with
 400/500 weights and 600 only for compact emphasis. Labels use sentence case. The background, raised controls,
-and selected surfaces stay charcoal; mint marks focus and meaningful state. No generated imagery is needed.
+and selected surfaces stay graphite; white marks focus and meaningful state, red only the brand and playback. No
+generated imagery is needed.
 
 ## Applied polish passes
 
 1. **Spacing:** keep the existing four-card rhythm and 5% safe area. Reserve room for focus frames,
    keyboard keys and the player's action labels; scrolling readers stop above the bottom safe margin.
-2. **Color:** retain charcoal and mint, with quieter neutral selected surfaces. Remove the seek knob's
+2. **Color:** graphite, white and red (0.14.0; charcoal and mint before), with quieter neutral selected surfaces. Remove the seek knob's
    decorative halo and panel shadows; video remains the main source of color.
 3. **Icons:** retain the existing outline family and consistent TV-sized icon boxes. Comments uses the
    same stroke treatment; focused player actions also have readable text labels.
@@ -85,8 +90,8 @@ and selected surfaces stay charcoal; mint marks focus and meaningful state. No g
    with suggestions; Comments and More info use bounded scrolling panels with persistent exit controls.
 7. **Details:** rounded rectangles replace excess capsules, while icon-only player controls stay round.
    Focus is visible, stays inside open panels and returns to the originating action when closed.
-8. **Visuals:** real thumbnails and the playing video carry the visual detail. No generated images,
-   background decoration or new brand elements were introduced.
+8. **Visuals:** real thumbnails and the playing video carry the visual detail. No generated images or
+   background decoration; the one brand element is the Redline mark (browser/icons/redline.svg) on the rail.
 9. **Motion:** remote input, rail expansion and panel changes are immediate, including late responses.
    Only the idle overlay's short opacity fade remains; reduced motion removes it.
 

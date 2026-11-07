@@ -247,7 +247,7 @@ pub fn comment_html(out: &mut String, c: &Comment, v: &str, reply: Option<usize>
     out.push_str("</div></div>");
 }
 
-/// The Top/Newest group (scope of its sliding mint mark, `bridge::mark_slide`).
+/// The Top/Newest group (scope of its sliding accent mark, `bridge::mark_slide`).
 pub const SORT: &str = "ytc-csort";
 
 /// Element id of the `i`th sort tab (Top, Newest).

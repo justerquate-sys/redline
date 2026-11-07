@@ -1,6 +1,6 @@
-# Lumen debug center (optional developer tool)
+# Redline debug center (optional developer tool)
 
-A local collector for Lumen **development builds** (`./build.sh --dev`). Rust, standard library only.
+A local collector for Redline **development builds** (`./build.sh --dev`). Rust, standard library only.
 It listens on `127.0.0.1:47321` only (unless started with `--lan`, below) and appends every report the extension's background worker POSTs to
 `/incident` (incidents and speed-telemetry batches) as one line to its incidents file. The public build
 has no collector code and never talks to it.
@@ -43,7 +43,7 @@ cargo build --release --locked && cargo test --locked
 
 Then open http://127.0.0.1:47321/ and http://127.0.0.1:47321/perf.
 
-**Lumen for TV** (your TV with telemetry turned on, tv/README.md "Speed telemetry"): start it with `--lan`
+**Redline for TV** (your TV with telemetry turned on, tv/README.md "Speed telemetry"): start it with `--lan`
 (`./target/release/lumen-debug-center --lan`, or `YTC_DEBUG_CENTER_LAN=1`). It then also listens on the network, prints
 the address to type on the TV, and answers the TV's discovery probe (UDP `LUMEN-DC?` on the same port, from devices on
 your network only). Devices other than this computer may only `POST /incident` (and `GET /health`): every page and

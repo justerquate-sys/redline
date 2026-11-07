@@ -1,7 +1,7 @@
 [package]
 name = "lumen-tv-core"
 version = "0.1.0"
-description = "Lumen TV shell logic without Tauri: signed client updates, the TV device sign-in, the request rules, the storage shim"
+description = "Redline for TV shell logic without Tauri: signed client updates, the TV device sign-in, the request rules, the storage shim"
 license = "MIT"
 edition = "2024"
 rust-version = "1.90"

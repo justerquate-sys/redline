@@ -7,7 +7,7 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="ytc_bg">#FF101315</color>
-    <color name="ytc_ac">#FFB7EBCA</color>
-    <color name="ytc_on">#FF233D36</color>
+    <color name="ytc_bg">#FF0F0F0F</color>
+    <color name="ytc_ac">#FFF1F1F1</color>
+    <color name="ytc_on">#FF303030</color>
 </resources>

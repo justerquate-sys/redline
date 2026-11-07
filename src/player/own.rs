@@ -647,7 +647,7 @@ enum PanelHow {
 const ROW_FRAME_W: f64 = 96.0;
 const TIP_FRAME_W: f64 = 160.0;
 
-/// The volume slider's value and its mint fill (`--v`, client.css `.pvol`).
+/// The volume slider's value and its accent fill (`--v`, client.css `.pvol`).
 fn vol_ui(v: f64) {
     bridge::value(ui::VOL, &format!("{v}"));
     bridge::css_var(ui::VOL, "--v", &format!("{:.3}", v.clamp(0.0, 1.0)));
@@ -4688,7 +4688,7 @@ impl Own {
                     self.seek_to(a + fx * (b - a));
                 }
                 if phase == 0 {
-                    // Pressing the bar leaves a mint ripple where it landed (on pointerdown; the fill is already there).
+                    // Pressing the bar leaves a red ripple where it landed (on pointerdown; the fill is already there).
                     self.kf_until = 0.0;
                     bridge::css_var(ui::SEEK, "--r", &format!("{fx:.5}"));
                     bridge::attr(ui::RIP, "class", "prip on");

@@ -147,7 +147,7 @@ pub fn client_wasm(url: &str) -> bool {
 /// The document the shell serves for a [`client_page`] navigation instead of asking YouTube for its page: the client
 /// stops YouTube's document at its first byte (`window.stop()`) and writes its own, so YouTube's HTML (a round trip
 /// of 100–350 ms before the client can start, on every app start and reload) is never used.
-pub const CLIENT_DOCUMENT: &str = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>YouTube</title></head><body></body></html>";
+pub const CLIENT_DOCUMENT: &str = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Redline</title></head><body></body></html>";
 
 impl Rules {
     pub fn parse(json: &str) -> Result<Rules, String> {

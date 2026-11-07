@@ -30,7 +30,7 @@ const YTC = (() => {
   const call = (name, ...args) => {
     if (depth && late && (name === 'on_focus' || name === 'on_intent')) { queueMicrotask(() => call(name, ...args)); return; }
     depth++;
-    try { return wasm_bindgen[name](...args); } catch (e) { console.error('[Lumen]', name, e); } finally { depth--; }
+    try { return wasm_bindgen[name](...args); } catch (e) { console.error('[Redline]', name, e); } finally { depth--; }
   };
   let io = null, lastHover = null, lastCls = null, hoverEl = null, clicked = null, shownWatch = null, docHeld = null;
   const insert = (el, html) => {
@@ -993,7 +993,7 @@ const YTC = (() => {
         sb.addEventListener('updateend', () => evt(h, 'updateend'));
         sb.addEventListener('error', () => evt(h, 'error'));
         return true;
-      } catch (e) { console.warn('[Lumen] addSourceBuffer', mime, e); return false; }
+      } catch (e) { console.warn('[Redline] addSourceBuffer', mime, e); return false; }
     },
     // Returns '' on success, else the exception name (e.g. QuotaExceededError).
     sb_append(h, bytes) { try { mo.get(h).appendBuffer(bytes.slice()); return ''; } catch (e) { return (e && e.name) || 'Error'; } },

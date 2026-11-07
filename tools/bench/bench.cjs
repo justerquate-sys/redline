@@ -280,7 +280,7 @@ const f = v => Number.isFinite(v) ? v.toFixed(0).padStart(6) : '     -';
   const counts = {};
   for (const e of ev) if (e.m === 'lag.loaf') counts['loaf/' + e.route] = (counts['loaf/' + e.route] || 0) + 1;
   const keys = Object.keys(series).sort();
-  console.log(`\nLumen live benchmark: ${EXT}, ${RUNS} runs${CPU > 1 ? `, CPU ${CPU}× slower` : ''}, ${batches.length} batches, ${ev.length} events`);
+  console.log(`\nRedline live benchmark: ${EXT}, ${RUNS} runs${CPU > 1 ? `, CPU ${CPU}× slower` : ''}, ${batches.length} batches, ${ev.length} events`);
   console.log('metric'.padEnd(58) + '     n    p50    p90    max');
   for (const k of keys) {
     const s = series[k];

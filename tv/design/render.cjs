@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Renders every 1920×1080 frame of tv/design/look-sheet.html to a PNG (one file per screen id).
-//   node tv/design/render.cjs [out-dir]     (default /tmp/lumen-tv-look)
+//   node tv/design/render.cjs [out-dir]     (default /tmp/redline-tv-look)
 'use strict';
 const path = require('node:path');
 const fs = require('node:fs');
 const { chromium } = require('playwright');
-const out = process.argv[2] || '/tmp/lumen-tv-look';
+const out = process.argv[2] || '/tmp/redline-tv-look';
 (async () => {
   fs.mkdirSync(out, { recursive: true });
   const browser = await chromium.launch(process.env.LUMEN_EXTENSION_CHROMIUM ? { executablePath: process.env.LUMEN_EXTENSION_CHROMIUM } : {});

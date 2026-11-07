@@ -14,8 +14,6 @@ pub const MAX_AGE_MS: f64 = 24.0 * 3600.0 * 1000.0;
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// Appearance palette; only the non-default YouTube palette is stored (`theme`).
-    pub palette: crate::appearance::Palette,
     pub version: String,
     pub visitor: Option<String>,
     /// `X-Goog-AuthUser` session index; settable in storage (`au`).
@@ -95,7 +93,7 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { palette: crate::appearance::Palette::Lumen, version: FALLBACK_VERSION.into(), visitor: None, auth_user: 0, fetched_at: 0.0, prefs: Prefs::default(), sts: None, own_player: true, vision_auth: false, autoplay: true }
+        Config { version: FALLBACK_VERSION.into(), visitor: None, auth_user: 0, fetched_at: 0.0, prefs: Prefs::default(), sts: None, own_player: true, vision_auth: false, autoplay: true }
     }
 }
 
@@ -113,7 +111,7 @@ impl Config {
     pub fn from_json(s: &str) -> Config {
         let mut c = Config::default();
         let Some(v) = json::parse_str(s) else { return c };
-        c.palette = v.get("theme").and_then(In::as_str).and_then(crate::appearance::Palette::from_key).unwrap_or_default();
+        // (`theme`, the palette choice of 0.13.3–0.13.8, is ignored: Redline has one palette.)
         if let Some(x) = v.get("v").and_then(In::as_str).filter(|x| is_client_version(x)) {
             c.version = x.into();
         }
@@ -148,7 +146,6 @@ impl Config {
         let p = &self.prefs;
         let mut j = json!({"v": self.version, "vd": self.visitor, "au": self.auth_user, "at": self.fetched_at,
             "p": {"cc": p.captions, "vol": p.volume, "mu": p.muted, "q": p.quality, "co": p.codec, "th": p.theater}});
-        if self.palette != crate::appearance::Palette::Lumen { j["theme"] = self.palette.key().into(); }
         if let Some(c) = p.cc_style {
             let r = |v: f64| (v * 1000.0).round() / 1000.0;
             j["p"]["cs"] = json!({"v": 2, "x": r(c.x), "y": r(c.y), "s": r(c.s)});

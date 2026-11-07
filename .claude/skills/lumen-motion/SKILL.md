@@ -1,9 +1,9 @@
 ---
 name: lumen-motion
-description: The motion law and implementation patterns for Lumen. Load it before adding, changing or reviewing any animation, transition, hover/press state, popover, page change or player-control motion in extension/client.css, browser/bridge.js or src/.
+description: The motion law and implementation patterns for Redline (formerly Lumen; the skill keeps its name). Load it before adding, changing or reviewing any animation, transition, hover/press state, popover, page change or player-control motion in extension/client.css, browser/bridge.js or src/.
 ---
 
-# Lumen motion
+# Redline motion
 
 The client should feel silky, alive and instantaneous. The point is speed you can feel; motion is how
 speed looks, never a cost on top of it.
@@ -98,7 +98,8 @@ reimplemented in Rust + CSS this way. No animation library is added.
 
 ## Style
 
-Charcoal + mint: background `#101315`, panels `#151a1d`/`#1c2428`, mint accent `#b7ebca`. Motion is
+Graphite, white and red: background `#0f0f0f`, panels `#181818`/`#212121`, the accent white `#f1f1f1`, red `#ff0033`
+only for the brand and playback. Motion is
 calm and precise: no bounce on menus, no parallax, no looping decoration, no spinners (skeletons in
 the final geometry instead), no motion on information the user is reading (durations, counts,
 progress text). Popovers: soft shadow, 12 px radius, grow out of the trigger's own shape: only their surface

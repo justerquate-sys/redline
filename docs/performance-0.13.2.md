@@ -1,5 +1,8 @@
 # Interaction performance in 0.13.2
 
+> A record of the release named in the title, when the product was called Lumen and had the charcoal and mint
+> palette; since 0.14.0 it is Redline, with one graphite, white and red palette (docs/architecture.md).
+
 This pass prioritizes input feedback, a usable destination page, the first video
 frame, and responsive seeking. Picture quality, the charcoal/mint interface,
 focus behavior, and motion remain the reference. Application decisions stay in

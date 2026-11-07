@@ -1,6 +1,6 @@
-# Lumen
+# Redline
 
-**Your own YouTube front-end, running at www.youtube.com.** Lumen is a browser extension that stops
+**A fast, ad-free client for YouTube, running at www.youtube.com.** Redline is a browser extension that stops
 YouTube's web app before it starts and renders its own fast, quiet pages from YouTube's own data (the
 InnerTube API), with its own video player. Your account, subscriptions, history and playlists keep working,
 because it is still youtube.com with your session. The logic is Rust compiled to WebAssembly; JavaScript is
@@ -38,7 +38,7 @@ _To be added:_
 - **Watch later, newest saves first.** The list uses YouTube’s date-added order across pages, in your
   language. If YouTube refuses the sort, the list still shows (with **Try again**). Removing a bookmark
   removes the card immediately; a failed request restores it in place with a retry action.
-- **SponsorSkip** built into the player, with its switch and category choices in the browser’s **Lumen**
+- **SponsorSkip** built into the player, with its switch and category choices in the browser’s **Redline**
   extension popup. Segment data from SponsorBlock; privacy-preserving (see "Privacy").
 - **No Shorts unless you want them**, no ads, no Premium/membership upsells. Optional filters: minimum length, Music, Live, popularity order, playlists only.
 - **Your own Home topics** next to YouTube's own chips (rename, reorder, hide them).
@@ -50,9 +50,8 @@ _To be added:_
 - **Keyboard first**: `?` lists the shortcuts; `/` focuses search; `g h` Home, `g s` Subscriptions…
 - **Motion that never costs speed**: every result is usable on its first frame; animation rides on top
   ([docs/motion.md](docs/motion.md)).
-- **Two color palettes:** Lumen’s charcoal and mint, or YouTube’s graphite, white and red. Choose
-  **Color palette** in the browser’s **Lumen** extension popup; open tabs update immediately, with the
-  same layout, player and motion.
+- **A familiar look:** graphite surfaces, white text and controls, red for the brand and playback, blue for
+  links, on the desktop and on the TV alike.
 
 ## Install (no build needed)
 
@@ -91,9 +90,9 @@ the mic only offers this panel; nothing is sent anywhere.
 
 ## Google TV / Android TV
 
-The same client runs on a TV as the app **Lumen**, with its own 10-foot interface driven by the remote: a rail
-on the left (Search, Home, Subscriptions, History, Watch later, Playlists, Liked, Account), big cards that grow
-under a mint focus ring, a search screen for the TV keyboard, and a full-screen player whose controls appear on
+The same client runs on a TV as the app **Redline for TV**, with its own 10-foot interface driven by the remote: a rail
+on the left (Search, Home, Subscriptions, History, Watch later, Playlists, Liked, Account), big cards under a
+white focus frame, a search screen for the TV keyboard, and a full-screen player whose controls appear on
 any key (←/→ seek 10 s with a preview frame, OK plays/pauses, ↓ to the buttons and Up next). Back closes what is
 open, then goes to the rail, then back. It is a small app around an Android WebView that opens youtube.com with the client injected,
 the way the extension does (details in [tv/README.md](tv/README.md)).
@@ -113,7 +112,7 @@ the [Releases](https://github.com/justerquate-sys/lumen/releases) page also carr
 3. Allow it to install apps: *Settings → Apps → Security & restrictions → Unknown sources* (on Google TV:
    *Settings → Apps → Install unknown apps*) → **Downloader**.
 4. In the Downloader app, enter: **`is.gd/lumentv`**, let it download and choose **Install**.
-5. **Lumen** appears in *Apps* with its banner; add it to your favourites if you like.
+5. **Redline** appears in *Apps* with its banner; add it to your favourites if you like.
 
 **With ADB over Wi-Fi (from a computer with Android's
 [platform-tools](https://developer.android.com/tools/releases/platform-tools)):**
@@ -150,7 +149,7 @@ rare, is offered on screen: **Install** downloads it, checks it the same way and
 
 ## Privacy
 
-Lumen has no server, no analytics and no account of its own. What it stores stays in your browser's
+Redline has no server, no analytics and no account of its own. What it stores stays in your browser's
 extension storage on this device (preferences, the last 100 searches, resume positions for up to 2,000
 videos, your topics and blocked websites, an optional Deepgram key). Feeds, descriptions and recommendations
 are kept in memory and in this tab's session only.
@@ -160,7 +159,7 @@ Every outside service it talks to, and when:
 | Service | When | What it sends |
 |---|---|---|
 | **YouTube** (`www.youtube.com`, `*.googlevideo.com`, `i.ytimg.com`, `yt3.ggpht.com`) | Whenever you use it, like youtube.com itself | The same kind of requests YouTube's own site makes, with your YouTube session if you are signed in. Video streams come from googlevideo. YouTube's own logging/ad endpoints (`log_event`, `/pagead/`, `csi_204`, doubleclick) are blocked. |
-| **SponsorBlock** (`sponsor.ajay.app`) | When a video starts, unless you switch SponsorSkip off in the Lumen extension popup | Only the first 4 hex characters of the SHA-256 hash of the video id (k-anonymity: the answer covers ~150 videos and yours is picked locally). No cookies, no referrer, nothing reported back. Switched off, nothing is sent. |
+| **SponsorBlock** (`sponsor.ajay.app`) | When a video starts, unless you switch SponsorSkip off in the Redline extension popup | Only the first 4 hex characters of the SHA-256 hash of the video id (k-anonymity: the answer covers ~150 videos and yours is picked locally). No cookies, no referrer, nothing reported back. Switched off, nothing is sent. |
 | **Deepgram** (`api.deepgram.com`) | Only while you are dictating a voice search, and only if you saved a key | Your microphone audio (16 kHz mono) for that dictation and your key. The key never enters the YouTube page; the extension's background worker adds it. |
 | **Google sign-in** (`oauth2.googleapis.com`), TV app only | While the sign-in code is shown, and to refresh or revoke the TV's access | YouTube's TV device sign-in: the request for a code, polls until you approved it, then token refreshes. The tokens stay on the TV, sealed with the Android Keystore. |
 | **GitHub** (`api.github.com`, release downloads), TV app only | At launch and every 6 hours | A request for this repository's releases and, when there is a newer one, its files. Nothing about you or your viewing. |
@@ -218,7 +217,7 @@ steps only.
   Rust telemetry, `/* @dev-start */ … /* @dev-end */` blocks in `browser/*.js`);
 - auto-reload: open YouTube tabs ask the worker every 4 s whether the files changed (`build-id.txt`), and the
   extension reloads itself after each build;
-- the name "Lumen (dev)" and a build id in the version name.
+- the name "Redline (dev)" and a build id in the version name.
 
 Run `./build.sh` again before committing; `npm run check:public` fails on a development build.
 
@@ -243,4 +242,4 @@ Rust, privacy rules are strict, motion follows [docs/motion.md](docs/motion.md),
 
 ## License
 
-[MIT](LICENSE) © 2026 justerquate-sys. Lumen is not affiliated with YouTube or Google.
+[MIT](LICENSE) © 2026 justerquate-sys. Redline is not affiliated with YouTube or Google; YouTube is a trademark of Google LLC.

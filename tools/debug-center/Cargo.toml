@@ -3,7 +3,7 @@ name = "lumen-debug-center"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Local collector for Lumen incident reports (127.0.0.1 only)."
+description = "Local collector for Redline incident reports (127.0.0.1 only)."
 
 [dependencies]
 

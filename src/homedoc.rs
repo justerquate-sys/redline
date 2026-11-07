@@ -4,7 +4,7 @@
 //! YouTube's page reload is a `GET https://www.youtube.com/` with the browser's cookies; its server renders
 //! the Home feed into the document as `var ytInitialData = {…};` (the same shape as a `browse` response) and
 //! names that answer in `ytcfg` (`EVENT_ID`), which its page then quotes in the "shown" signals it sends
-//! (`crate::impress`). Lumen asks for the same document and reads that data (the continuation that follows
+//! (`crate::impress`). Redline asks for the same document and reads that data (the continuation that follows
 //! is the usual `browse` continuation, as on YouTube's page). Measured live (signed out, 3 Nov 2026,
 //! tools/bench/home-reload.cjs): the document answers in the same time as the `browse` request (p50 1030
 //! vs 1022 ms, its head after 121 ms), 140 KB on the wire instead of 61 KB.

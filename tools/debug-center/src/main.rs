@@ -1,6 +1,6 @@
-//! Lumen debug center: a tiny local collector for Lumen incident
+//! Redline debug center: a tiny local collector for Redline incident
 //! reports and speed telemetry. Listens on 127.0.0.1 only, unless started with `--lan`: then
-//! the owner's TV (Lumen for TV with telemetry turned on) can deliver its reports over the
+//! the owner's TV (Redline for TV with telemetry turned on) can deliver its reports over the
 //! network too, and a UDP probe (`LUMEN-DC?` on the same port) is answered so the TV finds it;
 //! peers other than this computer may only post reports, never read them. The extension's
 //! background worker POSTs each incident (player fallback, InnerTube error, Rust
@@ -23,7 +23,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const ADDR: &str = "127.0.0.1:47321";
 const MAX_BODY: usize = 512 * 1024;
 
-/// The discovery probe of Lumen for TV and the answer's start (`tv/core/src/tel.rs`).
+/// The discovery probe of Redline for TV and the answer's start (`tv/core/src/tel.rs`).
 const PROBE: &[u8] = b"LUMEN-DC?";
 
 /// Where to listen and the incidents file: `[--lan] [file]`. 127.0.0.1 unless `--lan` (or
@@ -81,7 +81,7 @@ fn main() {
     if let Ok(u) = UdpSocket::bind(&addr) {
         std::thread::spawn(move || answer_probes(u, port));
     }
-    eprintln!("Lumen debug center on http://127.0.0.1:{port}/ → {}", file.display());
+    eprintln!("Redline debug center on http://127.0.0.1:{port}/ → {}", file.display());
     if lan {
         let ip = lan_ip().map_or_else(|| "<this computer's address>".to_string(), |ip| ip.to_string());
         eprintln!("Also listening on the network (--lan): on the TV, About & updates → Developer → {ip}:{port} (or Find). Devices on the network can only deliver reports.");
@@ -100,7 +100,8 @@ fn main() {
 /// Where incidents go without an argument: the user's data folder, outside any checkout.
 /// macOS `~/Library/Application Support/Lumen/incidents.ndjson`, Windows
 /// `%APPDATA%\Lumen\incidents.ndjson`, Linux and others `$XDG_DATA_HOME/lumen/incidents.ndjson`
-/// (default `~/.local/share/lumen/incidents.ndjson`); `incidents.ndjson` here when none is known.
+/// (default `~/.local/share/lumen/incidents.ndjson`); `incidents.ndjson` here when none is known. (The folders keep
+/// the name from before the rename to Redline, so data already collected stays where it is.)
 fn default_file() -> PathBuf {
     let env = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
     let dir = if cfg!(target_os = "macos") {
@@ -210,8 +211,8 @@ fn overview(file: &Path) -> String {
             }
         }
     }
-    let mut page = String::from("<!doctype html><meta charset=utf-8><title>Lumen debug center</title><style>body{background:#111;color:#ddd;font:13px ui-monospace,monospace;margin:20px}h1{font:600 18px system-ui;color:#b7ebca}a{color:#9cc8ff}pre{white-space:pre-wrap;word-break:break-all;background:#1a1a1a;padding:10px;border-radius:8px}</style>");
-    page.push_str(&format!("<h1>Lumen debug center</h1><p>{incidents} incident(s) and {batches} telemetry batch(es) stored in {} · <a href=/perf>speed dashboard</a></p>", escape(&file.display().to_string())));
+    let mut page = String::from("<!doctype html><meta charset=utf-8><title>Redline debug center</title><style>body{background:#111;color:#ddd;font:13px ui-monospace,monospace;margin:20px}h1{font:600 18px system-ui;color:#b7ebca}a{color:#9cc8ff}pre{white-space:pre-wrap;word-break:break-all;background:#1a1a1a;padding:10px;border-radius:8px}</style>");
+    page.push_str(&format!("<h1>Redline debug center</h1><p>{incidents} incident(s) and {batches} telemetry batch(es) stored in {} · <a href=/perf>speed dashboard</a></p>", escape(&file.display().to_string())));
     for l in last.iter().rev() {
         page.push_str("<pre>");
         page.push_str(&escape(l));

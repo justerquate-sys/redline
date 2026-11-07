@@ -1,4 +1,4 @@
-# Lumen motion
+# Redline motion
 
 (The same text is the agent skill `.claude/skills/lumen-motion/SKILL.md`; keep both in step.)
 
@@ -95,7 +95,8 @@ reimplemented in Rust + CSS this way. No animation library is added.
 
 ## Style
 
-Charcoal + mint: background `#101315`, panels `#151a1d`/`#1c2428`, mint accent `#b7ebca`. Motion is
+Graphite, white and red: background `#0f0f0f`, panels `#181818`/`#212121`, the accent white `#f1f1f1`, red `#ff0033`
+only for the brand and playback. Motion is
 calm and precise: no bounce on menus, no parallax, no looping decoration, no spinners (skeletons in
 the final geometry instead), no motion on information the user is reading (durations, counts,
 progress text). Popovers: soft shadow, 12 px radius, grow out of the trigger's own shape: only their surface

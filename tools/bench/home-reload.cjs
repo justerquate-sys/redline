@@ -1,4 +1,4 @@
-// Live benchmark: Home reload → first paint of a fresh feed (Lumen) vs YouTube's own page.
+// Live benchmark: Home reload → first paint of a fresh feed (Redline) vs YouTube's own page.
 // Talks to the REAL youtube.com (signed out); run it by hand and sparingly, never in CI.
 //
 //   node tools/bench/home-reload.cjs [--n=10] [--wait=4000] [--delay=MS] [--slow=X] [--yt] [--parity]
@@ -8,8 +8,8 @@
 //   --delay    adds MS to the first Home browse request of every reload (Playwright route delay)
 //   --slow     multiplies: --slow=10 delays the first Home browse request by 9× its median (measured live)
 //   --yt       also YouTube's own page (a separate profile without the extension), same reload loop
-//   --parity   same profile: YouTube's own Home (?yt-native=1) right after each Lumen reload, and the
-//              overlap of the two feeds (YouTube's response, not Lumen's filtered cards)
+//   --parity   same profile: YouTube's own Home (?yt-native=1) right after each Redline reload, and the
+//              overlap of the two feeds (YouTube's response, not Redline's filtered cards)
 //   --noready  no ready responses (localStorage ytc-test-noready): every reload takes the network path
 //   --nohedge  no hedge request (localStorage ytc-test-nohedge)
 //   --nodoc    Home from the browse API instead of YouTube's Home document (localStorage ytc-test-nodoc)
@@ -20,13 +20,13 @@
 //   YTC_EXT    the extension folder (default extension/)
 //
 // "fresh paint" = the first frame whose Home cards all come from a browse response no earlier load
-// showed (the response is matched by video ids, captured from the network). Lumen's own breakdown
+// showed (the response is matched by video ids, captured from the network). Redline's own breakdown
 // (src, age, hedge) comes from its development-build marks on <html>.
 'use strict';
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { extensionDir } = require('../../tests/browser.cjs');
 const { seeded, launch, homeIds } = require('./profile.cjs');
-// The Home data inside YouTube's Home document (what Lumen reads since 0.12.0, src/homedoc.rs).
+// The Home data inside YouTube's Home document (what Redline reads since 0.12.0, src/homedoc.rs).
 const docData = html => { const m = /var ytInitialData = (\{.*?\});<\/script>/s.exec(html); try { return m ? JSON.parse(m[1]) : {}; } catch { return {}; } };
 
 const arg = (k, d) => { const a = process.argv.find(x => x.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d; };
@@ -128,7 +128,7 @@ async function run(label, withExt, opts = {}) {
       }
       for (const f of H.frames) {
         // The response a frame shows: the newest one whose ids contain the frame's cards in order
-        // (Lumen's filters only drop cards). Fresh = that response was never shown by an earlier load.
+        // (Redline's filters only drop cards). Fresh = that response was never shown by an earlier load.
         const inOrder = r => { let k = 0; for (const id of r.ids) if (id === f.ids[k]) k++; return k === f.ids.length; };
         const resp = [...responses].reverse().find(inOrder);
         if (resp && !resp.used) {
@@ -152,7 +152,7 @@ async function run(label, withExt, opts = {}) {
       const yt = homeIds(await page.evaluate(() => window.ytInitialData).catch(() => ({})));
       row.yt = yt;
       row.parity = overlap(row.ids || [], yt);
-      console.log(`  parity: Lumen response ∩ YouTube's own page = ${(row.parity * 100).toFixed(0)} % (top 12: ${(overlap((row.ids || []).slice(0, 12), yt.slice(0, 12)) * 100).toFixed(0)} %) in ${Date.now() - t} ms`);
+      console.log(`  parity: Redline response ∩ YouTube's own page = ${(row.parity * 100).toFixed(0)} % (top 12: ${(overlap((row.ids || []).slice(0, 12), yt.slice(0, 12)) * 100).toFixed(0)} %) in ${Date.now() - t} ms`);
       // (YouTube's page may still be navigating itself: retry once.)
       await page.goto('https://www.youtube.com/', { waitUntil: 'commit' }).catch(() => page.waitForTimeout(1500).then(() => page.goto('https://www.youtube.com/', { waitUntil: 'commit' })));
       await page.waitForTimeout(3000);
@@ -184,9 +184,9 @@ function summary(label, { rows, browseMs }) {
   if (par.length) console.log(`parity with YouTube's own page at the same moment: mean ${(par.reduce((a, r) => a + r.parity, 0) / par.length * 100).toFixed(0)} % of ids shared`);
 }
 
-// Parity of Lumen's Home with YouTube's own (YouTube's answers, before Lumen's filters): overlap of
+// Parity of Redline's Home with YouTube's own (YouTube's answers, before Redline's filters): overlap of
 // the top 24 between loads of each, and how often YouTube's sticky picks (in ≥ 75 % of its own loads)
-// appear in Lumen's.
+// appear in Redline's.
 function parity(l, y) {
   const L = l.rows.filter(r => r && r.ids && r.ids.length).map(r => r.ids.slice(0, 24));
   const Y = y.rows.filter(r => r && r.ids && r.ids.length).map(r => r.ids.slice(0, 24));
@@ -196,16 +196,16 @@ function parity(l, y) {
   const count = A => { const m = new Map(); for (const ids of A) for (const id of ids) m.set(id, (m.get(id) || 0) + 1); return m; };
   const cy = count(Y), cl = count(L);
   const sticky = [...cy].filter(([, n]) => n >= 0.75 * Y.length).map(([id]) => id);
-  console.log(`\n== Parity (top 24 of YouTube's answer; ${L.length} Lumen loads, ${Y.length} of YouTube's own)`);
-  console.log(`  YouTube × YouTube ${mean(within(Y))} shared · Lumen × Lumen ${mean(within(L))} · Lumen × YouTube ${mean(cross)}`);
-  console.log(`  sticky picks (in ≥ 75 % of YouTube's own loads): ${sticky.length}; in Lumen's loads: ${sticky.map(id => Math.round((cl.get(id) || 0) / L.length * 100) + ' %').join(', ') || '-'}`);
+  console.log(`\n== Parity (top 24 of YouTube's answer; ${L.length} Redline loads, ${Y.length} of YouTube's own)`);
+  console.log(`  YouTube × YouTube ${mean(within(Y))} shared · Redline × Redline ${mean(within(L))} · Redline × YouTube ${mean(cross)}`);
+  console.log(`  sticky picks (in ≥ 75 % of YouTube's own loads): ${sticky.length}; in Redline's loads: ${sticky.map(id => Math.round((cl.get(id) || 0) / L.length * 100) + ' %').join(', ') || '-'}`);
 }
 
 (async () => {
   const out = {};
   out.lumen = await run('lumen', true, { parity: flag('parity') });
   if (flag('yt')) out.yt = await run('youtube', false);
-  summary(`Lumen (${EXT})${DELAY ? ` +${DELAY} ms on the first browse` : ''}${SLOW ? ` first browse ${SLOW}× slower` : ''}`, out.lumen);
+  summary(`Redline (${EXT})${DELAY ? ` +${DELAY} ms on the first browse` : ''}${SLOW ? ` first browse ${SLOW}× slower` : ''}`, out.lumen);
   if (out.yt) {
     summary("YouTube's own page (no extension)", out.yt);
     parity(out.lumen, out.yt);

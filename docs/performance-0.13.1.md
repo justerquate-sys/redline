@@ -1,5 +1,8 @@
 # Rust performance pass: 0.13.1
 
+> A record of the release named in the title, when the product was called Lumen and had the charcoal and mint
+> palette; since 0.14.0 it is Redline, with one graphite, white and red palette (docs/architecture.md).
+
 This pass compares the Rust client with `a9110e9` (0.13.0). It removes work from
 JSON parsing, page snapshots and MP4 quality switches. The interface, motion
 tokens, media-quality choices, request policy and storage rules are unchanged.

@@ -177,7 +177,7 @@ impl Viewport {
 /// The Home request (`browse FEwhat_to_watch`) as YouTube's web app sends it for its Home: the
 /// usual context plus how the window looks (size, pixel density, form factor, theme, app state),
 /// for the Home URL wherever it is sent from. Measured live (tools/bench/home-parity.cjs, 3 Nov
-/// 2026, signed out): without these fields YouTube's answers to Lumen shared 37–40 % of their top 24
+/// 2026, signed out): without these fields YouTube's answers to Redline shared 37–40 % of their top 24
 /// with the answers to YouTube's own context (vs 44–53 % between two of YouTube's own) and carried
 /// its sticky picks less often (61–67 % vs 74–87 %); with them 49 % and 78 %.
 pub fn home_body(cfg: &Config, hl: &str, vp: &Viewport) -> String {

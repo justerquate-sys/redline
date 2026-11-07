@@ -1,5 +1,8 @@
 # Watch later and sidebar interaction
 
+> A record of the release named in the title, when the product was called Lumen and had the charcoal and mint
+> palette; since 0.14.0 it is Redline, with one graphite, white and red palette (docs/architecture.md).
+
 Lumen 0.13.4 adds hover activation to the six desktop sidebar links, removes the owner/count/views row
 under Watch later, requests newest-save order from YouTube, and removes unbookmarked cards immediately.
 It includes the previously prepared selectable palette and toolbar preferences from 0.13.3.

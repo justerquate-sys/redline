@@ -3,7 +3,7 @@
 **Done (2 Nov 2026):** the TV app was built in the old private layout (`client/…`) and ported here. This file
 stays as the list of every TV hook in the shared client; the paths in the table are the old ones on the left.
 Since the port: the TV bundle is `./build.sh --tv` (`browser/build.cjs --target=tv`), the app is named
-**Lumen** (`app.lumen.tv`, crates `lumen-tv`/`lumen-tv-core`, `LUMEN_TV_*` build variables, release assets
+**Redline for TV** (until 0.4.0 "Lumen"; it keeps `app.lumen.tv`, crates `lumen-tv`/`lumen-tv-core`, `LUMEN_TV_*` build variables, release assets
 `lumen-tv-*`, keys in `~/.config/lumen-tv/`), and `#ytc-player.menu` (not `#ytc-menu[data-m]`, which stays set
 while a closed menu fades out) is how `tvglue.rs` sees an open player menu.
 
@@ -116,4 +116,5 @@ selected tab), the TV containers in the walk lists (`tvBrowseRenderer`, `tvSurfa
 - `tests/check-public.cjs` (if it scans the tree): `tv/keys/release.pub` is a public key on purpose;
   the private key and the APK keystore live in `~/.config/lumen-tv/`, never in the repo.
 - The release repo compiled into the app: `LUMEN_TV_REPO=owner/name` when building
-  (default `justerquate-sys/lumen` in `tv/shell/src-tauri/src/shell.rs`).
+  (default `justerquate-sys/redline` in `tv/shell/src-tauri/src/shell.rs`; the repository was renamed from
+  `justerquate-sys/lumen`, which GitHub redirects for apps built before 0.5.0).

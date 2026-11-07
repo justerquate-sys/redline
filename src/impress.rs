@@ -1,4 +1,4 @@
-//! The "shown" signals YouTube's own Home page sends, sent the same way for Lumen's Home (owner decision,
+//! The "shown" signals YouTube's own Home page sends, sent the same way for Redline's Home (owner decision,
 //! 3 Nov 2026: so that YouTube rotates Home as it does for its own page, i.e. stops repeating videos that
 //! were shown and passed over; CONTRIBUTING "Privacy").
 //!
@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 
 /// Where YouTube's page sends them. (`prettyPrint=false` is what tells the extension's request rules this
-/// is Lumen's own batch: they block every other `log_event`, e.g. on YouTube's own pages; rules.json 33.)
+/// is Redline's own batch: they block every other `log_event`, e.g. on YouTube's own pages; rules.json 33.)
 pub const URL: &str = "https://www.youtube.com/youtubei/v1/log_event?alt=json&prettyPrint=false";
 /// Home's page type in YouTube's logs (`pageVe.veType` of its Home screen).
 pub const HOME_VE: u32 = 3854;
@@ -141,7 +141,7 @@ impl Screen {
     }
 }
 
-/// The client part of the batch's context, as YouTube's page describes itself in it (the subset Lumen knows;
+/// The client part of the batch's context, as YouTube's page describes itself in it (the subset Redline knows;
 /// `clientName` is the number here, as in YouTube's own `log_event`).
 pub fn client(version: &str, hl: &str, gl: Option<&str>, w: u32, h: u32) -> Value {
     let mut c = json!({"hl": hl, "clientName": 1, "clientVersion": version, "platform": "DESKTOP", "windowWidthPoints": w, "windowHeightPoints": h,

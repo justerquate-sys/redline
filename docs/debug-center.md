@@ -9,7 +9,7 @@ Every incident (a player failure `player-failed`, a stuck episode `player-stuck`
 
 The collector is `tools/debug-center` (Rust, standard library only). It listens on `127.0.0.1:47321` and appends one line per incident to its incidents file, which lives in your user data folder, never in the repository (macOS `~/Library/Application Support/Lumen/incidents.ndjson`, Linux `~/.local/share/lumen/incidents.ndjson`, Windows `%APPDATA%\Lumen\incidents.ndjson`). Open http://127.0.0.1:47321/ in the browser for the latest reports and http://127.0.0.1:47321/perf for speed telemetry (see "Speed telemetry"). Running it, and starting it at login: [tools/debug-center/README.md](../tools/debug-center/README.md). Undelivered reports are retried once a minute while YouTube is open. chrome.storage.local `ytcCollectorV1` may name another collector URL.
 
-**Lumen for TV.** The TV app sends the same reports while its owner turned telemetry on (About & updates →
+**Redline for TV.** The TV app sends the same reports while its owner turned telemetry on (About & updates →
 Developer; tv/README.md "Speed telemetry"): the app then runs its bundle's development variant (`content-dev.js`), the
 page shim hands the reports to the shell (`tel_send`) and the shell delivers them to the debug center on the owner's
 network (`tv/core/src/tel.rs`: one POST per report, oldest first, memory only, private addresses only). The debug

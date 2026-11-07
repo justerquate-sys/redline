@@ -1,4 +1,4 @@
-# Contributing to Lumen
+# Contributing to Redline
 
 Thanks for helping. The short version: logic in Rust, privacy rules are strict, motion never costs speed,
 and `npm test` stays green with `extension/` holding the public build.
@@ -46,7 +46,7 @@ steps). `tests/live-*.cjs` talk to real YouTube or Deepgram: run them by hand, r
     as in a tab: the same account, younger than 10 minutes, used once (a tab that uses it removes it for every tab),
     and a personalizing event in any tab removes it for all. Nothing else goes there, and never into
     `chrome.storage.local` or `localStorage`.
-  - The one exception (owner decision, 3 Nov 2026), in **Lumen for TV only**: the shell keeps the page's ready Home
+  - The one exception (owner decision, 3 Nov 2026), in **Redline for TV only**: the shell keeps the page's ready Home
     response (YouTube's latest answer to the Home request, `src/ready.rs`) on disk for the next app start, so a cold
     start paints Home at once. It is sealed with the Android Keystore key the shell uses for the account, kept for
     that account only (signing out or another account deletes it), used only while younger than 10 minutes, and
@@ -59,19 +59,19 @@ steps). `tests/live-*.cjs` talk to real YouTube or Deepgram: run them by hand, r
   referrer, no HTTP cache, answers in memory only, nothing reported back; switched off means no request at all.
 - **Deepgram** gets microphone audio only while a dictation runs. The key is read only by the background
   worker and never reaches the page, Wasm, logs, incidents or the debug overlay.
-- **Home's "shown" signals** (owner decision, 3 Nov 2026): Lumen's Home sends YouTube the same "shown" events its
+- **Home's "shown" signals** (owner decision, 3 Nov 2026): Redline's Home sends YouTube the same "shown" events its
   own Home page sends, so YouTube rotates Home as it does for its own page (`src/impress.rs`): to YouTube only
   (`/youtubei/v1/log_event`, with the account's usual session like every other request), only on Home, only for cards
   that were really on screen (at least half in view, an IntersectionObserver) and scrolls that came to rest: the
   screen (`screenCreated`, naming YouTube's answer), each card once (`visualElementStateChanged` with its grid place,
   `visualElementShown` with its two tracking ids and its box), `scrollEvent`; batched, low priority. Nothing else
   YouTube's page logs (latency, heartbeats, experiments, ads, hovers, clicks, offline state) and nothing on other
-  pages; YouTube's own pages keep their `log_event` blocked (rules.json 30; Lumen's batches pass by rule 33). Not on
+  pages; YouTube's own pages keep their `log_event` blocked (rules.json 30; Redline's batches pass by rule 33). Not on
   TV. A new event kind needs the owner's decision and a capture of what YouTube's own page sends.
 - Reports (development builds only) carry no cookies, tokens, signatures, search terms, visitor data or keys.
 - The public build records, stores and sends no telemetry of its own and contains no collector code (Home's "shown"
   signals above are YouTube's own page events, sent to YouTube only).
-- **Lumen for TV**: the public TV bundle (`content.js`) is the public build. The app's shell can deliver speed telemetry
+- **Redline for TV**: the public TV bundle (`content.js`) is the public build. The app's shell can deliver speed telemetry
   only after its owner turned it on (About & updates → Developer): then it runs the bundle's signed development
   variant (`content-dev.js`) and sends its reports to the debug center at an address on the owner's own network
   (private ranges only), from memory only; off, the shell drops whatever reaches it and sends nothing.

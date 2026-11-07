@@ -1,8 +1,8 @@
 {
-  "name": "lumen",
-  "version": "0.13.8",
+  "name": "redline",
+  "version": "0.14.0",
   "private": true,
-  "description": "Lumen: your own YouTube front-end at youtube.com, a Rust (Wasm) browser extension.",
+  "description": "Redline: a fast, ad-free client for YouTube, a Rust (Wasm) browser extension.",
   "license": "MIT",
   "author": "justerquate-sys",
   "engines": {

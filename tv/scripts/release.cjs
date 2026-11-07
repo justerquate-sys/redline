@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Publishes a Lumen TV release on GitHub: the shared client's bundle (content.js, client.css,
+// Publishes a Redline for TV release on GitHub: the shared client's bundle (content.js, client.css,
 // native.css, rules.json — the exact files built into the APK), the APK (as lumen-tv-<version>.apk and,
 // for the first-install link, lumen-tv.apk), and lumen-tv-manifest.json with
 // its ed25519 signature (lumen-tv-manifest.json.sig). The TV app installs a bundle only when the signature
@@ -18,7 +18,9 @@
 //                                                testing the app's update check (debug builds read
 //                                                files/dev.json, see docs)
 // Environment: GITHUB_TOKEN (contents:write on the repo), LUMEN_TV_REPO=owner/name (default
-// justerquate-sys/lumen; must match the repo compiled into the app), LUMEN_TV_KEY (private key,
+// justerquate-sys/redline, the repository's name since the rename from justerquate-sys/lumen; apps built before
+// 0.5.0 have "lumen" compiled in and reach the same releases through GitHub's redirect for renamed repositories,
+// so the old name must never be taken by a new repository), LUMEN_TV_KEY (private key,
 // default ~/.config/lumen-tv/release-key.pem), SEQ (bundle sequence, default now).
 'use strict';
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto'), os = require('node:os');
@@ -101,7 +103,7 @@ async function main() {
   console.log(`signed release in ${outDir}: client ${client}, seq ${bseq}, shell ${version}, min_shell ${minShell}${format2 ? ' (format 2: client.wasm)' : ''}`);
   if (has('--dry-run')) return;
 
-  const repo = process.env.LUMEN_TV_REPO || 'justerquate-sys/lumen', token = process.env.GITHUB_TOKEN;
+  const repo = process.env.LUMEN_TV_REPO || 'justerquate-sys/redline', token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error('GITHUB_TOKEN is not set (or use --dry-run)');
   const gh = async (url, init = {}) => {
     const r = await fetch(url, { ...init, headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', ...(init.headers || {}) } });
@@ -110,9 +112,10 @@ async function main() {
   };
   const tag = `lumen-tv-${version}-${bseq}`;
   const rel = await gh(`https://api.github.com/repos/${repo}/releases`, { method: 'POST', body: JSON.stringify({
-    // "latest" is what /releases/latest/download/lumen-tv.apk resolves to.
-    tag_name: tag, make_latest: 'true', name: `Lumen for TV ${version} (client ${client.split(' ')[0]})`,
-    body: `Lumen for Google TV / Android TV.\n\n- Client ${client}\n- Shell ${version}\n\nThe app updates itself from this release (signed lumen-tv-manifest.json). First install: see tv/README.md.`,
+    // "latest" is what /releases/latest/download/lumen-tv.apk resolves to. (The tag prefix and the asset names keep
+    // "lumen-tv": installed apps look for exactly these names.)
+    tag_name: tag, make_latest: 'true', name: `Redline for TV ${version} (client ${client.split(' ')[0]})`,
+    body: `Redline for Google TV / Android TV.\n\n- Client ${client}\n- Shell ${version}\n\nThe app updates itself from this release (signed lumen-tv-manifest.json). First install: see tv/README.md.`,
   }) });
   for (const name of fs.readdirSync(outDir)) {
     const b = fs.readFileSync(path.join(outDir, name));

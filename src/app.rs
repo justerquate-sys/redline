@@ -495,8 +495,8 @@ pub fn boot() {
     // first request goes out now; chrome.storage only refines later requests.
     let mirror = bridge::session_get(CFG_SESSION);
     let cfg = if mirror.is_empty() { Config::default() } else { Config::from_json(&mirror) };
-    // A new tab has no mirror: its first frame takes the palette this browser applied last.
-    if mirror.is_empty() { crate::appearance::Palette::hint().apply(); } else { cfg.palette.apply(); }
+    // One palette (client.css :root): nothing to apply before the first frame. A palette flag an older version left is removed.
+    crate::appearance::forget_old_hint();
     // YouTube's own document for this tab (the extension's loader leaves it running): when it is the Home answer
     // the client would fetch anyway (a Home load from YouTube's document, `homeready::on_doc_script`), it keeps
     // streaming with its nodes held out of the page; else it stops now, before any request of ours goes out (a
@@ -1174,7 +1174,7 @@ impl App {
 
     fn set_title(&mut self, t: &str) {
         self.title = t.to_string();
-        bridge::title(&if t.is_empty() { "Lumen".to_string() } else { format!("{t} - Lumen") });
+        bridge::title(&if t.is_empty() { crate::render::NAME.to_string() } else { format!("{t} - {}", crate::render::NAME) });
     }
 
     /// Immediate UI for the current route, then `load()`.
@@ -1331,7 +1331,6 @@ impl App {
             bridge::session_set(CFG_SESSION, &self.cfg.to_json());
         }
         self.cfg_ready = true;
-        self.cfg.palette.apply();
         let hold = std::mem::take(&mut self.home_hold);
         if hold && !au_changed && self.route == Route::Home && !self.rendered {
             if self.cfg.visitor.is_some() {
@@ -1362,10 +1361,8 @@ impl App {
     pub fn on_storage_change(&mut self, key: &str, json: &str) {
         if key != config::STORAGE_KEY { return; }
         let cfg = Config::from_json(json);
-        self.cfg.palette = cfg.palette;
         self.cfg.prefs.sb_on = cfg.prefs.sb_on;
         self.cfg.prefs.sb_skip = cfg.prefs.sb_skip;
-        self.cfg.palette.apply();
         bridge::session_set(CFG_SESSION, &self.cfg.to_json());
         if let Some(p) = self.player.as_mut() { p.apply_sponsor_prefs(cfg.prefs.sb_on, cfg.prefs.sb_skip); }
     }

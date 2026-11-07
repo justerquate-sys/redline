@@ -1,4 +1,4 @@
-//! Lumen: an own YouTube front-end running at www.youtube.com.
+//! Redline: a fast, ad-free client for YouTube, running at www.youtube.com.
 //! Rust owns routing, InnerTube requests and parsing, state and HTML.
 
 pub mod actions;
@@ -170,7 +170,7 @@ pub fn on_timer(id: u32) {
 #[wasm_bindgen]
 pub fn on_storage_change(key: &str, json: &str) {
     if popup::active() { return popup::on_storage_change(key, json); }
-    if native::active() { return native::clean::on_storage_change(key, json); }
+    if native::active() { return; }
     app::with(|a| a.on_storage_change(key, json));
 }
 

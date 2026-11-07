@@ -1,4 +1,4 @@
-// Live: a realistic session with Lumen (signed-out seeded profile, tools/bench/profile.cjs), and how
+// Live: a realistic session with Redline (signed-out seeded profile, tools/bench/profile.cjs), and how
 // each Home paint was served (ready response / network / logo prefetch) plus the Home requests it cost.
 //   node tools/bench/home-session.cjs [--idle=15] (minutes)
 // Steps: open Home · read 5 s · open a video, watch 20 s · logo → Home · read 5 s · reload · idle

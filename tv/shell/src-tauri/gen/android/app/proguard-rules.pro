@@ -19,6 +19,6 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
-# Lumen TV: called by name from Rust over JNI (tv/shell/src-tauri/src/host.rs).
+# Redline for TV: called by name from Rust over JNI (tv/shell/src-tauri/src/host.rs).
 -keep class app.lumen.tv.Host { *; }
 -keep class app.lumen.tv.Native { *; }

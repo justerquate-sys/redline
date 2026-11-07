@@ -591,7 +591,7 @@ async function handle(route) {
     return route.abort();
   }
   const p = url.pathname;
-  // Lumen's "shown" signals (src/impress.rs): gzip'd log_event batches.
+  // Redline's "shown" signals (src/impress.rs): gzip'd log_event batches.
   if (p === '/youtubei/v1/log_event') {
     log.imp.push({ t: Date.now(), url: req.url(), headers: req.headers(), body: gunzipJSON(req.postDataBuffer() || Buffer.alloc(0)) });
     return route.fulfill({ status: 200, contentType: 'application/json', body: '{"responseContext":{}}' });
@@ -1586,7 +1586,7 @@ chrome.runtime.onMessage.addListener(m => {
       await page.evaluate(() => scrollTo(0, 900));
       await page.waitForTimeout(1600);
       assert.equal(log.imp.length, k, 'no signals on a search page');
-      // YouTube's own log_event (its pages) stays blocked; only Lumen's batch URL passes the request rules.
+      // YouTube's own log_event (its pages) stays blocked; only Redline's batch URL passes the request rules.
       const r = await page.evaluate(async () => {
         const t = async u => { try { await fetch(u, { method: 'POST', body: '{}' }); return 'ok'; } catch { return 'blocked'; } };
         return { youtube: await t('/youtubei/v1/log_event?alt=json'), lumen: await t('/youtubei/v1/log_event?alt=json&prettyPrint=false') };
@@ -1788,7 +1788,7 @@ chrome.runtime.onMessage.addListener(m => {
     }
   });
 
-  await step('logo: resting on it opens Home from memory (the ready response, else a request on enter; 250 ms dwell, mint pill fills); a pass-over or a shorter rest never navigates, a new rest starts over; click instant; keyboard unchanged; nothing while typing; Home on Home: top, then a new Home from YouTube', async () => {
+  await step('logo: resting on it opens Home from memory (the ready response, else a request on enter; 250 ms dwell, the pill fills); a pass-over or a shorter rest never navigates, a new rest starts over; click instant; keyboard unchanged; nothing while typing; Home on Home: top, then a new Home from YouTube', async () => {
     const saved = { ...HOME };
     HOME.rich = true; HOME.latency = 150; HOME.delay = 0;
     const box = await page.locator('#ytc-logo').boundingBox();
@@ -2808,7 +2808,7 @@ chrome.runtime.onMessage.addListener(m => {
     await slow(1);
     await page.waitForTimeout(400);
     if (await page.evaluate(() => document.getElementById('ytc-video').paused)) await page.keyboard.press('k');
-    // Seek ripple: pressing the bar swells a mint dot where it landed (on pointerdown).
+    // Seek ripple: pressing the bar swells a red dot where it landed (on pointerdown).
     const bar = await page.locator('#ytc-seek').boundingBox();
     await page.mouse.move(bar.x + bar.width * 0.4, bar.y + bar.height / 2);
     await page.mouse.down();
@@ -2856,16 +2856,26 @@ chrome.runtime.onMessage.addListener(m => {
     await popup.setViewportSize({ width: 360, height: 720 });
     const target = await sw.evaluate(() => chrome.runtime.getURL(chrome.runtime.getManifest().action.default_popup));
     await popup.goto(target);
-    await popup.waitForSelector('#palette-lumen[aria-pressed=true], #palette-youtube[aria-pressed=true]');
+    await popup.waitForSelector('#ytc-popup[data-ready=true]');
     await sw.evaluate(id => chrome.tabs.update(id, { active: true }), active);
     return popup;
   };
   const storedConfig = () => sw.evaluate(() => chrome.storage.local.get('ytcConfigV1').then(o => o.ytcConfigV1));
+  // Every place a user reads the product's name: the text, titles and accessible names (aria-label, title, alt,
+  // placeholder, aria-roledescription) of a document. The old name must be nowhere.
+  const visibleNames = p => p.evaluate(() => {
+    const out = [document.title, document.body ? document.body.innerText : ''];
+    for (const e of document.querySelectorAll('*')) for (const a of ['aria-label', 'title', 'alt', 'placeholder', 'aria-roledescription']) if (e.hasAttribute(a)) out.push(e.getAttribute(a));
+    for (const e of document.querySelectorAll('*')) for (const pseudo of ['::before', '::after']) { const c = getComputedStyle(e, pseudo).content; if (c && c !== 'none' && c !== 'normal') out.push(c); }
+    return out.join('\n');
+  });
 
-  await step('toolbar palette: YouTube colors apply across tabs, survive reopening and preserve layout, media and preferences', async () => {
+  await step('Redline look: one palette (graphite, white, red) on every page, the toolbar and YouTube\'s own pages; no palette choice; a stored theme ("lumen"/"youtube") is harmless; no "Lumen" anywhere a user reads it', async () => {
     const saved = await storedConfig();
-    let popup, other, native;
+    let popup, other, native, fresh;
     try {
+      // 0.13.3–0.13.8 stored the palette choice (and kept a new-tab hint in YouTube's localStorage, below).
+      await sw.evaluate(cfg => chrome.storage.local.set({ ytcConfigV1: { ...(cfg || {}), theme: 'lumen' } }), saved);
       await page.goto('https://www.youtube.com/watch?v=-Bxc4gJluC0', { waitUntil: 'commit' });
       await waitT(() => document.documentElement.dataset.ytcFirstFrame, null, 8000);
       await page.evaluate(() => { window.paletteVideo = document.getElementById('ytc-video'); window.paletteVideo.pause(); });
@@ -2873,21 +2883,33 @@ chrome.runtime.onMessage.addListener(m => {
       other = await ctx.newPage();
       await other.goto('https://www.youtube.com/results?search_query=palette', { waitUntil: 'commit' });
       await other.waitForSelector('#ytc-list .c');
+      const manifest = await sw.evaluate(() => chrome.runtime.getManifest());
+      assert.deepEqual([manifest.name, manifest.action.default_title], ['Redline', 'Redline preferences']);
+      assert.ok(!/lumen/i.test(manifest.description) && /client for YouTube/.test(manifest.description) && /Not affiliated with YouTube or Google/.test(manifest.description), manifest.description);
+      for (const [size, file] of Object.entries(manifest.icons)) {
+        const dims = await sw.evaluate(f => fetch(chrome.runtime.getURL(f)).then(r => r.blob()).then(createImageBitmap).then(b => [b.width, b.height]), file);
+        assert.deepEqual(dims, [+size, +size], `icon ${file}`);
+      }
+      assert.deepEqual(Object.keys(manifest.icons), ['16', '32', '48', '128']);
+      assert.deepEqual(Object.keys(manifest.action.default_icon), ['16', '32']);
+
       popup = await openToolbar();
-      const calls = log.api.filter(a => a.ep === 'player' && a.body.videoId === '-Bxc4gJluC0').length;
-      const original = await storedConfig();
-      await popup.click('#palette-youtube');
-      await popup.waitForFunction(() => document.documentElement.dataset.ytcPalette === 'youtube' && document.getElementById('palette-youtube').getAttribute('aria-pressed') === 'true');
-      await waitT(() => document.documentElement.dataset.ytcPalette === 'youtube');
-      await other.waitForFunction(() => document.documentElement.dataset.ytcPalette === 'youtube');
-      await popup.waitForFunction(() => chrome.storage.local.get('ytcConfigV1').then(o => o.ytcConfigV1.theme === 'youtube'));
-      const changed = await storedConfig();
-      delete changed.theme; delete original.theme;
-      assert.deepEqual(changed, original, 'palette preserves the rest of the stored config');
+      assert.equal(await popup.locator('[id^=palette-], .palette-choice, [data-act=palette]').count(), 0, 'no palette choice');
+      assert.deepEqual(await popup.evaluate(() => [document.title, document.querySelector('#ytc-popup header').textContent, getComputedStyle(document.querySelector('#ytc-popup header svg')).fill, !!document.getElementById('popup-sponsor')]), ['Redline', 'Redline', 'rgb(255, 0, 51)', true]);
+      for (const p of [page, other, popup]) {
+        assert.equal(await p.evaluate(() => document.documentElement.hasAttribute('data-ytc-palette')), false, 'no palette switching');
+        assert.equal(await p.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(15, 15, 15)');
+      }
+      // A stored theme is ignored and kept as it was by the toolbar's own writes (it fades out with the client's config writes).
+      await popup.click('#popup-sponsor');
+      await popup.waitForFunction(() => chrome.storage.local.get('ytcConfigV1').then(o => o.ytcConfigV1.p.sbo === false));
+      assert.equal((await storedConfig()).theme, 'lumen', 'a toolbar write preserves the stored field');
+      await popup.click('#popup-sponsor');
+      await popup.waitForFunction(() => chrome.storage.local.get('ytcConfigV1').then(o => o.ytcConfigV1.p.sbo === undefined));
       assert.deepEqual(await page.locator('#ytc-player').boundingBox(), before, 'same player geometry');
       assert.ok(await page.evaluate(() => window.paletteVideo === document.getElementById('ytc-video') && window.paletteVideo.paused), 'same media element and state');
-      assert.equal(log.api.filter(a => a.ep === 'player' && a.body.videoId === '-Bxc4gJluC0').length, calls, 'no new request for the active video');
-      const colors = await page.evaluate(() => ({ bg: getComputedStyle(document.body).backgroundColor, logo: getComputedStyle(document.querySelector('.logo rect')).fill, progress: getComputedStyle(document.querySelector('.ppos')).backgroundColor, focus: getComputedStyle(document.documentElement).getPropertyValue('--ac').trim() }));
+
+      const colors = await page.evaluate(() => ({ bg: getComputedStyle(document.body).backgroundColor, logo: getComputedStyle(document.querySelector('.logo svg')).fill, progress: getComputedStyle(document.querySelector('.ppos')).backgroundColor, focus: getComputedStyle(document.documentElement).getPropertyValue('--ac').trim() }));
       assert.deepEqual(colors, { bg: 'rgb(15, 15, 15)', logo: 'rgb(255, 0, 51)', progress: 'rgb(255, 0, 51)', focus: '#f1f1f1' });
       const tokens = await page.evaluate(() => { const s = getComputedStyle(document.documentElement); return Object.fromEntries(['bg', 'pn', 'rs', 'cb', 'hv', 'tx', 'mu', 'fa', 'ac', 'link', 'er'].map(k => [k, s.getPropertyValue('--' + k).trim()])); });
       const luminance = hex => { let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join(''); const c = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255).map(x => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4); return c[0] * .2126 + c[1] * .7152 + c[2] * .0722; };
@@ -2896,84 +2918,99 @@ chrome.runtime.onMessage.addListener(m => {
       for (const surface of ['cb', 'hv']) assert.ok(contrast(tokens.mu, tokens[surface]) >= 4.5, `secondary text on ${surface}: AA contrast`);
       assert.ok(contrast(tokens.bg, tokens.ac) >= 4.5, 'selected controls have AA contrast');
 
+      // Names: the window title, the top bar's wordmark and its accessible name.
+      assert.match(await page.title(), / - Redline$/);
+      assert.deepEqual(await page.evaluate(() => [document.getElementById('ytc-logo').getAttribute('aria-label'), document.getElementById('ytc-logo').textContent]), ['Redline home', 'Redline']);
+      for (const p of [page, other, popup]) assert.doesNotMatch(await visibleNames(p), /lumen/i);
       if (process.env.YTC_SHOTS) {
-        await page.screenshot({ path: path.join(process.env.YTC_SHOTS, 'palette-youtube-watch.png') });
-        await other.screenshot({ path: path.join(process.env.YTC_SHOTS, 'palette-youtube-search.png') });
-        await popup.screenshot({ path: path.join(process.env.YTC_SHOTS, 'palette-youtube-toolbar.png'), clip: { x: 0, y: 0, width: 360, height: 440 } });
+        await page.mouse.move(700, 400);
+        await page.screenshot({ path: path.join(process.env.YTC_SHOTS, 'redline-watch.png') });
+        await other.screenshot({ path: path.join(process.env.YTC_SHOTS, 'redline-search.png') });
+        await other.screenshot({ path: path.join(process.env.YTC_SHOTS, 'redline-topbar.png'), clip: { x: 0, y: 0, width: 1400, height: 64 } });
+        await popup.screenshot({ path: path.join(process.env.YTC_SHOTS, 'redline-toolbar.png'), clip: { x: 0, y: 0, width: 360, height: 300 } });
+        const b = await other.locator('#ytc-logo').boundingBox();
+        await other.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+        await other.waitForTimeout(400);
+        await other.screenshot({ path: path.join(process.env.YTC_SHOTS, 'redline-logo-hover.png'), clip: { x: 0, y: 0, width: 260, height: 64 } });
+        await other.mouse.move(700, 500);
       }
-      await popup.close(); popup = await openToolbar();
-      assert.equal(await popup.getAttribute('#palette-youtube', 'aria-pressed'), 'true', 'reopening remembers the choice');
-      await other.reload({ waitUntil: 'commit' });
-      await other.waitForSelector('#ytc-list .c');
-      assert.equal(await other.evaluate(() => document.documentElement.dataset.ytcPalette), 'youtube', 'a new boot remembers the choice');
-      // A new tab (no config mirror yet) paints its first frame in the chosen palette, before chrome.storage answers.
-      const fresh = await ctx.newPage();
-      await fresh.addInitScript(() => { new MutationObserver((_, o) => { if (document.getElementById('ytc')) { window.firstPalette = document.documentElement.dataset.ytcPalette || 'none'; o.disconnect(); } }).observe(document, { childList: true, subtree: true }); });
+      await popup.close(); popup = null;
+
+      // A new tab paints its first frame graphite with nothing read first, and forgets the old palette flag.
+      await page.evaluate(() => localStorage.setItem('ytc-palette-youtube', '1'));
+      fresh = await ctx.newPage();
+      // (Read in the first animation frame after the client's document is written: the style that frame paints.)
+      await fresh.addInitScript(() => { new MutationObserver((_, o) => { if (document.getElementById('ytc')) { o.disconnect(); requestAnimationFrame(() => { window.firstBg = [getComputedStyle(document.documentElement).backgroundColor, getComputedStyle(document.body).backgroundColor]; window.firstAttr = document.documentElement.getAttribute('data-ytc-palette'); }); } }).observe(document, { childList: true, subtree: true }); });
       await fresh.goto('https://www.youtube.com/results?search_query=palette+fresh', { waitUntil: 'commit' });
-      await fresh.waitForFunction(() => window.firstPalette);
-      assert.equal(await fresh.evaluate(() => window.firstPalette), 'youtube', 'the first frame of a new tab');
-      await fresh.close();
+      await fresh.waitForFunction(() => window.firstBg);
+      assert.deepEqual(await fresh.evaluate(() => [window.firstBg, window.firstAttr]), [['rgb(15, 15, 15)', 'rgb(15, 15, 15)'], null], 'the first frame of a new tab');
+      await fresh.waitForSelector('#ytc-list .c');
+      assert.equal(await fresh.evaluate(() => localStorage.getItem('ytc-palette-youtube')), null, 'the old palette flag is removed');
+      // Stored "youtube" (what 0.13.3+ wrote) is just as harmless.
+      await sw.evaluate(cfg => chrome.storage.local.set({ ytcConfigV1: { ...(cfg || {}), theme: 'youtube' } }), saved);
+      await fresh.reload({ waitUntil: 'commit' });
+      await fresh.waitForSelector('#ytc-list .c');
+      assert.deepEqual(await fresh.evaluate(() => [getComputedStyle(document.body).backgroundColor, document.documentElement.hasAttribute('data-ytc-palette')]), ['rgb(15, 15, 15)', false]);
+
       native = await ctx.newPage();
       await native.goto('https://www.youtube.com/watch?v=ntvfixture1&yt-native=1', { waitUntil: 'commit' });
-      await native.waitForFunction(() => document.documentElement.dataset.ytcPalette === 'youtube');
-      assert.deepEqual(await native.evaluate(() => [getComputedStyle(document.documentElement).backgroundColor, getComputedStyle(document.querySelector('.ytp-play-progress')).backgroundColor, window.__ytAppRan]), ['rgb(15, 15, 15)', 'rgb(255, 0, 51)', true], 'existing fallback keeps its renderer and follows the palette');
-
-      await popup.focus('#palette-lumen'); await popup.keyboard.press('Enter');
-      await waitT(() => document.documentElement.dataset.ytcPalette === 'lumen');
-      await other.waitForFunction(() => document.documentElement.dataset.ytcPalette === 'lumen');
-      await native.waitForFunction(() => document.documentElement.dataset.ytcPalette === 'lumen');
-      await popup.waitForFunction(() => chrome.storage.local.get('ytcConfigV1').then(o => !o.ytcConfigV1.theme));
-      assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(16, 19, 21)');
+      await native.waitForFunction(() => document.documentElement.dataset.ytcNative && document.querySelector('.ytp-play-progress'));
+      assert.deepEqual(await native.evaluate(() => [getComputedStyle(document.documentElement).backgroundColor, getComputedStyle(document.querySelector('.ytp-play-progress')).backgroundColor, window.__ytAppRan]), ['rgb(15, 15, 15)', 'rgb(255, 0, 51)', true], 'YouTube\'s own page keeps its renderer and takes the palette');
+      const logo = await native.evaluate(() => { const a = document.querySelector('ytd-topbar-logo-renderer a#logo'); return a && [getComputedStyle(a, '::after').content, getComputedStyle(a, '::before').backgroundImage.includes('ff0033')]; });
+      if (logo) assert.deepEqual(logo, ['"Redline"', true], 'the native header leads back to Redline');
+      assert.doesNotMatch(await visibleNames(native), /lumen/i);
     } finally {
-      await popup?.close(); await other?.close(); await native?.close();
+      await popup?.close(); await other?.close(); await native?.close(); await fresh?.close();
       await sw.evaluate(cfg => cfg === undefined ? chrome.storage.local.remove('ytcConfigV1') : chrome.storage.local.set({ ytcConfigV1: cfg }), saved);
     }
   });
 
-  await step('toolbar palette: failed saves roll back, retain unrelated preferences, and allow immediate retry', async () => {
+  await step('toolbar: failed saves roll back, retain unrelated preferences, and allow immediate retry', async () => {
     const saved = await storedConfig();
     const popup = await openToolbar();
     try {
-      const wasYoutube = await popup.getAttribute('#palette-youtube', 'aria-pressed') === 'true';
-      const target = wasYoutube ? '#palette-lumen' : '#palette-youtube';
-      const previous = wasYoutube ? '#palette-youtube' : '#palette-lumen';
+      const was = await popup.getAttribute('#popup-sponsor', 'aria-checked');
+      const flipped = was === 'true' ? 'false' : 'true';
       for (const sync of [false, true]) {
         await popup.evaluate(sync => {
           window.realStore = chrome.storage.local.set;
           chrome.storage.local.set = () => { if (sync) throw new Error('test save failure'); return Promise.reject(new Error('test save failure')); };
         }, sync);
-        await popup.click(target);
+        await popup.click('#popup-sponsor');
         await popup.waitForFunction(() => document.getElementById('popup-status').textContent.includes('Couldn’t save'));
-        assert.equal(await popup.getAttribute(previous, 'aria-pressed'), 'true', 'failed selection reverts');
+        assert.equal(await popup.getAttribute('#popup-sponsor', 'aria-checked'), was, 'failed switch reverts');
         assert.deepEqual(await storedConfig(), saved, 'failed write leaves storage intact');
         await popup.evaluate(() => { chrome.storage.local.set = window.realStore; });
       }
-      await popup.click(target);
+      await popup.click('#popup-sponsor');
       await popup.waitForFunction(() => document.getElementById('popup-status').textContent === '');
-      await popup.waitForFunction(() => chrome.storage.local.get('ytcConfigV1').then(o => o.ytcConfigV1.theme === 'youtube'));
-      assert.equal(await popup.getAttribute(target, 'aria-pressed'), 'true', 'retry saves');
+      await popup.waitForFunction(off => chrome.storage.local.get('ytcConfigV1').then(o => (o.ytcConfigV1.p.sbo === false) === off), flipped === 'false');
+      assert.equal(await popup.getAttribute('#popup-sponsor', 'aria-checked'), flipped, 'retry saves');
+      const cfg = await storedConfig();
+      for (const k of Object.keys(saved || {})) if (k !== 'p') assert.deepEqual(cfg[k], saved[k], `unrelated ${k} kept`);
     } finally {
       await popup.close();
       await sw.evaluate(cfg => cfg === undefined ? chrome.storage.local.remove('ytcConfigV1') : chrome.storage.local.set({ ytcConfigV1: cfg }), saved);
     }
   });
 
-  await step('toolbar palette: rapid edits coalesce and a fresh read preserves concurrent player and category changes', async () => {
+  await step('toolbar: rapid edits coalesce and a fresh read preserves concurrent player and category changes', async () => {
     const saved = await storedConfig();
     const popup = await openToolbar();
     try {
+      assert.equal(await popup.getAttribute('#popup-sponsor', 'aria-checked'), 'true');
       await popup.evaluate(() => {
         window.realRead = chrome.storage.local.get.bind(chrome.storage.local);
         chrome.storage.local.get = key => new Promise(resolve => { window.finishRead = () => { chrome.storage.local.get = window.realRead; window.realRead(key).then(resolve); }; });
-        for (const id of ['palette-youtube', 'palette-lumen', 'palette-youtube', 'popup-cat-intro', 'popup-cat-intro', 'popup-cat-intro']) document.getElementById(id).click();
+        for (const id of ['popup-sponsor', 'popup-sponsor', 'popup-sponsor', 'popup-cat-intro', 'popup-cat-intro', 'popup-cat-intro']) document.getElementById(id).click();
       });
-      assert.equal(await popup.getAttribute('#palette-youtube', 'aria-pressed'), 'true', 'rapid input paints immediately, before storage answers');
+      assert.equal(await popup.getAttribute('#popup-sponsor', 'aria-checked'), 'false', 'rapid input paints immediately, before storage answers');
       await sw.evaluate(() => chrome.storage.local.get('ytcConfigV1').then(o => {
         const cfg = o.ytcConfigV1 || {}; cfg.p = { ...cfg.p, vol: .37, cc: false, sb: 'sponsor,selfpromo,interaction,outro' };
         return chrome.storage.local.set({ ytcConfigV1: cfg });
       }));
       await popup.evaluate(() => window.finishRead());
-      await popup.waitForFunction(() => chrome.storage.local.get('ytcConfigV1').then(o => o.ytcConfigV1.theme === 'youtube' && o.ytcConfigV1.p.sb === 'sponsor,selfpromo,interaction,intro,outro'));
+      await popup.waitForFunction(() => chrome.storage.local.get('ytcConfigV1').then(o => o.ytcConfigV1.p.sbo === false && o.ytcConfigV1.p.sb === 'sponsor,selfpromo,interaction,intro,outro'));
       const cfg = await storedConfig();
       assert.equal(cfg.p.vol, .37, 'concurrent volume is preserved');
       assert.equal(cfg.p.cc, false, 'concurrent caption choice is preserved');
@@ -4541,7 +4578,7 @@ chrome.runtime.onMessage.addListener(m => {
     assert.equal(await page.evaluate(() => window.__ytAppRan), true, 'YouTube\'s own page runs');
     await expectShown(false, ['voice-search-button', 'country-code', 'create', 'logo-icon']);
     await expectShown(true, ['logo', 'search', 'notifications', 'account']);
-    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('logo'), '::after').content), '"YouTube"', 'plain YouTube wordmark');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('logo'), '::after').content), '"Redline"', 'Redline\'s wordmark (the logo leads back to Redline\'s Home)');
     // Sidebar: the six browsing links; Liked videos out of the collapsed part.
     await expectShown(true, ['home', 'subscriptions-nav', 'history', 'playlists', 'watch-later', 'liked-videos', 'mini-home', 'mini-subscriptions']);
     await expectShown(false, ['shorts-nav', 'mini-shorts', 'your-channel', 'your-videos', 'downloads', 'podcasts', 'courses', 'expander-item', 'subscriptions', 'subscribed-channel', 'explore', 'more-youtube', 'report-history', 'footer']);
@@ -4555,7 +4592,7 @@ chrome.runtime.onMessage.addListener(m => {
     await page.waitForTimeout(1700);
     assert.deepEqual(await page.evaluate(() => [window.__dismissed, window.__trial, window.__notice]), [1, 0, 0]);
     await expectShown(true, ['notice', 'notice-action']);
-    assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor), 'rgb(16, 19, 21)', 'client palette');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor), 'rgb(15, 15, 15)', 'client palette');
   });
 
   await step('native page cleanup: watch page (Join, Thanks, overflow, Auto-dubbed, Summary/Transcript/Video details, related chips) and player overlays', async () => {
@@ -4569,7 +4606,7 @@ chrome.runtime.onMessage.addListener(m => {
     });
     assert.deepEqual(player.overlays, [], 'fullscreen grid/quick actions/metadata, watermark, gradients and cinematics hidden');
     assert.match(player.bg, /none rgb\(0, 0, 0\)/, 'solid black around the picture');
-    assert.equal(player.progress, 'rgb(183, 235, 202)', 'Scribe-mint progress');
+    assert.equal(player.progress, 'rgb(255, 0, 51)', 'red progress');
     assert.ok(player.controls, 'playback controls stay');
   });
 
@@ -5348,10 +5385,10 @@ chrome.runtime.onMessage.addListener(m => {
 
   await step('save: hover opens after intent, hover selects nothing, toggles/create/rollback, closes on leave', async () => {
     // Signed in, the membership is asked once quietly after the page settled: the bookmark is filled
-    // (mint) because the video is in Watch later, without opening the chooser.
+    // (the accent) because the video is in Watch later, without opening the chooser.
     await page.waitForFunction(() => document.getElementById('ytc-save-b')?.classList.contains('saved'), null, { timeout: 4000 });
     assert.equal(await page.locator('#ytc-save-l').textContent(), 'Saved');
-    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#ytc-save-b .ya-bm svg.f')).fill), 'rgb(183, 235, 202)', 'mint fill');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#ytc-save-b .ya-bm svg.f')).fill), 'rgb(241, 241, 241)', 'accent fill');
     log.api.length = 0;
     await page.mouse.move(5, 5);
     await page.hover('#ytc-save button[data-act="a-save"]');
@@ -5561,12 +5598,12 @@ chrome.runtime.onMessage.addListener(m => {
       const th = page.locator('#ytc-list .c a.th').nth(1);
       const ring = () => th.evaluate(el => getComputedStyle(el).outlineColor);
       await th.hover();
-      assert.equal(await ring(), 'rgb(41, 57, 54)', 'ring on at once');
+      assert.equal(await ring(), 'rgb(63, 63, 63)', 'ring on at once');
       await slow(0.05);
       await page.mouse.move(5, 600);
       await page.waitForTimeout(300);
       const mid = await ring();
-      assert.ok(mid !== 'rgb(41, 57, 54)' && mid !== 'rgba(0, 0, 0, 0)', `ring eases off (${mid})`);
+      assert.ok(mid !== 'rgb(63, 63, 63)' && mid !== 'rgba(0, 0, 0, 0)', `ring eases off (${mid})`);
       await slow(1);
       await page.waitForFunction(() => getComputedStyle(document.querySelectorAll('#ytc-list .c a.th')[1]).outlineColor === 'rgba(0, 0, 0, 0)', null, { timeout: 1000 });
       const b = await th.boundingBox();
@@ -5713,7 +5750,7 @@ chrome.runtime.onMessage.addListener(m => {
       await page.waitForFunction(() => !document.getElementById('ytc-sdi').getAnimations().length, null, { timeout: 2000 });
       const r = await page.evaluate(() => { const el = document.getElementById('ytc-sdi'), e = el.getBoundingClientRect(), a = document.querySelector('#ytc-side a[data-nav=history]').getBoundingClientRect(), cs = getComputedStyle(el); return { top: e.top + parseFloat(cs.getPropertyValue('--st')) - a.top, bottom: e.bottom - parseFloat(cs.getPropertyValue('--sb')) - a.bottom, left: e.left - a.left, right: e.right - a.right }; });
       assert.deepEqual(r, { top: 0, bottom: 0, left: 0, right: 0 }, 'settled exactly on the History link');
-      assert.equal(await page.$eval('#ytc-side a[data-nav=history]', a => getComputedStyle(a).color), 'rgb(183, 235, 202)');
+      assert.equal(await page.$eval('#ytc-side a[data-nav=history]', a => getComputedStyle(a).color), 'rgb(241, 241, 241)');
       // Keyboard g+w, then back: instant (no transition even with animations slowed 20×).
       await slowAnims(0.05);
       await page.keyboard.press('g'); await page.keyboard.press('w');
@@ -6386,13 +6423,13 @@ chrome.runtime.onMessage.addListener(m => {
       assert.ok(Array.isArray(p2) && p2[0] >= p1[0] - 0.5 && p2[0] <= gaming[0] + 0.5, `carried over the re-rendered row (${p1} → ${p2})`);
       await slow(1);
       await page.waitForFunction(() => !document.querySelector('#ytc-fx-tc > .fx-pg') && !document.getElementById('ytc-fx-tc').dataset.pill, null, { timeout: 2000 });
-      assert.equal(await page.$eval('#ytc-fx-nchip-gaming', b => getComputedStyle(b).backgroundColor), 'rgb(183, 235, 202)', 'the real chip took over');
+      assert.equal(await page.$eval('#ytc-fx-nchip-gaming', b => getComputedStyle(b).backgroundColor), 'rgb(241, 241, 241)', 'the real chip took over');
       // Keyboard: instant (no copy, no pill state).
       await page.focus('#ytc-fx-nchip-podcasts');
       await slow(0.02);
       await page.keyboard.press('Enter');
       assert.deepEqual(await page.evaluate(() => [!!document.querySelector('#ytc-fx-tc > .fx-pg'), document.getElementById('ytc-fx-tc').dataset.pill || '', document.getElementById('ytc-fx-nchip-podcasts').getAttribute('aria-pressed'), getComputedStyle(document.getElementById('ytc-fx-nchip-podcasts')).backgroundColor]),
-        [false, '', 'true', 'rgb(183, 235, 202)'], 'keyboard selection instant');
+        [false, '', 'true', 'rgb(241, 241, 241)'], 'keyboard selection instant');
       await slow(1);
       await page.evaluate(() => document.activeElement?.blur());
       await page.waitForFunction(() => document.querySelector('#ytc-list .c')?.dataset.v?.includes('H8z'));
@@ -6658,14 +6695,7 @@ chrome.runtime.onMessage.addListener(m => {
       await page.reload({ waitUntil: 'commit' }); await page.waitForSelector('#ytc-list .c');
       assert.equal(await page.locator(card).count(), 0, 'reload stays removed');
       if (process.env.YTC_SHOTS) {
-        await page.mouse.move(700, 100); await page.screenshot({ path: path.join(process.env.YTC_SHOTS, 'watch-later-library-mint.png') });
-        const cfg = await storedConfig();
-        try {
-          await sw.evaluate(cfg => chrome.storage.local.set({ ytcConfigV1: { ...cfg, theme: 'youtube' } }), cfg);
-          await page.waitForFunction(() => document.documentElement.dataset.ytcPalette === 'youtube');
-          await page.waitForTimeout(170);
-          await page.screenshot({ path: path.join(process.env.YTC_SHOTS, 'watch-later-library-youtube.png') });
-        } finally { await sw.evaluate(cfg => chrome.storage.local.set({ ytcConfigV1: cfg }), cfg); }
+        await page.mouse.move(700, 100); await page.screenshot({ path: path.join(process.env.YTC_SHOTS, 'watch-later-library.png') });
       }
     } finally { await endLibrary(); }
   });
@@ -7184,7 +7214,7 @@ chrome.runtime.onMessage.addListener(m => {
     c.send(wsMock.result('tutor'));
     await waitT(() => document.querySelector('#ytc-qv b')?.textContent === 'Roblox scripting' && document.querySelector('#ytc-qv i')?.textContent === 'tutor', null, 2000);
     const col = await page.evaluate(() => ({ b: getComputedStyle(document.querySelector('#ytc-qv b')).color, i: getComputedStyle(document.querySelector('#ytc-qv i')).color, q: document.getElementById('ytc-q').value }));
-    assert.deepEqual(col, { b: 'rgb(237, 243, 243)', i: 'rgb(160, 175, 177)', q: 'Roblox scripting tutor' }, 'finals normal, interim muted');
+    assert.deepEqual(col, { b: 'rgb(241, 241, 241)', i: 'rgb(170, 170, 170)', q: 'Roblox scripting tutor' }, 'finals normal, interim muted');
     c.send(wsMock.result('tutorial.', { final: true, speech: true }));
     await waitT(() => document.querySelector('#ytc-qv b')?.textContent === 'Roblox scripting tutorial.', null, 2000);
     // Settled: hover-out searches at once (no flush needed); the results were warmed meanwhile.
@@ -7701,13 +7731,22 @@ chrome.runtime.onMessage.addListener(m => {
     try {
       for (const [W, H] of TVSIZES) {
         await tv.setViewportSize({ width: W, height: H });
-        // Home signed out: the calm card, its Sign in focused; the rail (Lumen mark, Search … Sign in).
+        // Home signed out: the calm card, its Sign in focused; the rail (the Redline mark, Search … Sign in).
         await tvGo(tv, 'code', 'https://www.youtube.com/');
         await tv.waitForSelector('.tvpc .tvb');
         await tv.waitForFunction(() => document.activeElement && document.activeElement.matches('.tvpc .tvb'));
         assert.equal(await tv.locator('#ytc-top .logo:visible, #ytc-search:visible, .hero').count(), 0, 'no header bar, no search box on Home');
         assert.deepEqual(await tv.$$eval('#ytc-side .rl', a => a.map(e => e.dataset.nav)), ['search', 'home', 'subs', 'history', 'wl', 'playlists', 'liked', 'acct', 'about']);
-        assert.equal(await tv.textContent('#ytc-side .rmk b'), 'Lumen');
+        assert.equal(await tv.textContent('#ytc-side .rmk b'), 'Redline');
+        // One palette on TV too: graphite, the red mark, and the focus frame white (the accent): a stationary ring
+        // that stands out on every surface it sits on (≥ 3:1 non-text contrast; far above it in fact).
+        const look = await tv.evaluate(() => {
+          const f = document.activeElement, s = getComputedStyle(f), r = getComputedStyle(document.documentElement);
+          return { bg: getComputedStyle(document.body).backgroundColor, mark: getComputedStyle(document.querySelector('#ytc-side .rmk .lmk path')).fill, ring: s.outlineColor, style: s.outlineStyle, ac: r.getPropertyValue('--ac').trim(), title: document.title, attr: document.documentElement.hasAttribute('data-ytc-palette'), text: document.body.innerText };
+        });
+        assert.deepEqual([look.bg, look.mark, look.ring, look.style, look.ac, look.attr], ['rgb(15, 15, 15)', 'rgb(255, 0, 51)', 'rgb(241, 241, 241)', 'solid', '#f1f1f1', false]);
+        assert.ok(look.title === 'Redline' || / - Redline$/.test(look.title), look.title);
+        assert.doesNotMatch(look.text, /lumen/i);
         assert.deepEqual(await tvAudit(tv, `home signed out ${W}`), []);
         await tvShot(tv, 'home-signed-out');
         const w0 = await tvWalk(tv, '#ytc-side .rl,.tvpc .tvb');
@@ -7932,7 +7971,7 @@ chrome.runtime.onMessage.addListener(m => {
         await tv.waitForSelector('#ytc-tvabout.on');
         await tv.waitForTimeout(300);
         let sc = await screen();
-        assert.ok(sc.focus === 'tv-check' && /Lumen for TV 0\.1\.0/.test(sc.text) && /0\.9\.0 · build 100/.test(sc.text) && /not yet/.test(sc.text), `versions, Check for updates focused: ${JSON.stringify(sc)}`);
+        assert.ok(sc.focus === 'tv-check' && /Redline for TV 0\.1\.0/.test(sc.text) && !/Lumen/.test(sc.text) && /0\.9\.0 · build 100/.test(sc.text) && /not yet/.test(sc.text), `versions, Check for updates focused: ${JSON.stringify(sc)}`);
         assert.deepEqual(await tvAudit(tv, `about ${W}`), []);
         await tvShot(tv, 'about');
         // Up to date.
@@ -7964,7 +8003,7 @@ chrome.runtime.onMessage.addListener(m => {
         assert.match((await screen()).text, /0\.9\.2 · build 200/, 'the new interface runs');
         // A new app: Install update, its download progress, then the installer.
         await answer('shell_check', info(200, { state: 'ok', at: Date.now(), needs_shell: false, apk: { version: '0.2.0', version_code: 2000 } }));
-        await press('tv-check', 'Lumen 0\\.2\\.0 is available');
+        await press('tv-check', 'Redline 0\\.2\\.0 is available');
         assert.equal((await screen()).focus, 'tv-install');
         await tvShot(tv, 'about-app');
         await answer('shell_install', info(200, { state: 'downloading', at: Date.now(), got: 4e6, total: 1e7, apk: { version: '0.2.0' } }));
@@ -7984,7 +8023,7 @@ chrome.runtime.onMessage.addListener(m => {
         await tv.waitForFunction(() => document.querySelector('#ytc-tvabout [data-act=tv-install]'), null, { timeout: 5000 }).catch(() => {});
         await tv.focus('#ytc-tvabout [data-act=tv-install]').catch(() => {});
         await tv.keyboard.press('Enter');
-        await tv.waitForFunction(() => /its own Update Lumen dialog/.test(document.getElementById('ytc-tvabout').textContent), null, { timeout: 5000 });
+        await tv.waitForFunction(() => /its own update dialog/.test(document.getElementById('ytc-tvabout').textContent), null, { timeout: 5000 });
         // Back closes it, the focus returns to the rail item.
         assert.deepEqual(await back(tv), { handled: true, exit: false });
         assert.equal((await focusedInfo(tv)).nav, 'about');
@@ -8103,7 +8142,7 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
           const u = new URL(r.request().url());
           if (u.hostname === 'www.youtube.com' && u.pathname === '/__lumen/client.wasm') return served ? r.fulfill({ status: 200, contentType: 'application/wasm', body: wasm }) : r.fulfill({ status: 404, body: '' });
           // The shell's own document for the client's pages (tv/core rules::CLIENT_DOCUMENT; YouTube's own for ?yt-native=1).
-          if (r.request().isNavigationRequest() && u.hostname === 'www.youtube.com' && !u.searchParams.has('yt-native')) return r.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>YouTube</title></head><body></body></html>' });
+          if (r.request().isNavigationRequest() && u.hostname === 'www.youtube.com' && !u.searchParams.has('yt-native')) return r.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Redline</title></head><body></body></html>' });
           return handle(r);
         });
         await c.addInitScript(script);
@@ -8375,7 +8414,7 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
     const wasRich = HOME.rich;
     HOME.rich = true; HOME.stamp = true;
     const homeReqs = () => log.api.filter(a => a.ep === 'browse' && a.body?.browseId === 'FEwhat_to_watch');
-    // YouTube's own TV app has no server-rendered Home and sends Lumen's web "shown" signals never: none here.
+    // YouTube's own TV app has no server-rendered Home and sends Redline's web "shown" signals never: none here.
     let tvImp = 0, counting = false;
     tv.on('request', r => { if (counting && (r.url().includes('/youtubei/v1/log_event') || (r.url() === 'https://www.youtube.com/' && r.resourceType() === 'fetch'))) tvImp++; });
     try {

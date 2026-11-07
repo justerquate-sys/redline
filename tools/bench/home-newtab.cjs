@@ -7,14 +7,14 @@
 //   fresh  another tab is on a watch page (watching discards the ready response): open a new tab
 //   playing another tab plays a video (a new one from Home each time) for --play seconds (default 70: the ready
 //          response refills at most once a minute): open a new tab
-//   video  in one tab, a watch page → click the logo (Lumen's video → Home)
+//   video  in one tab, a watch page → click the logo (Redline's video → Home)
 //   yt     YouTube's own page in a new tab (a separate run without the extension)
 //   --noready  no ready responses at all (localStorage ytc-test-noready): every Home takes the network path
 //   --nokeep   Home's network path fetches YouTube's Home document instead of reading the tab's own (ytc-test-nokeep)
 //   YTC_EXT  the extension folder (default extension/; a development build gives the boot marks)
 //
 // "Home painted" = the first frame whose Home grid shows video cards, measured in the page (performance.now():
-// from the tab's navigation start; for `video` from the logo press). Printed per mode: p50/p90 and Lumen's
+// from the tab's navigation start; for `video` from the logo press). Printed per mode: p50/p90 and Redline's
 // own breakdown (YouTube's document response start, the content script, the shell, where Home came from).
 'use strict';
 const { extensionDir } = require('../../tests/browser.cjs');
@@ -25,7 +25,7 @@ const EXT = extensionDir();
 const pct = (a, p) => { if (!a.length) return NaN; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const fmt = a => a.length ? `p50 ${pct(a, .5).toFixed(0)} ms, p90 ${pct(a, .9).toFixed(0)} ms (n=${a.length})` : 'n=0';
 
-// In every document: the first frame with Home video cards (Lumen's grid or YouTube's own), and a pointerdown stamp.
+// In every document: the first frame with Home video cards (Redline's grid or YouTube's own), and a pointerdown stamp.
 const PROBE = `(() => {
   const H = window.__nt = { first: null, down: null };
   addEventListener('pointerdown', () => { H.down = performance.now(); H.first = null; }, true);

@@ -158,7 +158,7 @@ impl Cat {
             Cat::Highlight => "highlight",
         }
     }
-    /// Color class (`k0`…`k8`, client.css: SponsorBlock's colors adapted to charcoal + mint).
+    /// Color class (`k0`…`k8`, client.css: SponsorBlock's colors adapted to the dark surfaces, apart from the red progress).
     pub fn idx(self) -> usize {
         ALL.iter().position(|&c| c == self).unwrap_or(0)
     }

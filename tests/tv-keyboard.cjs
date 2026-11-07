@@ -173,7 +173,7 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
       await tv.keyboard.type('unfinished');
       assert.equal(await tv.inputValue('#ytc-q'), 'unfinished');
       await tv.goBack({ waitUntil: 'commit' });
-      // The URL is committed already. Lumen stops YouTube's document, so an extra default
+      // The URL is committed already. Redline stops YouTube's document, so an extra default
       // waitForURL would also wait for a full-page load that this same-document restore does not need.
       assert.equal(tv.url(), results, 'Back returns to the search result URL');
       await tv.waitForFunction(() => document.activeElement?.matches('#ytc-list a.t'));

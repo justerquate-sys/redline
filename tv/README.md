@@ -1,6 +1,6 @@
-# Lumen for TV (Google TV / Android TV)
+# Redline for TV (Google TV / Android TV)
 
-The client on a TV, as the app **Lumen**, driven by the remote, signed in to the same YouTube account as your
+The client on a TV, as the app **Redline** (until app 0.4.0 "Lumen"), driven by the remote, signed in to the same YouTube account as your
 other devices, updating itself from GitHub Releases.
 
 It is the **same client** as the browser extension (`src/`: Rust → Wasm, `browser/bridge.js`,
@@ -24,7 +24,7 @@ marked *latest*). After this first install the app keeps itself up to date (see 
 3. *Settings → Apps → Security & restrictions → Unknown sources* (on Google TV: *Settings → Apps →
    Install unknown apps*) → allow **Downloader**.
 4. In the Downloader app, enter: **`is.gd/lumentv`**, then install.
-5. Find **Lumen** in *Apps* (it shows its banner); move it to your favourites if you like.
+5. Find **Redline** in *Apps* (it shows its banner); move it to your favourites if you like.
 
 **Option B: ADB over Wi-Fi (from your computer)**
 
@@ -41,7 +41,7 @@ scan the QR code with your phone, or go to the address shown (google.com/device 
 the code shown on the TV and pick your account. That is YouTube's own TV sign-in: your history, subscriptions,
 Watch later and playlists are the same as everywhere else. *Account → Sign out* revokes the TV's access.
 
-**Remote:** the arrows move the focus (a steady mint frame marks the focused card), OK selects, Back closes what
+**Remote:** the arrows move the focus (a steady white frame marks the focused card), OK selects, Back closes what
 is open, then goes to the rail, then back (on Home it leaves the app). ← from the first column opens the rail
 (Search, Home, Subscriptions, History, Watch later, Playlists, Liked, Account). *Search* opens the search screen:
 the built-in keyboard opens at once, with letters, numbers/symbols, Space, Delete, Clear and Search, all operated
@@ -71,7 +71,7 @@ version stays the same. A local build is not available to the TV until its signe
   once, no relaunch, still signed in.
 - **Install update** (a new app was found): downloads it with its progress, checks its hash against the signed
   manifest and opens Android's installer (`shell_install`; the first time Android asks to allow installs from
-  Lumen: allow it and press Back, the install goes on). Choose *Update*, then *Open*. Downloader is only ever
+  this app: allow it and press Back, the install goes on). Choose *Update*, then *Open*. Downloader is only ever
   needed for the very first install.
 - **Retry** after a failed check, with the reason (no connection, GitHub's rate limit, a signature that does not
   verify).
@@ -79,7 +79,7 @@ version stays the same. A local build is not available to the TV until its signe
 The automatic checks stay: at launch and every 6 hours the app reads the repository's releases, takes the newest
 one carrying `lumen-tv-manifest.json`, checks its ed25519 signature against the public key compiled into the app
 (`tv/keys/release.pub`) and the SHA-256 of every file, and caches it. When one finds something, a small *Update
-ready* notice appears at the top right of the pages (never over a video; the rail item gets a mint dot) and its
+ready* notice appears at the top right of the pages (never over a video; the rail item gets a white dot) and its
 button opens About & updates. A new interface also goes live by itself the next time the app comes back to the
 foreground (never mid-video). Offline, the app runs what it has; a broken or tampered download is ignored.
 
@@ -188,7 +188,11 @@ release of the whole repository: if desktop releases are published there later, 
 the next TV release or also carry `lumen-tv.apk`, or the first-install link answers 404.
 
 The repository the app reads its releases from is compiled in: `LUMEN_TV_REPO=owner/name` when building (default
-`justerquate-sys/lumen`); give `release.cjs` the same `LUMEN_TV_REPO` when publishing from a fork. A client-only
+`justerquate-sys/redline`); give `release.cjs` the same `LUMEN_TV_REPO` when publishing from a fork. The repository
+was renamed from `justerquate-sys/lumen`: apps built before 0.5.0 still ask for that name, and GitHub's redirect for
+renamed repositories (which the app follows) brings them to the same releases, as long as no new repository takes
+the old name. The tag prefix `lumen-tv-` and the asset names stay as they are: installed apps look for exactly
+these. A client-only
 release (most of them) needs no new APK: the TVs pick up the bundle. A format-2 bundle (`client.wasm`) needs app 0.3.0:
 `release.cjs` then sets the manifest's `min_shell` to 0.3.0's version code (3000) at least, so an older app never
 installs it: its update check reports that the interface needs a newer app, keeps running the bundle it has and offers

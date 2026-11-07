@@ -373,14 +373,14 @@ pub fn dashboard(file: &Path, q: &[(String, String)]) -> String {
     let shown: Vec<String> = order.iter().rev().take(VERSIONS_SHOWN).rev().map(|x| x.0.clone()).collect();
 
     let mut h = String::with_capacity(64 * 1024);
-    h.push_str("<!doctype html><meta charset=utf-8><title>Lumen speed</title><style>\
+    h.push_str("<!doctype html><meta charset=utf-8><title>Redline speed</title><style>\
 body{background:#111;color:#ddd;font:13px ui-monospace,monospace;margin:20px}h1,h2{font:600 18px system-ui;color:#b7ebca;margin:22px 0 8px}h2{font-size:15px}\
 a{color:#9cc8ff}table{border-collapse:collapse;margin:6px 0}td,th{padding:3px 10px;border-bottom:1px solid #2a2a2a;text-align:right;white-space:nowrap}\
 th{color:#999;font-weight:500}td:first-child,th:first-child{text-align:left}tr:hover td{background:#1b1b1b}\
 .bar{display:inline-block;height:8px;background:#4a7;border-radius:2px;vertical-align:middle;margin-left:6px}\
 form{display:flex;gap:10px;align-items:center;flex-wrap:wrap}select,input,button{background:#1d1d1d;color:#ddd;border:1px solid #333;border-radius:6px;padding:4px 8px;font:inherit}\
 details{margin:4px 0}summary{cursor:pointer;color:#b7ebca}pre{white-space:pre-wrap;word-break:break-all;background:#1a1a1a;padding:8px;border-radius:8px;margin:4px 0}.dim{color:#777}</style>");
-    let _ = write!(h, "<h1>Lumen speed telemetry</h1><form method=get action=/perf><label>Window <select name=since>");
+    let _ = write!(h, "<h1>Redline speed telemetry</h1><form method=get action=/perf><label>Window <select name=since>");
     for (v, label) in [("1h", "last hour"), ("6h", "6 hours"), ("24h", "24 hours"), ("7d", "7 days"), ("30d", "30 days"), ("all", "everything")] {
         let _ = write!(h, "<option value={v}{}>{label}</option>", if since_s == v { " selected" } else { "" });
     }

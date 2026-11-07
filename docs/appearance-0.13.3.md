@@ -1,5 +1,10 @@
 # Selectable YouTube palette and toolbar controls
 
+> **Since 0.14.0** the product is called Redline and this graphite, white and red palette is the only one, on the
+> desktop and the TV: the palette choice, the Lumen palette (charcoal and mint) and the new-tab hint described below
+> are gone (docs/architecture.md, "Shared design tokens"). A stored `theme` is ignored. The rest is kept as the
+> record of 0.13.3.
+
 The browser extension adds YouTube’s graphite, white and red colors to Lumen’s existing renderer.
 Choose **Lumen → Color palette → YouTube** in the browser toolbar or Extensions menu. Lumen’s
 charcoal and mint remains the default. The choice updates open tabs and is remembered locally.
