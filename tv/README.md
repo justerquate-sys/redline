@@ -66,6 +66,11 @@ The two versions advance independently: **App** changes after Android installs a
 when the signed client update is applied. An interface update can add TV features while the installed app
 version stays the same. A local build is not available to the TV until its signed release is published.
 
+**Repository name (7 Nov 2026):** builds from shell 0.5.0 read the releases of `justerquate-sys/redline`; apps
+installed before that ask `justerquate-sys/lumen` and reach the same releases through GitHub's rename redirect.
+So the repository must be renamed to `redline` before any 0.5.0 build is released or installed, and no new
+repository may ever be created under the old name `lumen` (that would end the redirect for every older app).
+
 - **Check for updates** asks GitHub now (the shell's `shell_check`).
 - **Update now** (a new interface was found): it is already downloaded and verified; the screen restarts with it at
   once, no relaunch, still signed in.

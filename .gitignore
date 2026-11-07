@@ -26,3 +26,6 @@ tv/out/
 *.pem
 *.p12
 keystore.properties
+
+# Local screenshots (YTC_SHOTS)
+shots/
