@@ -43,12 +43,12 @@ body{overscroll-behavior:none;overflow-x:clip}
 /* Header: logo | centered search (≤560px) | escape hatch */
 #ytc-top{position:sticky;top:0;z-index:10;display:grid;grid-template-columns:1fr minmax(0,720px) 1fr;align-items:center;gap:16px;height:64px;padding:0 20px;background:var(--bg)}
 #ytc .logo{justify-self:start;margin-left:10px;display:flex;align-items:center;gap:6px;font-weight:700;font-size:20px;letter-spacing:-.4px;transition:transform var(--d-press) var(--e-out)}
-.logo svg{display:block;width:32px;height:24px;overflow:visible;fill:var(--brand)}
-/* Logo: the mark leans forward a touch on hover (spring), like it is about to go; a press gives. */
-.logo svg{transform-origin:center;transition:transform var(--d-spring) var(--spring)}
-@media (hover:hover) and (pointer:fine){#ytc .logo:hover svg{transform:translateX(calc(1.5px * var(--mv))) scale(calc(1 + .06 * var(--mv)))}}
+.logo svg{display:block;width:32px;height:23px;overflow:visible}.logo rect{fill:var(--brand)}.logo path{fill:var(--brand-ink)}
+/* Logo (YouTube's): the tile swells a touch and the play mark leans forward on hover (spring); a press gives. */
+.logo rect,.logo path{transform-box:fill-box;transform-origin:center;transition:transform var(--d-spring) var(--spring)}
+@media (hover:hover) and (pointer:fine){#ytc .logo:hover rect{transform:scale(calc(1 + .07 * var(--mv)))}#ytc .logo:hover path{transform:translateX(calc(1.2px * var(--mv))) scale(calc(1 + .12 * var(--mv)))}}
 #ytc .logo:active{transform:scale(calc(1 - var(--pd) * var(--mv)))}
-#ytc .logo:active svg{transform:scale(calc(1 - .1 * var(--mv)));transition-duration:var(--d-press)}
+#ytc .logo:active path{transform:scale(calc(1 - .16 * var(--mv)));transition-duration:var(--d-press)}
 /* Zero-click Home (app/logo.rs): resting on the logo fills a soft accent pill behind it left to right over the dwell
    (logo::DWELL_MS; linear: it is a timer, like the player's Speed/Quality rows), then Home opens. Leaving
    early retracts and fades it; nothing waits for it. Reduced motion: a fade over the same time. */
@@ -1122,17 +1122,17 @@ html[data-ytc-tv] #ytc :focus{outline:none}
 /* One steady focus frame. No geometry changes when a remote key is pressed. */
 html[data-ytc-tv] #ytc :is(.tvb,.fx-ch,.sg a,.sgx,.pill,.lnk2,.fx-sw,.pfbt,.psbt button,.ya-b,.ya-opt,.ya-cp):focus{outline:var(--ring) solid var(--ac);outline-offset:.1875rem;scale:none}
 html[data-ytc-tv] #ytc :is(.tvb,.fx-ch,.pill,.lnk2,.pfbt,.psbt button){transition:none;}
-html[data-ytc-tv] .lmk{display:block;flex:none}html[data-ytc-tv] .lmk path{fill:var(--brand);stroke:none}
+html[data-ytc-tv] .lmk{display:block;flex:none}html[data-ytc-tv] .lmk rect{fill:var(--brand);stroke:none}html[data-ytc-tv] .lmk path{fill:var(--brand-ink);stroke:none}
 /* Pointer-only or desktop-only parts. */
 html[data-ytc-tv] :is(#ytc .logo,#ytc-mic,#ytc-vk,.qx,#ytc-hfx,.c .ca,.fx-ed,.fx-tx,#ytc-keys,.pct,#ytc-pl,.upn,#ytc-chap){display:none!important}
 
-/* ---- the rail: the Redline mark, Search, the pages, the account at the bottom. Collapsed it shows the icons; the
+/* ---- the rail: YouTube's logo, Search, the pages, the account at the bottom. Collapsed it shows the icons; the
    focus entering it reveals labels over the content at once; the page keeps its position. */
 html[data-ytc-tv] #ytc-side{position:fixed;inset:0 auto 0 0;width:7rem;padding:0;margin:0;overflow:visible;z-index:30;clip-path:none;background:none}
 html[data-ytc-tv] #ytc-side::after{content:"";position:absolute;inset:0 auto 0 0;width:18rem;z-index:-1;background:linear-gradient(90deg,var(--pn) 15.5rem,color-mix(in srgb,var(--pn) 0%,transparent));opacity:0;transform:none;transition:none;pointer-events:none}
 html[data-ytc-tv] #ytc-side:focus-within::after{opacity:1;transform:none;}
 html[data-ytc-tv] .rmk{position:absolute;left:3.75rem;top:var(--sy);display:flex;align-items:center;gap:.625rem;height:2rem}
-html[data-ytc-tv] #ytc .rmk .lmk{width:2rem;height:1.5rem;stroke:none;transform:none}
+html[data-ytc-tv] #ytc .rmk .lmk{width:2rem;height:1.4375rem;stroke:none;transform:none}
 html[data-ytc-tv] .rmk b{font-size:1.125rem;font-weight:600;letter-spacing:0;color:var(--tx);opacity:0;translate:none;transition:none;}
 html[data-ytc-tv] #ytc-side:focus-within .rmk b{opacity:1;translate:0;}
 html[data-ytc-tv] .rls{position:absolute;left:3.375rem;top:5.25rem;width:12.5rem}
@@ -1209,7 +1209,7 @@ html[data-ytc-tv] #ytc .pill{height:2.25rem;padding:0 1.25rem;border-radius:.375
 /* ---- calm cards (signed-out Home, sign-in needed, a failed page) */
 html[data-ytc-tv] .tvpc{display:grid;place-items:center;min-height:calc(100vh - 2 * var(--sy) - 4rem)}
 html[data-ytc-tv] .tvcd{width:30rem;box-sizing:border-box;padding:2.25rem 2.5rem;border-radius:1.25rem;background:var(--pn);display:grid;gap:1rem;justify-items:start}
-html[data-ytc-tv] .tvcd .lmk{width:2.5rem;height:1.875rem}
+html[data-ytc-tv] .tvcd .lmk{width:2.5rem;height:1.8rem}
 html[data-ytc-tv] #ytc .tvcd h2{margin:0;font-size:1.75rem;line-height:2.125rem;font-weight:500;letter-spacing:-.015em}
 html[data-ytc-tv] .tvcd p{margin:0;font-size:.875rem;line-height:1.3125rem;color:var(--mu)}
 html[data-ytc-tv] .tvbs{display:flex;gap:1rem;margin-top:.5rem}

@@ -1174,7 +1174,7 @@ impl App {
 
     fn set_title(&mut self, t: &str) {
         self.title = t.to_string();
-        bridge::title(&if t.is_empty() { crate::render::NAME.to_string() } else { format!("{t} - {}", crate::render::NAME) });
+        bridge::title(&if t.is_empty() { crate::render::SITE.to_string() } else { format!("{t} - {}", crate::render::SITE) });
     }
 
     /// Immediate UI for the current route, then `load()`.

@@ -1,5 +1,5 @@
 //! Hover navigation: the logo and desktop sidebar share the same cancellable dwell. Resting the pointer on the
-//! header logo (`data-hov="logo"`: the mark or the word) for `DWELL_MS` goes Home; the logo's soft
+//! header logo (`data-hov="logo"`: YouTube's logo or the word) for `DWELL_MS` goes Home; the logo's soft
 //! pill fills left to right over that time (client.css `.logo.dw`). Home's first page is fetched the
 //! moment the pointer enters, so at the end of the dwell Home renders from memory. Passing over never
 //! navigates: leaving the logo cancels, coming back starts over, and a dwell that ran (or a press on
@@ -283,6 +283,6 @@ mod tests {
     fn the_fill_lasts_the_dwell() {
         let css = include_str!("../../extension/client.css");
         assert!(css.contains(&format!("transition:clip-path {DWELL_MS}ms linear")), "client.css draws the logo fill over DWELL_MS");
-        assert!(crate::render::shell(&Route::Home, "/", None).contains("id=\"ytc-logo\" class=\"logo\" href=\"/\" aria-label=\"Redline home\" data-hov=\"logo\""));
+        assert!(crate::render::shell(&Route::Home, "/", None).contains("id=\"ytc-logo\" class=\"logo\" href=\"/\" aria-label=\"YouTube home\" data-hov=\"logo\""));
     }
 }

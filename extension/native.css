@@ -1,38 +1,17 @@
-/* Redline: YouTube's own pages (native mode: ?yt-native=1 fallbacks and pages the client does not
+/* YouTube's own pages (native mode: ?yt-native=1 fallbacks and pages the client does not
    render). Injected only there (manifest.json, second content script). The old extension's essential
    cleanup, moved from its theme.css / watch-page.css / player-controls.css / captions.css / promotions.css
    with their verified selectors; logic (captions, keys, CC, promo dismissal, Shorts switch) lives in
    src/native/clean.rs, which sets html[data-ytc-native] at document start. */
 
-/* ---- Header: no voice search, Create or locale label; the logo is Redline's (it leads back to Redline's Home). */
+/* ---- Header: no voice search, Create or locale label; YouTube's own logo stays as YouTube draws it. */
 html[data-ytc-native] :is(
   ytd-masthead #voice-search-button,
   ytd-masthead #country-code,
   ytd-masthead ytd-button-renderer:has(button[aria-label="Create"]),
   ytd-masthead yt-button-view-model:has(button[aria-label="Create"]),
-  ytd-masthead button[aria-label="Create"],
-  ytd-topbar-logo-renderer #logo-icon
+  ytd-masthead button[aria-label="Create"]
 ) { display: none !important; }
-html[data-ytc-native] ytd-topbar-logo-renderer a#logo {
-  display: inline-flex !important;
-  align-items: center;
-  gap: 6px;
-  min-width: 108px;
-  color: var(--yp-text) !important;
-  text-decoration: none !important;
-}
-html[data-ytc-native] ytd-topbar-logo-renderer a#logo::before {
-  content: "";
-  flex: none;
-  width: 32px;
-  height: 24px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 24'%3E%3Cpath fill='%23ff0033' fill-rule='evenodd' d='M12.54 2L27.54 2C30.03 2 31.23 4.01 30.22 6.5L25.78 17.5C24.77 19.99 21.95 22 19.46 22L4.46 22C1.97 22 0.77 19.99 1.78 17.5L6.22 6.5C7.23 4.01 10.05 2 12.54 2ZM12.44 6.64C12.09 6.29 12.21 6 12.7 6L16.5 6C17 6 17.69 6.29 18.04 6.64L22.64 11.24C23.06 11.66 23.06 12.34 22.64 12.76L18.04 17.36C17.69 17.71 17 18 16.5 18L12.7 18C12.21 18 12.09 17.71 12.44 17.36L17.29 12.51C17.57 12.23 17.57 11.77 17.29 11.49Z'/%3E%3C/svg%3E") center / contain no-repeat;
-}
-html[data-ytc-native] ytd-topbar-logo-renderer a#logo::after {
-  content: "Redline";
-  font: 700 20px/1 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  letter-spacing: -.4px;
-}
 
 /* ---- Sidebar (YouTube's guide): Home, Subscriptions, History, Playlists, Watch later, Liked videos.
    No Shorts, You/Your channel/Your videos/Downloads/courses/podcasts, channel list, Explore,

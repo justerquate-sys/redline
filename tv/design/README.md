@@ -20,7 +20,7 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
 ## Layout
 
 - **Rail**: icons at x = 3.375 rem (2.5 rem tiles, pitch `--tvrow` 2.875 rem from 5.25 rem: Search, Home,
-  Subscriptions, History, Watch later, Playlists, Liked), the Redline mark on top, and at the bottom (25.875 rem)
+  Subscriptions, History, Watch later, Playlists, Liked), YouTube's logo and name on top, and at the bottom (25.875 rem)
   the account (Sign in / Account) and About & updates (a white dot while an update is ready).
   The focus entering it reveals labels over the content immediately; the selected row has a quiet neutral
   surface and white text. The content never moves. Back from the content focuses the rail on the page's own item; →
@@ -91,7 +91,7 @@ generated imagery is needed.
 7. **Details:** rounded rectangles replace excess capsules, while icon-only player controls stay round.
    Focus is visible, stays inside open panels and returns to the originating action when closed.
 8. **Visuals:** real thumbnails and the playing video carry the visual detail. No generated images or
-   background decoration; the one brand element is the Redline mark (browser/icons/redline.svg) on the rail.
+   background decoration; the one brand element is YouTube's logo on the rail (Redline is only the app's name).
 9. **Motion:** remote input, rail expansion and panel changes are immediate, including late responses.
    Only the idle overlay's short opacity fade remains; reduced motion removes it.
 

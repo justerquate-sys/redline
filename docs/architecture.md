@@ -52,8 +52,8 @@ mode (`boot_native`); client pages are untouched.
 
 - **`native.css`** (hiding and theming, no JavaScript timing): the old `theme.css`, `watch-page.css`,
   `player-controls.css`, `captions.css` and `promotions.css` rules with their verified selectors, gated on
-  `html[data-ytc-native]`. Header without voice search, Create or the locale label, Redline's
-  mark and name instead of the Premium logo (the link leads back to Redline's Home); YouTube's guide trimmed to Home, Subscriptions, History, Playlists,
+  `html[data-ytc-native]`. Header without voice search, Create or the locale label, with YouTube's own
+  logo exactly as YouTube draws it; YouTube's guide trimmed to Home, Subscriptions, History, Playlists,
   Watch later, Liked videos (no Shorts, You/Your channel/Your videos/Downloads/courses/podcasts, channel
   list, Explore, More from YouTube, settings rows, footer); no Playables; Shorts shelves and cards out of
   feeds unless the client's Shorts switch (`shortsInFeeds`) is on (`/shorts/` itself untouched); Premium /
@@ -61,8 +61,8 @@ mode (`boot_native`); client pages are untouched.
   Auto-dubbed badges, hashtags above the title, Summary / How this was made / Games / Transcript / repeated
   channel / Video details sections, and without the related chip row; player without the fullscreen More
   videos grid, quick actions, title overlay, channel watermark, gradients and cinematics, black around the
-  picture; the client’s palette (graphite, white, red) over YouTube’s theme variables, and Redline’s mark and name
-  as the header logo (it leads back to Redline’s Home).
+  picture; the client’s palette (graphite, white, red) over YouTube’s theme variables. The header logo is never
+  touched (owner decision, 7 Nov 2026).
 - **`src/native/clean.rs`** (what needs logic; pure parts unit-tested): captions in the client's look
   and place (cyan Arial with a dark outline, no backgrounds, upper-left corner and size from the same
   `ytcConfigV1.p.cs` the client player uses, via CSS variables on `<html>`); drag a cue to move it, wheel
@@ -88,7 +88,7 @@ mode (`boot_native`); client pages are untouched.
 
 ## Use
 
-Layout: a top bar with the Redline logo (its mark and name; → Home; **resting the pointer on it for 250 ms goes Home without a
+Layout: a top bar with YouTube's logo (its red play tile and the "YouTube" wordmark, aria label "YouTube home"; → Home; **resting the pointer on it for 250 ms goes Home without a
 click**, see below), a centered search box (≤ 720 px; `/` focuses it from
 anywhere) and, on Home and Search, **Filters** left of the bell; a left sidebar with Home, History, Watch later, Subscriptions,
 Playlists, Liked videos (no Shorts entry; Shorts appear only with the Filters **Shorts** switch). The sidebar is gone on watch pages,
@@ -127,9 +127,9 @@ the six links clipped to the active row by `--st`/`--sb`, registered `@property`
 `App::side_move`): a pointer navigation moves both edges on the house spring, the leading edge on `--d-spring`
 and the trailing one on `--d-spring-soft` (`data-dir`), so it stretches toward the new page and settles while the
 label turns to the accent; g+letter, back/forward and restored pages move it at once (`data-still`); on a page without a
-link it fades where it is. *Header:* the Redline mark leans forward on hover, the whole
-logo gives on press. **Zero-click Home** (2 Nov 2026: hovering the logo
-activates it, no click needed; `app/logo.rs`): resting the pointer on the logo (mark or word) for 250 ms
+link it fades where it is. *Header:* YouTube's logo tile swells a touch and its play mark leans
+forward on hover, the whole logo gives on press. **Zero-click Home** (2 Nov 2026: hovering the logo
+activates it, no click needed; `app/logo.rs`): resting the pointer on the logo (tile or word) for 250 ms
 (`logo::DWELL_MS`) opens Home; a soft accent pill behind the logo fills left to right over that time (a linear clip-path
 wipe, like the player's Speed/Quality rows; reduced motion fades it). At the end of the dwell Home paints the
 ready Home response (see "Home reload" under Speed); without one, Home's first page is requested the moment the
@@ -1018,24 +1018,34 @@ manifest), so nothing flashes and nothing is read first; a hint an older version
 never an error; the toolbar's patches keep it as it is, and the client's own config writes no longer carry it.
 `src/appearance.rs` holds the toolbar's preference patches (SponsorSkip); `src/popup.rs` owns the toolbar UI.
 
-### The Redline mark
+### YouTube's logo inside the product, Redline outside it
 
-A red rounded parallelogram leaning forward with a chevron cut out (one even-odd path, viewBox `0 0 32 24`): it reads
-as forward and speed, and is deliberately not YouTube's rounded-rectangle play button. The product never shows
-YouTube's logo or play mark and never uses "YouTube" or "Tube" in its own name; descriptions may name YouTube
-nominatively ("a client for YouTube", "not affiliated with YouTube or Google"). The one source is
-`browser/icons/redline.svg`: `src/render.rs` inlines the same path (the top bar, the toolbar popup, the TV rail and
-calm cards; a Rust test keeps them equal), `node browser/icons.cjs` renders the extension's icons
-(`extension/icons/16|32|48|128.png`, the manifest's `icons` and the toolbar's `default_icon`), and
-`node tv/scripts/banner.cjs --all` the TV launcher icons and banner (the adaptive icon's vector,
-`drawable-v24/ic_launcher_foreground.xml`, carries the same path). The wordmark is "Redline" in the interface's
-system font. The top bar's dwell pill (`app/logo.rs`) is the logo link's own `::before`, independent of the mark's
-shape; hovering leans the mark forward on the house spring.
+Owner decision (7 Nov 2026): "don't change youtube logo, it should always be there, it's just a name for extension
+and github, that's it". 0.14.0 had put a Redline mark into the interface; 0.14.1 takes it out again.
+
+- **Inside the product, YouTube's branding as before 0.14.0:** the top bar shows YouTube's logo (`render::LOGO`: the
+  red rounded tile with its white play mark, viewBox `0 0 28 20`, `--brand` and `--brand-ink`) and the "YouTube"
+  wordmark, aria label "YouTube home"; window titles are YouTube's ("<page> - YouTube", Home "YouTube",
+  `render::SITE`); the TV rail, the TV sign-in and About headers and the calm cards show the same logo
+  (`render::MARK`, class `lmk`) and wordmark ("Make YouTube yours" on signed-out Home); YouTube's own pages
+  (`?yt-native=1`) keep YouTube's header logo untouched. The top bar's dwell pill (`app/logo.rs`) is the logo link's
+  own `::before`, independent of the logo's shape.
+- **Redline is only the name of the extension, the TV app and the GitHub project** (`render::NAME`): the manifest's
+  name, description and action title; the toolbar icons; the toolbar popup's header (the extension's own UI, with the
+  Redline mark); the TV app's launcher label, icon and banner and its name on About & updates ("Redline for TV" with
+  its versions, "Redline is up to date"); the README and these docs.
+- **The Redline mark** (the extension's icon): a red rounded parallelogram leaning forward with a chevron cut out (one
+  even-odd path, viewBox `0 0 32 24`). Its one source is `browser/icons/redline.svg`; `src/render.rs` inlines the
+  same path only for the toolbar popup (`POPUP_MARK`; a Rust test keeps them equal), `node browser/icons.cjs` renders
+  the extension's icons (`extension/icons/16|32|48|128.png`, the manifest's `icons` and the toolbar's
+  `default_icon`), and `node tv/scripts/banner.cjs --all` the TV launcher icons and banner (the adaptive icon's
+  vector, `drawable-v24/ic_launcher_foreground.xml`, carries the same path).
 
 ### Names kept for compatibility
 
-The product was called Lumen until 0.13.8 (the TV app "Lumen for TV"). Everything a user reads now says Redline;
-these internal names keep the old one on purpose, because stored data, installed apps or tools depend on them:
+The extension was called Lumen until 0.13.8 (the TV app "Lumen for TV"). Wherever the extension or the app names
+itself, it now says Redline (inside the product the interface shows YouTube's name, above); these internal names keep
+the old one on purpose, because stored data, installed apps or tools depend on them:
 
 - Storage keys and DOM ids/classes: `ytcConfigV1` and every other `ytc*` key, `#ytc*` ids, `data-ytc-*` attributes.
 - The crate and package names `ytc-client`, `lumen-tv` (its library `lumen_tv_lib`, loaded by name from Kotlin),

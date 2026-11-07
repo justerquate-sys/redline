@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Redline",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "description": "A fast, ad-free client for YouTube, at youtube.com: Rust-rendered, no bloat. Not affiliated with YouTube or Google.",
   "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
   "permissions": [

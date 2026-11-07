@@ -97,7 +97,7 @@ ${glue}
 function ytcBootFailed(e) {
   if (!ytcNative && !ytcExtension) try { window.stop(); } catch {}
   console.error('[Redline] boot failed', e);
-  if (ytcExtension) { const el = document.getElementById('ytc-popup'); if (el) el.textContent = 'Preferences couldn’t load. Reopen Redline to try again.'; }
+  if (ytcExtension) { const el = document.getElementById('ytc-popup'); if (el) el.textContent = 'Preferences couldn’t load. Close this window and open it again.'; }
   try { chrome.runtime.sendMessage({ ytcIncident: JSON.stringify({ kind: 'boot-failed', reason: String(e && e.stack || e), at: Date.now(), path: location.pathname + location.search }) }).catch(() => {}); } catch {}
   if (!ytcNative && !ytcExtension) { const u = new URL(location.href); u.searchParams.set('yt-native', '1'); location.replace(u.href); }
 }

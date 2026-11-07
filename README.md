@@ -19,7 +19,8 @@
 Redline replaces YouTube's web app with its own: the same videos, your same account, subscriptions, history
 and playlists, but pages that appear at once, a video player of its own and no ads. It runs right at
 www.youtube.com as a browser extension, reads YouTube's own data, and draws everything itself. It has no
-server and no account of its own, and it is free and open source.
+server and no account of its own, and it is free and open source. Inside, it is still YouTube, with YouTube's logo and
+name in the top bar and the window title: Redline is only the name of the extension, the TV app and this project.
 
 <p align="center">
   <img src="docs/screenshots/watch.webp" alt="Redline's watch page: Big Buck Bunny paused in Redline's own player, a storyboard preview above the seek bar, the Up next column on the right">

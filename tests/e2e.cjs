@@ -2870,7 +2870,7 @@ chrome.runtime.onMessage.addListener(m => {
     return out.join('\n');
   });
 
-  await step('Redline look: one palette (graphite, white, red) on every page, the toolbar and YouTube\'s own pages; no palette choice; a stored theme ("lumen"/"youtube") is harmless; no "Lumen" anywhere a user reads it', async () => {
+  await step('Redline look: one palette (graphite, white, red) on every page, the toolbar and YouTube\'s own pages; no palette choice; a stored theme ("lumen"/"youtube") is harmless; YouTube\'s logo, name and titles inside the product, Redline only as the extension\'s name; no "Lumen" anywhere a user reads it', async () => {
     const saved = await storedConfig();
     let popup, other, native, fresh;
     try {
@@ -2909,8 +2909,8 @@ chrome.runtime.onMessage.addListener(m => {
       assert.deepEqual(await page.locator('#ytc-player').boundingBox(), before, 'same player geometry');
       assert.ok(await page.evaluate(() => window.paletteVideo === document.getElementById('ytc-video') && window.paletteVideo.paused), 'same media element and state');
 
-      const colors = await page.evaluate(() => ({ bg: getComputedStyle(document.body).backgroundColor, logo: getComputedStyle(document.querySelector('.logo svg')).fill, progress: getComputedStyle(document.querySelector('.ppos')).backgroundColor, focus: getComputedStyle(document.documentElement).getPropertyValue('--ac').trim() }));
-      assert.deepEqual(colors, { bg: 'rgb(15, 15, 15)', logo: 'rgb(255, 0, 51)', progress: 'rgb(255, 0, 51)', focus: '#f1f1f1' });
+      const colors = await page.evaluate(() => ({ bg: getComputedStyle(document.body).backgroundColor, logo: [getComputedStyle(document.querySelector('.logo rect')).fill, getComputedStyle(document.querySelector('.logo path')).fill], progress: getComputedStyle(document.querySelector('.ppos')).backgroundColor, focus: getComputedStyle(document.documentElement).getPropertyValue('--ac').trim() }));
+      assert.deepEqual(colors, { bg: 'rgb(15, 15, 15)', logo: ['rgb(255, 0, 51)', 'rgb(255, 255, 255)'], progress: 'rgb(255, 0, 51)', focus: '#f1f1f1' });
       const tokens = await page.evaluate(() => { const s = getComputedStyle(document.documentElement); return Object.fromEntries(['bg', 'pn', 'rs', 'cb', 'hv', 'tx', 'mu', 'fa', 'ac', 'link', 'er'].map(k => [k, s.getPropertyValue('--' + k).trim()])); });
       const luminance = hex => { let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join(''); const c = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255).map(x => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4); return c[0] * .2126 + c[1] * .7152 + c[2] * .0722; };
       const contrast = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
@@ -2918,9 +2918,12 @@ chrome.runtime.onMessage.addListener(m => {
       for (const surface of ['cb', 'hv']) assert.ok(contrast(tokens.mu, tokens[surface]) >= 4.5, `secondary text on ${surface}: AA contrast`);
       assert.ok(contrast(tokens.bg, tokens.ac) >= 4.5, 'selected controls have AA contrast');
 
-      // Names: the window title, the top bar's wordmark and its accessible name.
-      assert.match(await page.title(), / - Redline$/);
-      assert.deepEqual(await page.evaluate(() => [document.getElementById('ytc-logo').getAttribute('aria-label'), document.getElementById('ytc-logo').textContent]), ['Redline home', 'Redline']);
+      // Names inside the product are YouTube's (owner decision, 7 Nov 2026): the window title, the top bar's logo, its
+      // wordmark and its accessible name; Redline is only the extension's name (manifest, toolbar popup).
+      assert.match(await page.title(), / - YouTube$/);
+      assert.match(await other.title(), /^palette - YouTube$/);
+      assert.deepEqual(await page.evaluate(() => { const l = document.getElementById('ytc-logo'); return [l.getAttribute('aria-label'), l.textContent, l.querySelector('svg').getAttribute('viewBox'), l.querySelectorAll('svg rect, svg path').length]; }), ['YouTube home', 'YouTube', '0 0 28 20', 2]);
+      for (const p of [page, other]) assert.doesNotMatch(await visibleNames(p), /redline/i, 'no Redline inside the product');
       for (const p of [page, other, popup]) assert.doesNotMatch(await visibleNames(p), /lumen/i);
       if (process.env.YTC_SHOTS) {
         await page.mouse.move(700, 400);
@@ -2956,9 +2959,9 @@ chrome.runtime.onMessage.addListener(m => {
       await native.goto('https://www.youtube.com/watch?v=ntvfixture1&yt-native=1', { waitUntil: 'commit' });
       await native.waitForFunction(() => document.documentElement.dataset.ytcNative && document.querySelector('.ytp-play-progress'));
       assert.deepEqual(await native.evaluate(() => [getComputedStyle(document.documentElement).backgroundColor, getComputedStyle(document.querySelector('.ytp-play-progress')).backgroundColor, window.__ytAppRan]), ['rgb(15, 15, 15)', 'rgb(255, 0, 51)', true], 'YouTube\'s own page keeps its renderer and takes the palette');
-      const logo = await native.evaluate(() => { const a = document.querySelector('ytd-topbar-logo-renderer a#logo'); return a && [getComputedStyle(a, '::after').content, getComputedStyle(a, '::before').backgroundImage.includes('ff0033')]; });
-      if (logo) assert.deepEqual(logo, ['"Redline"', true], 'the native header leads back to Redline');
-      assert.doesNotMatch(await visibleNames(native), /lumen/i);
+      const logo = await native.evaluate(() => { const a = document.querySelector('ytd-topbar-logo-renderer a#logo'); return a && [getComputedStyle(a, '::after').content, getComputedStyle(a, '::before').content]; });
+      if (logo) assert.deepEqual(logo, ['none', 'none'], 'YouTube\'s own header logo, unmodified');
+      assert.doesNotMatch(await visibleNames(native), /lumen|redline/i);
     } finally {
       await popup?.close(); await other?.close(); await native?.close(); await fresh?.close();
       await sw.evaluate(cfg => cfg === undefined ? chrome.storage.local.remove('ytcConfigV1') : chrome.storage.local.set({ ytcConfigV1: cfg }), saved);
@@ -4576,9 +4579,9 @@ chrome.runtime.onMessage.addListener(m => {
     await setStore({ shortsInFeeds: false });
     await openNative();
     assert.equal(await page.evaluate(() => window.__ytAppRan), true, 'YouTube\'s own page runs');
-    await expectShown(false, ['voice-search-button', 'country-code', 'create', 'logo-icon']);
-    await expectShown(true, ['logo', 'search', 'notifications', 'account']);
-    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('logo'), '::after').content), '"Redline"', 'Redline\'s wordmark (the logo leads back to Redline\'s Home)');
+    await expectShown(false, ['voice-search-button', 'country-code', 'create']);
+    await expectShown(true, ['logo', 'logo-icon', 'search', 'notifications', 'account']);
+    assert.deepEqual(await page.evaluate(() => ['::before', '::after'].map(p => getComputedStyle(document.getElementById('logo'), p).content)), ['none', 'none'], 'YouTube\'s own header logo, unmodified');
     // Sidebar: the six browsing links; Liked videos out of the collapsed part.
     await expectShown(true, ['home', 'subscriptions-nav', 'history', 'playlists', 'watch-later', 'liked-videos', 'mini-home', 'mini-subscriptions']);
     await expectShown(false, ['shorts-nav', 'mini-shorts', 'your-channel', 'your-videos', 'downloads', 'podcasts', 'courses', 'expander-item', 'subscriptions', 'subscribed-channel', 'explore', 'more-youtube', 'report-history', 'footer']);
@@ -7731,22 +7734,23 @@ chrome.runtime.onMessage.addListener(m => {
     try {
       for (const [W, H] of TVSIZES) {
         await tv.setViewportSize({ width: W, height: H });
-        // Home signed out: the calm card, its Sign in focused; the rail (the Redline mark, Search … Sign in).
+        // Home signed out: the calm card ("Make YouTube yours"), its Sign in focused; the rail (YouTube's logo, Search … Sign in).
         await tvGo(tv, 'code', 'https://www.youtube.com/');
         await tv.waitForSelector('.tvpc .tvb');
         await tv.waitForFunction(() => document.activeElement && document.activeElement.matches('.tvpc .tvb'));
         assert.equal(await tv.locator('#ytc-top .logo:visible, #ytc-search:visible, .hero').count(), 0, 'no header bar, no search box on Home');
         assert.deepEqual(await tv.$$eval('#ytc-side .rl', a => a.map(e => e.dataset.nav)), ['search', 'home', 'subs', 'history', 'wl', 'playlists', 'liked', 'acct', 'about']);
-        assert.equal(await tv.textContent('#ytc-side .rmk b'), 'Redline');
-        // One palette on TV too: graphite, the red mark, and the focus frame white (the accent): a stationary ring
+        assert.equal(await tv.textContent('#ytc-side .rmk b'), 'YouTube');
+        assert.equal(await tv.textContent('.tvpc .tvcd h2'), 'Make YouTube yours');
+        // One palette on TV too: graphite, YouTube's red logo, and the focus frame white (the accent): a stationary ring
         // that stands out on every surface it sits on (≥ 3:1 non-text contrast; far above it in fact).
         const look = await tv.evaluate(() => {
           const f = document.activeElement, s = getComputedStyle(f), r = getComputedStyle(document.documentElement);
-          return { bg: getComputedStyle(document.body).backgroundColor, mark: getComputedStyle(document.querySelector('#ytc-side .rmk .lmk path')).fill, ring: s.outlineColor, style: s.outlineStyle, ac: r.getPropertyValue('--ac').trim(), title: document.title, attr: document.documentElement.hasAttribute('data-ytc-palette'), text: document.body.innerText };
+          return { bg: getComputedStyle(document.body).backgroundColor, mark: [...document.querySelectorAll('#ytc-side .rmk .lmk :is(rect,path)')].map(e => getComputedStyle(e).fill), ring: s.outlineColor, style: s.outlineStyle, ac: r.getPropertyValue('--ac').trim(), title: document.title, attr: document.documentElement.hasAttribute('data-ytc-palette'), text: document.body.innerText };
         });
-        assert.deepEqual([look.bg, look.mark, look.ring, look.style, look.ac, look.attr], ['rgb(15, 15, 15)', 'rgb(255, 0, 51)', 'rgb(241, 241, 241)', 'solid', '#f1f1f1', false]);
-        assert.ok(look.title === 'Redline' || / - Redline$/.test(look.title), look.title);
-        assert.doesNotMatch(look.text, /lumen/i);
+        assert.deepEqual([look.bg, look.mark, look.ring, look.style, look.ac, look.attr], ['rgb(15, 15, 15)', ['rgb(255, 0, 51)', 'rgb(255, 255, 255)'], 'rgb(241, 241, 241)', 'solid', '#f1f1f1', false]);
+        assert.ok(look.title === 'YouTube' || / - YouTube$/.test(look.title), look.title);
+        assert.doesNotMatch(look.text, /lumen|redline/i);
         assert.deepEqual(await tvAudit(tv, `home signed out ${W}`), []);
         await tvShot(tv, 'home-signed-out');
         const w0 = await tvWalk(tv, '#ytc-side .rl,.tvpc .tvb');
@@ -7971,6 +7975,8 @@ chrome.runtime.onMessage.addListener(m => {
         await tv.waitForSelector('#ytc-tvabout.on');
         await tv.waitForTimeout(300);
         let sc = await screen();
+        // The header is YouTube's logo and name; the app's own name is Redline for TV, with its versions.
+        assert.equal(await tv.textContent('.tvp .rmk b'), 'YouTube');
         assert.ok(sc.focus === 'tv-check' && /Redline for TV 0\.1\.0/.test(sc.text) && !/Lumen/.test(sc.text) && /0\.9\.0 · build 100/.test(sc.text) && /not yet/.test(sc.text), `versions, Check for updates focused: ${JSON.stringify(sc)}`);
         assert.deepEqual(await tvAudit(tv, `about ${W}`), []);
         await tvShot(tv, 'about');
