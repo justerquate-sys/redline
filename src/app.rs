@@ -376,6 +376,10 @@ pub struct App {
     prefs_dirty: bool,
     bw: Throughput,
     vision_block_until: f64,
+    /// Video codecs the player put a media error down to in this tab (memory only), and those
+    /// avoided for the rest of the tab session (a second such fault).
+    codec_faults: Vec<crate::player::formats::Codec>,
+    codec_avoid: Vec<crate::player::formats::Codec>,
     /// How VISIONOS is sent this session: anonymous until a bot check, then the
     /// route that recovered (memory only; a fresh visitor is never persisted).
     vision_route: crate::api::VisionRoute,
@@ -569,6 +573,8 @@ pub fn boot() {
         prefs_dirty: false,
         bw: Throughput::default(),
         vision_block_until: 0.0,
+        codec_faults: Vec::new(),
+        codec_avoid: Vec::new(),
         vision_route: crate::api::VisionRoute::Anon,
         vision_hold: false,
         resume: HashMap::new(),
@@ -2089,6 +2095,11 @@ impl App {
 
     pub fn on_show(&mut self) {
         self.ready_shown();
+        // A video left paused in a forgotten tab: its media and URLs are checked before a play needs them.
+        if let Some(p) = self.player.as_mut() {
+            p.on_show();
+            self.after_player();
+        }
     }
 
     pub fn on_visible(&mut self, id: &str) {
@@ -2956,6 +2967,7 @@ impl App {
         // Every route met the bot check a moment ago: try the remembered route only (no
         // parallel recovery); blocked again → the panel, whose Try again recovers fully.
         p.no_recover = self.vision_block_until > bridge::now();
+        p.avoid = self.codec_avoid.clone();
         p.attach();
         // The first frame decoded while the pointer or focus rested on the link: the box shows it from the
         // open's first frame (the zoom grows the real picture); anything else warm is dropped.
@@ -3091,6 +3103,13 @@ impl App {
                     ended = true;
                 }
                 Out::Prefetch(v) => self.prefetch(&v, None),
+                // A codec that fails twice in this tab is not used again in it.
+                Out::CodecFault(c) => {
+                    if self.codec_faults.contains(&c) && !self.codec_avoid.contains(&c) {
+                        self.codec_avoid.push(c);
+                    }
+                    self.codec_faults.push(c);
+                }
                 Out::Incident { kind, reason } => {
                     let report = self.player.as_ref().map(|p| p.report());
                     self.incident(kind, &reason, report);

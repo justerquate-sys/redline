@@ -110,7 +110,7 @@ fn num(v: &Value) -> u64 {
     }
 }
 
-fn codec_of(mime: &str) -> Codec {
+pub fn codec_of(mime: &str) -> Codec {
     let c = mime.split("codecs=").nth(1).unwrap_or("").trim_matches(|c| c == '"' || c == ' ');
     if c.starts_with("vp9") || c.starts_with("vp09") {
         Codec::Vp9

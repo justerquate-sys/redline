@@ -858,7 +858,7 @@ automatic switch to YouTube's page after a few seconds hid problems; always stay
 means every failure can be seen and inspected where it happens; `src/player/fail.rs`). If our player cannot play a video (VISIONOS not OK: age-restricted,
 members-only, private, unplayable, the bot check on every route; upcoming streams/premieres; no compatible
 format; googlevideo 403 again after a `player` refresh; index/parse errors after their retries; an
-MSE/media error (before the first frame: after three automatic retries); a stuck episode that never recovered), it releases the media and the app shows a **panel
+MSE/media error (only after three automatic recoveries within two minutes, at any time); a stuck episode that never recovered), it releases the media and the app shows a **panel
 in the player box** over the dimmed poster (it settles in: `@starting-style`, no spinner): a one-line
 message, the technical reason in smaller, selectable monospace text, and two buttons. **Try again**
 re-mounts the player for the same video and time with a fresh VISIONOS call (never the cached or a
@@ -904,13 +904,41 @@ tab is shown, as before. *Data but no picture* (3 Nov 2026, `own/stream.rs`): wh
 audio cover the playhead for **1.5 s** and the element still has no frame (a decoder that takes data and
 shows nothing, as 1440p60 HDR AV1 on the Android TV emulator did), that video format is given up and the
 start goes on with the next one in a fresh MediaSource at once, before any stuck status.
-*Media errors before the first frame* (7 Nov 2026, `fail::media_retry`, `own.rs` `media_error`): an element
-`error`, a SourceBuffer error or an append the browser refuses before the first frame is retried in place, never
-shown at once: (1) a fresh MediaSource with the data already in, (2) a fresh MediaSource with fresh URLs and the
-indexes asked again (what Try again does), (3) the next video format. Only after those three does the panel show,
-its reason ending `(after 3 automatic retries (fresh MediaSource, fresh URLs, another format))`; a start that
-recovers reports `player-recovered` (`… before the first frame: recovered after 0.4 s (2 automatic retries)`). A
-media error once the picture is there shows the panel at once, as before. *The end of stream* is signalled only
+*Media errors recover by themselves, at any time* (7 Nov 2026, owner: "fix all this kind of problems … why not make
+it so that it refreshes by itself"; `fail::media_retry`, `fail::fault`, `own.rs` `media_error`). An element `error`, a
+SourceBuffer error, an append the browser refuses, a refused `changeType`, the MediaSource ending or closing by itself,
+or a decoder that stopped (playing, the tab visible, ≥ 1.5 s buffered ahead in both tracks and the playhead still for
+8 s) is never shown at once. Before or after the first frame, the player goes on in place **at the same position and
+play/pause state** (a paused video stays paused; the picture on screen stays as a canvas until the fresh MediaSource
+shows the same spot; our own positioning, so no request is redone and SponsorBlock is unaffected): (1) a fresh
+MediaSource with the data already in (it also recreates the decoders), (2) a fresh MediaSource with fresh URLs and the
+indexes asked again (what Try again does), (3) the failing track's next format. URLs that are old (within 30 min of
+their `expire=`, or after 10 min without media activity) are refreshed first. A *codec fault* (a video-track error on
+AV1, or a browser message naming decoding or the codec, when the video is offered in another codec family) goes to
+another codec family (AV1 → VP9/H.264, `Out::CodecFault`) as its second step, before fresh URLs; that codec is avoided
+for the rest of this player, and a codec that faults twice in a tab is avoided for the rest of the tab session (memory
+only, `App::codec_avoid`). Bounds: at most **3 recoveries within a sliding 2 min**, and 8 in a player's life (never a
+loop); only then does the panel show, its reason ending `… at 0:12 (after 3 automatic retries (fresh MediaSource, fresh
+URLs, another format))`. A recovery's fresh URLs are not the player's one refresh for a 403, and a failed answer keeps
+the URLs. A recovered episode reports `player-recovered` once the picture stayed 1.5 s (`SourceBuffer error (…) at 0:03:
+recovered after 0.2 s (2 automatic retries)`; before the first frame: `… before the first frame: recovered after …`).
+An error while the tab is hidden and the video paused waits until the tab is shown or played (a background tab may hold
+its decoders back; recovering then could spend the recoveries for nothing). Live streams still show the panel at once.
+*A forgotten tab* (`own.rs` `wake_check`, `App::on_show`): when the tab is shown again, or playback resumes after a
+pause, and there was no media activity for 10 min or the URLs are within 30 min of their expiry, the element and the
+MediaSource are checked (an error on the element, a closed MediaSource, an element that lost its media: recovered as
+above at once) and fresh URLs are asked before the play needs data (requests in flight are asked again with them), so
+the common case shows no error at all; and once a minute, URLs within 30 min of their expiry are replaced before they
+run out (a long video, a tab left open for hours), not on the 403. (Owner report, Brave, 7 Nov 2026: "SourceBuffer error (video/mp4;
+codecs="av01.0.08M.08")" on a video opened in a tab and come back to about an hour later; Try again played it. Not
+reproduced: a headless Chromium never hides or suspends a tab — a page behind another one stays `visible`, and a page
+frozen for 90 s (`Page.setWebLifecycleState`) with a paused MSE video played on unchanged; googlevideo URLs live ~6 h,
+so an hour does not expire them. Likely causes on the owner's Mac: the AV1 decoder lost after a sleep or a long
+background suspend, then a failed append on resume. e2e: "a media error mid-playback recovers by itself …", "an
+AV1-only media error steps down …", "when every automatic recovery … fails …", "a video left paused with stale URLs
+…"; tests only: `ytc-test-idle` (localStorage) makes the idle 1 s, `ytc-test-nothrottle` turns the throttle verdicts off
+for requests the fixtures hold on purpose.)
+*The end of stream* is signalled only
 once the element has its metadata (readyState ≥ 1: every SourceBuffer has its init segment), and a start always
 fetches at least one segment per track (`sched::start_index`); a start at or within 0.5 s of the end (the tab's
 remembered position of a video that played to its end, `t=` past the end, a resume record past it) plays from the

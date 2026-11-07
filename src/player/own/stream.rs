@@ -332,8 +332,14 @@ impl Own {
 
     /// After a fresh MediaSource (`rebuild_mse`): the video track starts again on format `f`.
     pub(super) fn start_video_on(&mut self, f: super::Format) {
+        self.start_track_on(V, f);
+        self.quality_label();
+    }
+
+    /// After a fresh MediaSource (`rebuild_mse`): track `kind` starts again on format `f`.
+    pub(super) fn start_track_on(&mut self, kind: usize, f: super::Format) {
         let ready = self.reps.contains_key(&f.itag);
-        let tr = &mut self.tracks[V];
+        let tr = &mut self.tracks[kind];
         tr.rep = f.itag;
         tr.mime = f.mime.clone();
         tr.pending = None;
@@ -341,9 +347,8 @@ impl Own {
         if ready {
             tr.next = sched::start_index(&self.reps[&f.itag].segs, self.start);
         } else {
-            self.fetch_head(V, &f, self.start < 4.0);
+            self.fetch_head(kind, &f, self.start < 4.0);
         }
-        self.quality_label();
     }
 }
 

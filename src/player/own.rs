@@ -79,6 +79,9 @@ pub enum Out {
     Ended,
     /// `hint_next`: prefetch this video's watch data and VISIONOS streams.
     Prefetch(String),
+    /// A media error was put down to this video codec, and the player went to another codec family
+    /// (the app avoids a codec that does this twice for the rest of the tab session).
+    CodecFault(Codec),
 }
 
 /// How often a playing video reports its position (see `Out::Position`).
@@ -99,6 +102,8 @@ const NO_ANSWER_CACHED_MS: f64 = 800.0;
 const VISION_TIMEOUT_MS: u32 = 8000;
 /// A start this close to the end of the media (or past it) plays from the beginning.
 const START_END_SLACK: f64 = 0.5;
+/// A recovered media error counts as recovered once the picture stayed this long without another.
+const MEDIA_SETTLE_MS: f64 = 1500.0;
 const IDLE_MS: f64 = 2500.0;
 /// TV: the overlay stays this long after the last key while playing (a remote is slower than a mouse).
 const TV_IDLE_MS: f64 = 4000.0;
@@ -380,10 +385,26 @@ pub struct Own {
     stuck: Option<Stuck>,
     /// The MediaSource was rebuilt once in this player's life.
     mse_rebuilt: bool,
-    /// Automatic retries after a media error before the first frame (`media_error`), and the
-    /// first such error with when it happened (reported once the picture comes).
+    /// Automatic recoveries after media errors (`media_error`): how many in this player's life,
+    /// the recent ones (when, what: the sliding window), and the episode's first error with when
+    /// it happened, the count before it and when the picture came back (0: not yet; reported once
+    /// it stayed `MEDIA_SETTLE_MS` without another error).
     media_retries: u32,
-    media_err: Option<(String, f64)>,
+    recov: Vec<(f64, fail::MediaRetry)>,
+    media_err: Option<(String, f64, u32, f64)>,
+    /// A media error while hidden and paused, recovered when the tab is shown or played:
+    /// (reason, track, the browser's message).
+    deferred: Option<(String, Option<usize>, String)>,
+    /// The last media activity (an append, playback, a seek): a long idle refreshes the URLs on wake.
+    active_at: f64,
+    /// The last position played (the element can read 0 once its MediaSource is gone).
+    play_t: f64,
+    /// The playhead and since when it has not moved while playing (the decoder watchdog).
+    still: (f64, f64),
+    /// When the URLs' expiry was last checked on the tick (a long video outlives its URLs).
+    exp_at: f64,
+    /// Video codecs not to use: the app's tab-session verdicts, and a codec fault in this player.
+    pub avoid: Vec<Codec>,
     /// The player response being refreshed is a media-error retry's: a failed answer keeps the URLs
     /// (like a stuck retry's) so the next retry can try another format.
     media_refresh: bool,
@@ -673,7 +694,14 @@ impl Own {
             stuck: None,
             mse_rebuilt: false,
             media_retries: 0,
+            recov: Vec::new(),
             media_err: None,
+            deferred: None,
+            active_at: bridge::now(),
+            play_t: 0.0,
+            still: (0.0, 0.0),
+            exp_at: bridge::now(),
+            avoid: Vec::new(),
             media_refresh: false,
             no_recover: false,
             vision_cfg: None,
@@ -1248,6 +1276,15 @@ impl Own {
         let known = |i: u32| caps.get(&i).copied();
         let screen = formats::caps_for_screen(&self.formats, bridge::matches("(dynamic-range: high)"), &known);
         self.ladder = formats::ladder_with(&self.formats, &codecs, &|m: &str| ok(m), &screen).into_iter().filter(|f| !bad.contains(&f.itag)).cloned().collect();
+        // Codecs that failed (`next_codec`, the app's tab-session verdicts) are left out while
+        // another codec remains (`avoid` filters the candidates before the per-rung choice).
+        if !self.avoid.is_empty() {
+            let avoid = &self.avoid;
+            let kept: Vec<Format> = formats::ladder_with(&self.formats, &codecs, &|m: &str| ok(m) && !avoid.iter().any(|c| formats::codec_of(m) == *c), &screen).into_iter().filter(|f| !bad.contains(&f.itag)).cloned().collect();
+            if !kept.is_empty() {
+                self.ladder = kept;
+            }
+        }
         let usable: Vec<Format> = self.formats.iter().filter(|f| !bad.contains(&f.itag)).cloned().collect();
         let chosen = (!self.audio_sel.is_empty()).then(|| formats::audio_in(&usable, &self.audio_sel, &ok)).flatten();
         self.audio = chosen.or_else(|| formats::audio(&usable, &ok)).cloned();
@@ -1765,6 +1802,12 @@ impl Own {
             self.tracks[k].sb = h;
         }
         if self.start > 0.0 && self.live.is_none() {
+            if self.first_frame.is_some() {
+                // A recovery's fresh MediaSource goes on where it was: our own positioning, no seek
+                // of the viewer's (no request redone, SponsorBlock unaffected).
+                self.own_seek = Some((self.start, bridge::now()));
+                self.sb_own_seek(self.start);
+            }
             bridge::media_set(self.vid, "currentTime", self.start);
         }
         self.pump_all();
@@ -1793,6 +1836,7 @@ impl Own {
                         tr.updating = true;
                         tr.quota = false;
                         tr.mid = !last;
+                        self.active_at = bridge::now();
                         return;
                     }
                     if r == "QuotaExceededError" && !tr.quota {
@@ -1801,12 +1845,14 @@ impl Own {
                         tr.ops.push_front(Op::Remove(0.0, (t - 10.0).max(0.0)));
                         continue;
                     }
-                    self.media_error(format!("appendBuffer: {r}"));
+                    let detail = bridge::media_str(self.vid, "error.message");
+                    self.media_error(format!("appendBuffer: {r}"), Some(kind), &detail);
                     return;
                 }
                 Op::ChangeType(m) => {
                     if !bridge::sb_change_type(tr.sb, &m) {
-                        self.fail(format!("changeType({m}) failed"));
+                        // The browser refused the codec change: a codec fault (another format or codec family).
+                        self.media_error(format!("changeType({m}) failed"), Some(kind), "codec");
                         return;
                     }
                 }
@@ -1821,6 +1867,7 @@ impl Own {
                     if r.is_empty() {
                         tr.updating = true;
                         tr.quota = false;
+                        self.active_at = bridge::now();
                         return;
                     }
                     if r == "QuotaExceededError" && !tr.quota {
@@ -1829,7 +1876,8 @@ impl Own {
                         tr.ops.push_front(Op::Remove(0.0, (t - 10.0).max(0.0)));
                         continue;
                     }
-                    self.media_error(format!("appendBuffer: {r}"));
+                    let detail = bridge::media_str(self.vid, "error.message");
+                    self.media_error(format!("appendBuffer: {r}"), Some(kind), &detail);
                     return;
                 }
             }
@@ -2450,10 +2498,17 @@ impl Own {
             return false;
         }
         if h == self.ms {
-            if ev == "sourceopen" {
-                self.tel_ms_open();
-                self.ms_open = true;
-                self.setup_mse();
+            match ev {
+                "sourceopen" => {
+                    self.tel_ms_open();
+                    self.ms_open = true;
+                    self.setup_mse();
+                }
+                // The MediaSource ended or closed without us (the element failed or dropped it):
+                // a media error like any other (a replaced MediaSource's events have another handle).
+                "sourceended" if !self.eos => self.media_error("MediaSource ended unexpectedly".into(), None, &bridge::media_str(self.vid, "error.message")),
+                "sourceclose" if self.ms_open => self.media_error("MediaSource closed unexpectedly".into(), None, &bridge::media_str(self.vid, "error.message")),
+                _ => {}
             }
             return true;
         }
@@ -2470,7 +2525,8 @@ impl Own {
                 }
                 _ => {
                     let why = format!("SourceBuffer {ev} ({})", self.tracks[k].mime);
-                    self.media_error(why);
+                    let detail = bridge::media_str(self.vid, "error.message");
+                    self.media_error(why, Some(k), &detail);
                 }
             }
             return true;
@@ -2490,12 +2546,7 @@ impl Own {
                 if self.first_frame.is_none() {
                     let ms = now - self.nav_start;
                     self.first_frame = Some(ms);
-                    if let Some((why, at)) = self.media_err.take() {
-                        let n = self.media_retries;
-                        let reason = format!("{why} before the first frame: recovered after {:.1} s ({n} automatic {})", (now - at) / 1000.0, if n == 1 { "retry" } else { "retries" });
-                        self.note(format!("media error → {reason}"));
-                        self.out.push(Out::Incident { kind: "player-recovered", reason });
-                    }
+                    self.media_ok(now);
                     bridge::mark("ytcFirstFrame");
                     if self.poster.is_some() {
                         // The canvas shows the same picture: it goes once the video has presented it
@@ -2507,11 +2558,28 @@ impl Own {
                     }
                     self.tel_first_frame();
                     self.note(format!("first frame ({:.0} ms after the streams were chosen)", now - self.streams_at));
+                } else if self.media_err.is_some() {
+                    // A recovery's fresh MediaSource shows the picture at the position again.
+                    self.media_ok(now);
+                    if self.poster.is_some() {
+                        let id = next_id();
+                        self.timers.insert(id, Tm::Poster);
+                        bridge::media_frame(self.vid, id);
+                        self.timer(Tm::Poster, 1000);
+                    }
                 }
             }
             "play" => {
+                let resumed = self.paused && self.first_frame.is_some();
                 self.paused = false;
                 self.blocked_autoplay = false;
+                if resumed {
+                    // Played again after a pause: after a long idle, URLs and media checked first.
+                    self.wake_check("play");
+                    if self.failed {
+                        return true;
+                    }
+                }
                 // Resumed while stuck mid-playback: the schedule goes on from its report point.
                 if let Some(s) = self.stuck.as_mut().filter(|s| !s.start) {
                     s.base = s.base.max(now - fail::PLAY.report);
@@ -2545,6 +2613,7 @@ impl Own {
             "canplay" => self.waiting = false,
             "seeking" => {
                 self.snap = true;
+                self.active_at = now;
                 self.sb_seeking();
                 self.on_seeking();
             }
@@ -2552,6 +2621,10 @@ impl Own {
                 self.sb_check();
                 if !self.paused {
                     let t = self.time();
+                    self.active_at = now;
+                    if t > 0.0 {
+                        self.play_t = t;
+                    }
                     self.rec.tick(t, bridge::media_get(self.vid, "playbackRate"));
                     if position_due(self.pos_at, now) {
                         self.report_position(now, false);
@@ -2573,7 +2646,7 @@ impl Own {
                     return true; // no error on the element any more: a stale event of a replaced MediaSource
                 }
                 let msg = bridge::media_str(self.vid, "error.message");
-                self.media_error(format!("media error {code} {msg}"));
+                self.media_error(format!("media error {code} {msg}"), None, &msg);
                 return true;
             }
             "volumechange" => {
@@ -2814,6 +2887,20 @@ impl Own {
         if !self.paused && self.first_frame.is_some() {
             self.watch_drops();
         }
+        self.decoder_watch(now);
+        if self.failed {
+            return;
+        }
+        self.media_settled(now);
+        // Once a minute: URLs within `fail::EXPIRY_MARGIN_S` of their expiry are replaced before
+        // they run out (a long video, a tab left open for hours), not on the 403.
+        if now - self.exp_at > 60_000.0 {
+            self.exp_at = now;
+            let left = self.urls_left();
+            if self.first_frame.is_some() && self.live.is_none() && !self.refreshing && left.is_some_and(|l| l < fail::EXPIRY_MARGIN_S) {
+                self.recovery_refresh(&format!("URLs expire in {:.0} min", left.unwrap_or(0.0) / 60.0));
+            }
+        }
         // Safety net: stuck within 0.5 s of the end with nothing buffered ahead
         // for over a second means the end of stream was missed: signal it, so
         // `ended` (and Up next / the playlist) always follows.
@@ -2947,72 +3034,288 @@ impl Own {
         self.send_vision(&cfg, &route);
     }
 
-    /// A media error (the element's, a SourceBuffer's, an append the browser refused). Before the
-    /// first frame it is retried in place (`fail::media_retry`: a fresh MediaSource; then fresh URLs
-    /// and indexes too, like Try again; then the next video format), the panel only after those.
-    fn media_error(&mut self, reason: String) {
+    /// A media error (the element's, a SourceBuffer's, an append the browser refused, the
+    /// MediaSource closed or ended by itself, a decoder that stopped), at any time: recovered in
+    /// place at the current position and play/pause state (`fail::media_retry`: a fresh
+    /// MediaSource; fresh URLs and indexes, like Try again; another codec family for a codec fault;
+    /// the next format), at most `fail::MEDIA_RETRIES` within `fail::MEDIA_WINDOW_MS`; the panel
+    /// only after those. `kind`: the track it came from (None: the element); `detail`: the
+    /// browser's own message.
+    fn media_error(&mut self, reason: String, kind: Option<usize>, detail: &str) {
         if self.failed {
             return;
         }
-        let retry = if self.live.is_none() && self.vision_ms.is_some() { fail::media_retry(self.media_retries, self.first_frame.is_some()) } else { None };
-        let Some(retry) = retry else {
-            let reason = if self.media_retries > 0 && self.first_frame.is_none() { format!("{reason} (after {})", fail::media_retried(self.media_retries)) } else { reason };
+        if self.live.is_some() || self.vision_ms.is_none() {
             return self.fail(reason);
-        };
-        self.media_retries += 1;
-        let n = self.media_retries;
-        if self.media_err.is_none() {
-            self.media_err = Some((reason.clone(), bridge::now()));
         }
-        let why = format!("{reason} before the first frame (automatic retry {n} of {})", fail::MEDIA_RETRIES);
+        let now = bridge::now();
+        let mid = self.first_frame.is_some();
+        // A paused video in a background tab: nothing plays, and the browser may hold its decoders
+        // back until the tab is shown; recovering now could spend the retries for nothing.
+        if mid && self.paused && bridge::hidden() {
+            if self.deferred.is_none() {
+                self.note(format!("{reason} while hidden and paused: recovering when the tab is shown or played"));
+                self.deferred = Some((reason, kind, detail.to_string()));
+            }
+            return;
+        }
+        self.recov.retain(|r| now - r.0 < fail::MEDIA_WINDOW_MS);
+        let done: Vec<fail::MediaRetry> = self.recov.iter().map(|r| r.1).collect();
+        let av1 = self.format(self.tracks[V].rep, V).and_then(|f| f.codec) == Some(Codec::Av1);
+        let mut fault = fail::fault(kind.map(|k| k == A), detail, av1);
+        // No other codec family offered: a codec fault is recovered like any other.
+        fault.codec &= self.other_codec().is_some();
+        let old = self.urls_old(now);
+        let t = self.time();
+        let t = if t > 0.0 { t } else { self.play_t };
+        let at = if mid { format!(" at {}", ui::clock(t)) } else { " before the first frame".to_string() };
+        let Some(retry) = fail::media_retry(&done, self.media_retries, old, fault) else {
+            let how = if !done.is_empty() {
+                format!(" (after {})", fail::media_retried(&done))
+            } else if self.media_retries > 0 {
+                format!(" (after {} automatic retries in this video)", self.media_retries)
+            } else {
+                String::new()
+            };
+            return self.fail(format!("{reason}{}{how}", if mid { at.as_str() } else { "" }));
+        };
+        match self.media_err.as_mut() {
+            Some(e) => e.3 = 0.0, // the episode goes on
+            None => self.media_err = Some((format!("{reason}{at}"), now, self.media_retries, 0.0)),
+        }
+        self.media_retries += 1;
+        self.recov.push((now, retry));
+        let why = format!("{reason}{at}{} (automatic retry {} of {}: {})", if fault.codec { " (codec)" } else { "" }, self.recov.len(), fail::MEDIA_RETRIES, retry.label());
+        if mid {
+            // It plays on where it was, paused or not; the picture on screen stays (a canvas) until
+            // the fresh MediaSource shows the same spot.
+            self.start = t;
+            self.hold_frame();
+            self.flush = None;
+            self.tracks[V].pending = None;
+        }
         // The stuck path's own one-time MediaSource rebuild stays available.
         let rebuilt = self.mse_rebuilt;
         self.rebuild_mse(&why);
         self.mse_rebuilt = rebuilt;
         match retry {
             fail::MediaRetry::FreshSource => {}
-            fail::MediaRetry::FreshUrls => {
-                // The indexes and init segments are asked again too, with the new URLs.
-                for k in [V, A] {
-                    let itag = self.tracks[k].rep;
-                    self.reps.remove(&itag);
-                    self.tracks[k].ready = false;
-                    self.heads.retain(|&x| x != itag);
-                    if itag != 0 && !self.retry_heads.contains(&(itag, k)) {
-                        self.retry_heads.push((itag, k));
-                    }
-                }
-                // Not the player's one refresh for an expired URL (a 403 later in the video still gets it).
-                let refreshes = self.refreshes;
-                self.media_refresh = true;
-                self.fresh_urls("media error before the first frame");
-                self.refreshes = refreshes;
-                if !self.refreshing {
-                    // No player response to refresh with: the indexes again on the URLs we have.
-                    self.end_refresh();
+            fail::MediaRetry::FreshUrls => self.media_fresh_urls(),
+            fail::MediaRetry::NextCodec => {
+                if !self.next_codec() {
+                    self.next_format(fault.audio);
                 }
             }
-            fail::MediaRetry::NextFormat => {
-                let old = self.tracks[V].rep;
-                self.bad.push(old);
-                self.build_ladder();
-                match self.desired().map(|i| self.ladder[i].clone()).filter(|f| f.itag != old) {
-                    Some(f) => {
-                        self.note(format!("itag {old} given up: {} {}", f.itag, f.label));
-                        self.start_video_on(f);
-                    }
-                    None => {
-                        // No other format: the same one once more.
-                        self.bad.retain(|&x| x != old);
-                        self.build_ladder();
-                    }
+            fail::MediaRetry::NextFormat => self.next_format(fault.audio),
+        }
+    }
+
+    /// A recovery's fresh URLs: the indexes and init segments are asked again too, with the new URLs.
+    fn media_fresh_urls(&mut self) {
+        for k in [V, A] {
+            let itag = self.tracks[k].rep;
+            self.reps.remove(&itag);
+            self.tracks[k].ready = false;
+            self.heads.retain(|&x| x != itag);
+            if itag != 0 && !self.retry_heads.contains(&(itag, k)) {
+                self.retry_heads.push((itag, k));
+            }
+        }
+        self.recovery_refresh("media error");
+        if !self.refreshing {
+            // No player response to refresh with: the indexes again on the URLs we have.
+            self.end_refresh();
+        }
+    }
+
+    /// Fresh URLs for a recovery or a wake: neither the player's one refresh for an expired URL (a
+    /// 403 later in the video still gets it) nor a verdict when it fails (the URLs we have stay).
+    fn recovery_refresh(&mut self, why: &str) {
+        let refreshes = self.refreshes;
+        self.media_refresh = true;
+        self.fresh_urls(why);
+        self.refreshes = refreshes;
+        if !self.refreshing {
+            self.media_refresh = false;
+        }
+    }
+
+    /// The failing track's next format, in the fresh MediaSource (video: the ladder's next; the
+    /// same one once more when there is none).
+    fn next_format(&mut self, audio: bool) {
+        if audio {
+            let old = self.tracks[A].rep;
+            self.bad.push(old);
+            self.build_ladder();
+            match self.audio.clone().filter(|f| f.itag != old) {
+                Some(f) => {
+                    self.note(format!("audio itag {old} given up: {}", f.itag));
+                    self.start_track_on(A, f);
                 }
+                None => {
+                    self.bad.retain(|&x| x != old);
+                    self.build_ladder();
+                }
+            }
+            return;
+        }
+        let old = self.tracks[V].rep;
+        self.bad.push(old);
+        self.build_ladder();
+        match self.desired().map(|i| self.ladder[i].clone()).filter(|f| f.itag != old) {
+            Some(f) => {
+                self.note(format!("itag {old} given up: {} {}", f.itag, f.label));
+                self.start_video_on(f);
+            }
+            None => {
+                // No other format: the same one once more.
+                self.bad.retain(|&x| x != old);
+                self.build_ladder();
             }
         }
     }
 
+    /// The video codec family in use, when the formats offer the video in another one too.
+    fn other_codec(&self) -> Option<Codec> {
+        let cur = self.format(self.tracks[V].rep, V).and_then(|f| f.codec)?;
+        let others = self.formats.iter().any(|f| f.video && f.codec.is_some_and(|c| c != cur && !self.avoid.contains(&c)) && bridge::mse_ok(&f.mime));
+        others.then_some(cur)
+    }
+
+    /// A codec fault: the video goes on in another codec family (at the quality the ladder picks,
+    /// the chosen one where offered), and this codec is avoided from now on (`Out::CodecFault`).
+    fn next_codec(&mut self) -> bool {
+        let Some(codec) = self.other_codec() else { return false };
+        let old = self.tracks[V].rep;
+        self.avoid.push(codec);
+        self.build_ladder();
+        let Some(f) = self.desired().map(|i| self.ladder[i].clone()).filter(|f| f.codec != Some(codec)) else {
+            self.avoid.retain(|c| *c != codec);
+            self.build_ladder();
+            return false;
+        };
+        self.note(format!("{} given up after a codec fault (itag {old}): {} {} {}", codec.name(), f.itag, f.label, f.codec.map_or("?", |c| c.name())));
+        self.out.push(Out::CodecFault(codec));
+        self.start_video_on(f);
+        true
+    }
+
+    /// The URLs in use are old: no media activity for `fail::IDLE_MS`, or near their `expire`.
+    fn urls_old(&self, now: f64) -> bool {
+        let limit = if bridge::local_flag("ytc-test-idle") { 1000.0 } else { fail::IDLE_MS };
+        fail::urls_old(now - self.active_at, limit, self.urls_left())
+    }
+
+    /// Seconds until the earliest `expire=` of the URLs in use (negative: expired), if they carry one.
+    fn urls_left(&self) -> Option<f64> {
+        let exp = [V, A].iter().filter_map(|&k| self.reps.get(&self.tracks[k].rep).and_then(|r| fail::url_expiry(&r.f.url))).reduce(f64::min)?;
+        Some(exp - bridge::epoch() / 1000.0)
+    }
+
+    /// The tab was shown again, or playback resumed after a pause: after a long idle (or with URLs
+    /// near their expiry), the element and the MediaSource are checked (broken: recovered now) and
+    /// fresh URLs asked, before playback needs data. A media error that waited (hidden and paused)
+    /// is recovered now.
+    fn wake_check(&mut self, why: &str) {
+        if self.failed || self.live.is_some() || self.vision_ms.is_none() {
+            return;
+        }
+        if let Some((reason, kind, detail)) = self.deferred.take() {
+            return self.media_error(reason, kind, &detail);
+        }
+        let now = bridge::now();
+        if !self.urls_old(now) || self.refreshing {
+            return;
+        }
+        let idle = (now - self.active_at) / 60_000.0;
+        if let Some(state) = self.broken() {
+            return self.media_error(format!("{state} ({why} after {idle:.0} min idle)"), None, "");
+        }
+        self.active_at = now;
+        self.recovery_refresh(&format!("{why} after {idle:.0} min idle (or URLs near their expiry)"));
+    }
+
+    /// The tab is visible again (`App::on_show`).
+    pub fn on_show(&mut self) {
+        self.wake_check("tab shown");
+    }
+
+    /// What is wrong with the element or the MediaSource, if anything (checked on wake).
+    fn broken(&self) -> Option<String> {
+        let code = bridge::media_get(self.vid, "error.code");
+        if code > 0.0 {
+            return Some(format!("media error {code} {}", bridge::media_str(self.vid, "error.message")));
+        }
+        if !self.ms_open || !self.sbs_made {
+            return None;
+        }
+        // ("ended" is no fault: a seek after the end of stream leaves it ended until the next append.)
+        if bridge::media_str(self.ms, "readyState") == "closed" {
+            return Some("MediaSource closed".into());
+        }
+        (self.first_frame.is_some() && bridge::media_get(self.vid, "readyState") == 0.0).then(|| "the element lost its media (readyState 0)".into())
+    }
+
+    /// Playing, with media ahead in both tracks, and the playhead has not moved for
+    /// `fail::DECODER_STALL_MS` (the tab visible): the decoder stopped; recovered like a media error.
+    fn decoder_watch(&mut self, now: f64) {
+        let t = self.time();
+        if self.paused || self.first_frame.is_none() || self.live.is_some() || bridge::hidden() || self.flush.is_some() || !self.sbs_made || self.eos || (self.duration > 0.0 && t > self.duration - 1.0) || (t - self.still.0).abs() > 0.05 {
+            self.still = (t, now);
+            return;
+        }
+        let ahead = |k: usize| sched::ahead(&pairs(bridge::media_ranges(self.tracks[k].sb)), t);
+        let (av, aa) = (ahead(V), ahead(A));
+        if av < 1.5 || aa < 1.5 {
+            // Waiting for data (a network stall): only the time with media buffered counts.
+            self.still = (t, now);
+            return;
+        }
+        if fail::decoder_stalled(now - self.still.1, av, aa) {
+            self.still = (t, now);
+            self.media_error(format!("decoder stopped: the playhead stayed at {} for {:.0} s with media buffered", ui::clock(t), fail::DECODER_STALL_MS / 1000.0), Some(V), "decoder");
+        }
+    }
+
+    /// The picture on screen stays as a canvas over the `<video>` while a fresh MediaSource gets to
+    /// the same spot (no black frame); it goes when the video shows the spot again.
+    fn hold_frame(&mut self) {
+        if self.poster.is_some() {
+            return;
+        }
+        let id = format!("ytc-rf{}", self.vid);
+        if bridge::media_grab(self.vid, &id, warm::CLS, warm::max_width(&bridge::screen_px())) {
+            if bridge::held_put(&id, ui::VIDEO) {
+                self.poster = Some(id);
+            } else {
+                bridge::held_drop(&id);
+            }
+        }
+    }
+
+    /// The picture is back after a recovery (it counts once it stays, `media_settled`).
+    fn media_ok(&mut self, now: f64) {
+        if let Some(e) = self.media_err.as_mut() {
+            e.3 = now;
+        }
+    }
+
+    /// The picture stayed `MEDIA_SETTLE_MS` after recoveries without another error: one
+    /// `player-recovered` incident for the episode.
+    fn media_settled(&mut self, now: f64) {
+        if !self.media_err.as_ref().is_some_and(|e| e.3 > 0.0 && now - e.3 >= MEDIA_SETTLE_MS) {
+            return;
+        }
+        let Some((why, at, n0, ok)) = self.media_err.take() else { return };
+        let n = self.media_retries - n0;
+        let reason = format!("{why}: recovered after {:.1} s ({n} automatic {})", (ok - at) / 1000.0, if n == 1 { "retry" } else { "retries" });
+        self.note(format!("media error → {reason}"));
+        self.out.push(Out::Incident { kind: "player-recovered", reason });
+    }
+
     /// A new MediaSource and SourceBuffers on the same `<video>`; the indexes stay, the tracks
-    /// start again (init segment first) at the start position.
+    /// start again (init segment first) at the start position (a recovery mid-playback: where it
+    /// was), playing only if it was.
     fn rebuild_mse(&mut self, why: &str) {
         self.mse_rebuilt = true;
         self.note(format!("{why}: a fresh MediaSource"));
@@ -3034,6 +3337,7 @@ impl Own {
             tr.quota = false;
             tr.asm = None;
             tr.mid = false;
+            tr.retries = 0;
             if let Some((mime, next)) = fresh {
                 tr.mime = mime;
                 if tr.ready {
@@ -3047,9 +3351,16 @@ impl Own {
         self.ms_open = false;
         self.sbs_made = false;
         self.eos = false;
+        self.active_at = bridge::now();
         self.ms = next_id();
         bridge::media_source(self.ms, self.vid);
-        bridge::media_call(self.vid, "play");
+        if self.first_frame.is_some() {
+            // The position at once (no 0:00 in the controls while the MediaSource opens).
+            bridge::media_set(self.vid, "currentTime", self.start);
+        }
+        if self.first_frame.is_none() || !self.paused {
+            bridge::media_call(self.vid, "play");
+        }
     }
 
     /// Dropped-frame watchdog: if the current rung drops > 5 % of frames over
@@ -4443,6 +4754,7 @@ impl Own {
     /// Everything needed to investigate a failure, without tokens or cookies.
     pub fn report(&self) -> serde_json::Value {
         let stuck = self.stuck.as_ref().map(|s| serde_json::json!({"why": s.why, "start": s.start, "retries": s.retries, "for_ms": (bridge::now() - s.at).round()}));
+        let recoveries = serde_json::json!({"total": self.media_retries, "window": self.recov.iter().map(|r| format!("{:.0} ms {}", r.0 - self.nav_start, r.1.label())).collect::<Vec<_>>(), "avoided_codecs": self.avoid.iter().map(|c| c.name()).collect::<Vec<_>>()});
         let fmt = |f: &Format| serde_json::json!({"itag": f.itag, "mime": f.mime, "label": f.label, "bitrate": f.bitrate, "len": f.len, "index_end": f.index_end, "host": host_of(&f.url)});
         serde_json::json!({
             "video": self.v,
@@ -4484,6 +4796,7 @@ impl Own {
             "waiting": self.waiting,
             "stuck": stuck,
             "mse_rebuilt": self.mse_rebuilt,
+            "media_recoveries": recoveries,
         })
     }
 

@@ -441,7 +441,7 @@ extern "C" {
     /// Forgets held element `id` and removes it from the document.
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn held_drop(id: &str);
-    /// New MediaSource `h` attached to video handle `vh`; `sourceopen` is reported.
+    /// New MediaSource `h` attached to video handle `vh`; `sourceopen` (once), `sourceended` and `sourceclose` are reported.
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn media_source(h: u32, vh: u32);
     /// `addSourceBuffer(mime)` as handle `h` (`updateend`/`error` reported).

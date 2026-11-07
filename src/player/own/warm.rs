@@ -219,6 +219,8 @@ pub fn warm_media(h: u32, ev: &str) -> bool {
                 }
                 drawn
             }
+            // (Reported for every MediaSource since the player's recovery uses them; not the warm decoder's concern.)
+            "sourceended" | "sourceclose" => true,
             _ => false,
         }
     });

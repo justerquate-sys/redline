@@ -972,6 +972,7 @@ const YTC = (() => {
       // Test switch only (e2e): the event never arrives (the player must notice the open state itself).
       let lost = false; try { lost = localStorage.getItem('ytc-test-nosourceopen') === '1'; } catch {}
       if (!lost) ms.addEventListener('sourceopen', () => { URL.revokeObjectURL(u); evt(h, 'sourceopen'); }, { once: true });
+      for (const t of ['sourceended', 'sourceclose']) ms.addEventListener(t, () => evt(h, t));
       v.src = u;
     },
     source_buffer(h, msh, mime) {
