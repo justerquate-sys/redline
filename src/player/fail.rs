@@ -144,9 +144,60 @@ pub fn step(plan: &Plan, elapsed: f64, reported: bool, retries: usize) -> Step {
     Step::Wait
 }
 
+/// A media error before the first frame (the element's, a SourceBuffer's, a refused append) is
+/// retried in place, never shown at once (owner, 7 Nov 2026: nobody should need Try again for what
+/// an automatic retry fixes), in this order; the panel only after the last.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MediaRetry {
+    /// A new MediaSource and SourceBuffers on the same `<video>`, with the data already in.
+    FreshSource,
+    /// A new MediaSource, fresh URLs (a new player response) and the indexes asked again: what
+    /// Try again does, in place.
+    FreshUrls,
+    /// The next video format of the ladder, in a new MediaSource.
+    NextFormat,
+}
+
+/// The automatic retries a start gets after media errors.
+pub const MEDIA_RETRIES: u32 = 3;
+
+/// The retry after `done` earlier ones; None: the panel (also once the picture was there: a media
+/// error mid-playback is no start failure).
+pub fn media_retry(done: u32, first_frame: bool) -> Option<MediaRetry> {
+    if first_frame {
+        return None;
+    }
+    match done {
+        0 => Some(MediaRetry::FreshSource),
+        1 => Some(MediaRetry::FreshUrls),
+        2 => Some(MediaRetry::NextFormat),
+        _ => None,
+    }
+}
+
+/// "2 automatic retries (fresh MediaSource, fresh URLs)" for reasons and incidents.
+pub fn media_retried(n: u32) -> String {
+    let steps = ["fresh MediaSource", "fresh URLs", "another format"];
+    let n = n.min(steps.len() as u32);
+    format!("{n} automatic {} ({})", if n == 1 { "retry" } else { "retries" }, steps[..n as usize].join(", "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn media_errors_before_the_first_frame_are_retried_three_times() {
+        assert_eq!(media_retry(0, false), Some(MediaRetry::FreshSource));
+        assert_eq!(media_retry(1, false), Some(MediaRetry::FreshUrls));
+        assert_eq!(media_retry(2, false), Some(MediaRetry::NextFormat));
+        assert_eq!(media_retry(MEDIA_RETRIES, false), None, "then the panel");
+        assert_eq!(media_retry(0, true), None, "mid-playback: no start retry");
+        assert_eq!(media_retried(1), "1 automatic retry (fresh MediaSource)");
+        assert_eq!(media_retried(3), "3 automatic retries (fresh MediaSource, fresh URLs, another format)");
+        // The panel's message is unchanged by the retries' note.
+        assert_eq!(message(&format!("media error 4 PipelineStatus::DEMUXER_ERROR_COULD_NOT_OPEN: x (after {})", media_retried(3))), "The browser couldn't play this video");
+    }
 
     #[test]
     fn messages_per_reason() {

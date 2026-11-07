@@ -29,6 +29,15 @@ pub fn seg_for(segs: &[Seg], t: f64) -> usize {
     segs.iter().position(|s| s.t1 > t + 0.001).unwrap_or(segs.len())
 }
 
+/// Where a track starts fetching at `t` when nothing of it is buffered: the segment holding `t`,
+/// and the last segment for a `t` at or past the end. Never "nothing to fetch": a track must get
+/// its init segment (appended with its first media), and the end of stream before every track
+/// has one is an error (Chromium: `DEMUXER_ERROR_COULD_NOT_OPEN`, "endOfStream before demuxer
+/// initialization completes").
+pub fn start_index(segs: &[Seg], t: f64) -> usize {
+    seg_for(segs, t).min(segs.len().saturating_sub(1))
+}
+
 /// Where fetching resumes after a seek to `t`: after the buffered range that
 /// contains `t`, or at the segment containing `t`.
 pub fn resume_index(segs: &[Seg], ranges: &[(f64, f64)], t: f64) -> usize {
@@ -77,12 +86,18 @@ pub fn switch_index(segs: &[Seg], t: f64, margin: f64) -> usize {
 /// Immediate switch with buffered `ranges`: like `switch_index`, but never
 /// cutting after the end of the media buffered around `t` (that would leave a
 /// gap): then the new segment containing that end is used (overlap only).
+///
+/// No new segment starting after `t + margin` (a one-segment rung, or `t` in the last segment)
+/// is no reason to stop fetching either: the new segment containing that end is used, so only
+/// media already buffered to the end counts as done (before, a one-segment rung switched to
+/// before anything was appended was "done" without its init segment, and the end of stream
+/// that followed failed the start).
 pub fn switch_cut(segs: &[Seg], ranges: &[(f64, f64)], t: f64, margin: f64) -> usize {
     let end = range_at(ranges, t).map_or(t, |(_, b)| b);
     let i = switch_index(segs, t, margin);
     match segs.get(i) {
-        Some(s) if s.t0 > end => seg_for(segs, end),
-        _ => i,
+        Some(s) if s.t0 <= end => i,
+        _ => seg_for(segs, end),
     }
 }
 
@@ -151,5 +166,27 @@ mod tests {
         // Buffered only to 10.2: the new segment containing 10.2 (8–12) starts at 8 ≤ 10.2.
         assert_eq!(switch_cut(&new, &[(0.0, 10.2)], 9.5, 1.0), 2);
         assert_eq!(switch_cut(&new, &[], 9.5, 1.0), 2);
+        // Nothing new starts after t + margin: the segment holding the buffered end, never "done"
+        // unless what is buffered reaches the end.
+        let one = segs(4.0, 1);
+        assert_eq!(switch_cut(&one, &[], 0.0, 1.0), 0, "a one-segment rung, nothing buffered: its segment");
+        assert_eq!(switch_cut(&one, &[(0.0, 2.0)], 0.0, 1.0), 0);
+        assert_eq!(switch_cut(&one, &[(0.0, 4.0)], 0.0, 1.0), 1, "buffered to the end: done");
+        assert_eq!(switch_cut(&new, &[(0.0, 50.0)], 50.5, 1.0), 12, "in the last segment, buffered to 50: its rest");
+        assert_eq!(switch_cut(&new, &[(0.0, 52.0)], 51.5, 1.0), 13);
+    }
+
+    #[test]
+    fn a_start_always_has_a_segment() {
+        let s = segs(5.0, 8);
+        assert_eq!(start_index(&s, 0.0), 0);
+        assert_eq!(start_index(&s, 12.0), 2);
+        assert_eq!(start_index(&s, 39.999), 7);
+        // At or past the end (a resume at the very end, a t= past it): the last segment, so the
+        // track still gets its init segment instead of being "done" with nothing appended.
+        assert_eq!(seg_for(&s, 40.0), 8);
+        assert_eq!(start_index(&s, 40.0), 7);
+        assert_eq!(start_index(&s, 1e9), 7);
+        assert_eq!(start_index(&[], 3.0), 0);
     }
 }

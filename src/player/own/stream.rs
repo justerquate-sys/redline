@@ -324,8 +324,14 @@ impl Own {
         let next = self.desired().map(|i| self.ladder[i].clone()).filter(|f| f.itag != old);
         self.note(format!("itag {old}: media covers {t:.1} s for {:.1} s but no picture: {}", (now - self.nopic_since) / 1000.0, next.as_ref().map_or("a fresh MediaSource".to_string(), |f| format!("{} {} in a fresh MediaSource", f.itag, f.label))));
         self.pt.nopic = true;
-        self.rebuild_mse();
-        let Some(f) = next else { return };
+        self.rebuild_mse("data but no picture");
+        if let Some(f) = next {
+            self.start_video_on(f);
+        }
+    }
+
+    /// After a fresh MediaSource (`rebuild_mse`): the video track starts again on format `f`.
+    pub(super) fn start_video_on(&mut self, f: super::Format) {
         let ready = self.reps.contains_key(&f.itag);
         let tr = &mut self.tracks[V];
         tr.rep = f.itag;
@@ -333,7 +339,7 @@ impl Own {
         tr.pending = None;
         tr.ready = ready;
         if ready {
-            tr.next = sched::seg_for(&self.reps[&f.itag].segs, self.start);
+            tr.next = sched::start_index(&self.reps[&f.itag].segs, self.start);
         } else {
             self.fetch_head(V, &f, self.start < 4.0);
         }

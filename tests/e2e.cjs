@@ -344,6 +344,17 @@ function googlevideo(route, url) {
   const file = mediaFiles.get(itag);
   // Slow media requests (seek cancel / seek-bar prefetch): every chunk request answers this many ms late.
   const slow = SLOWSEG.get(v);
+  // A media error before the first frame: the first video cluster's id bytes zeroed (no valid WebM
+  // element, so the browser refuses the append) in every answer for mediaerr001's first player
+  // response (its fresh URLs answer cleanly) and in every answer for mediaerr002.
+  if ((v === 'mediaerr001' && gen === 1) || v === 'mediaerr002') {
+    const f = media.formats.find(x => String(x.itag) === itag);
+    if (f && f.mimeType.startsWith('video/') && a < file.length) {
+      const body = Buffer.from(file.subarray(a, Math.min(b, file.length - 1) + 1)), at = +f.indexRange.end + 1;
+      for (let p = Math.max(at, a); p < at + 4 && p - a < body.length; p++) body[p - a] = 0;
+      return route.fulfill({ status: 200, headers: cors, body });
+    }
+  }
   if (slow && (!slow.itag || slow.itag === itag) && a > 0 && a < file.length) return new Promise(r => setTimeout(r, slow.ms)).then(() => route.fulfill({ status: 200, headers: cors, body: file.subarray(a, Math.min(b, file.length - 1) + 1) })).catch(() => {});
   if (!(a >= 0 && b >= a && a < file.length)) return route.fulfill({ status: 416, headers: cors, body: '' });
   return route.fulfill({ status: 200, headers: cors, body: file.subarray(a, Math.min(b, file.length - 1) + 1) });
@@ -3563,6 +3574,84 @@ chrome.runtime.onMessage.addListener(m => {
     await waitT(() => document.documentElement.dataset.ytcFirstFrame, null, 8000);
     const after = log.gv.filter(g => g.v === 'mediapre001').slice(2);
     assert.ok(!after.some(g => g.a === 0), 'the prefetched first requests were used, not asked again: ' + JSON.stringify(after));
+  });
+
+  // How a start ends: the picture (and where it started), or the failure panel's reason.
+  const startOutcome = async () => {
+    for (let k = 0; k < 150; k++) {
+      const r = await page.evaluate(() => { const v = document.getElementById('ytc-video');
+        return { f: document.querySelector('#ytc-player.failed .pfr')?.textContent, ok: !!document.documentElement.dataset.ytcFirstFrame && v?.readyState >= 2, t: v?.currentTime }; });
+      if (r.f) return { panel: r.f };
+      if (r.ok) return { t: +r.t.toFixed(1) };
+      await page.waitForTimeout(100);
+    }
+    return { timeout: true };
+  };
+  const playerNotes = async () => { await page.keyboard.press('Backquote'); await page.waitForSelector('#ytc-debug.on'); const d = await page.locator('#ytc-debug').textContent(); await page.keyboard.press('Backquote'); return d; };
+  // Owner report (7 Nov 2026, Brave): "The browser couldn't play this video", media error 4
+  // DEMUXER_ERROR_COULD_NOT_OPEN: MediaSource endOfStream before demuxer initialization completes.
+  // A start at (or past) the end found nothing to fetch on either track, so the end of stream came
+  // before any init segment. Back to a video that played to its end starts where the tab left it.
+  await step('own player: a start at or past the end of the media (t= at/past the end, a saved resume point past the end, Back to an ended video) plays from the beginning, never the failure panel', async () => {
+    const seen = {};
+    for (const [v, t] of [['endexact001', SECONDS], ['endpast0001', SECONDS + 25]]) {
+      await page.goto(`https://www.youtube.com/watch?v=${v}&t=${t}`, { waitUntil: 'commit' });
+      seen[v] = await startOutcome();
+    }
+    // A resume record whose position is past this media's end (kept from a longer upload, imported):
+    // stored once the last player's page is gone (its own records are written as it leaves), read by
+    // a fresh page, then the video opened in the page.
+    await page.goto('https://www.youtube.com/results?search_query=resume+past+the+end', { waitUntil: 'commit' });
+    await page.waitForSelector('#ytc-list .c');
+    await sw.evaluate(async now => { const r = (await chrome.storage.local.get('yourTubeProgressV1')).yourTubeProgressV1 || { version: 1, entries: {} };
+      r.entries.endresume01 = { position: 55, duration: 100, completed: false, updatedAt: now }; await chrome.storage.local.set({ yourTubeProgressV1: r }); }, Date.now());
+    await page.goto('https://www.youtube.com/results?search_query=resume+past+the+end+2', { waitUntil: 'commit' });
+    await page.waitForSelector('#ytc-list .c');
+    await page.waitForTimeout(300); // the stored records are read
+    await page.evaluate(() => { history.pushState(null, '', '/watch?v=endresume01'); dispatchEvent(new PopStateEvent('popstate')); });
+    seen.endresume01 = await startOutcome();
+    const notes = seen.endresume01.panel ? '' : await playerNotes();
+    // Back to a video that played to its end: the tab remembers where it stopped (the end).
+    await page.goto('https://www.youtube.com/watch?v=endback0001', { waitUntil: 'commit' });
+    await waitT(() => document.documentElement.dataset.ytcFirstFrame, null, 8000);
+    await nearEnd();
+    await waitT(() => document.getElementById('ytc-video').ended, null, 15000);
+    await page.evaluate(() => { history.pushState(null, '', '/results?search_query=after+the+end'); dispatchEvent(new PopStateEvent('popstate')); });
+    await page.waitForSelector('#ytc-list .c');
+    await page.evaluate(() => delete document.documentElement.dataset.ytcFirstFrame);
+    await page.goBack({ waitUntil: 'commit' });
+    seen.endback0001 = await startOutcome();
+    for (const [v, o] of Object.entries(seen)) assert.ok(o.t !== undefined && o.t < 5, `${v}: plays from the beginning, no panel: ${JSON.stringify(seen)}`);
+    assert.match(notes, /start 55\.00 s is at the end \(40\.\d+ s\): from the beginning/, 'the saved resume point was used (and moved to the start)');
+    await waitT(() => document.getElementById('ytc-video').currentTime > 1.5, null, 8000);
+  });
+
+  // Defence in depth: a media error before the first frame is retried in place (a fresh
+  // MediaSource, then fresh URLs + indexes, then another format); the panel only after those.
+  await step('own player: a media error before the first frame is retried by itself (fresh MediaSource, then fresh URLs) and plays, never the panel; when every retry fails, the panel names the automatic retries', async () => {
+    const inc0 = incidents.length, n0 = visCalls('mediaerr001').length;
+    await page.goto('https://www.youtube.com/watch?v=mediaerr001', { waitUntil: 'commit' });
+    const o = await startOutcome();
+    assert.ok(o.t !== undefined, 'plays by itself, no panel: ' + JSON.stringify(o));
+    await waitT(() => document.getElementById('ytc-video').currentTime > 1.5, null, 8000);
+    assert.equal(await page.locator('#ytc-player.failed').count(), 0);
+    assert.equal(visCalls('mediaerr001').length - n0, 2, 'the second retry asked for fresh URLs (one more VISIONOS call)');
+    for (let i = 0; i < 50 && !incidents.slice(inc0).some(x => x.kind === 'player-recovered'); i++) await page.waitForTimeout(100);
+    const rec = incidents.slice(inc0).filter(x => x.kind === 'player-recovered');
+    assert.equal(rec.length, 1, JSON.stringify(incidents.slice(inc0).map(x => [x.kind, x.reason])));
+    assert.match(rec[0].reason, /^(SourceBuffer error|appendBuffer|media error).* before the first frame: recovered after [\d.]+ s \(2 automatic retries\)$/);
+    assert.equal(incidents.slice(inc0).filter(x => x.kind === 'player-failed').length, 0, 'no failure reported');
+    const inc1 = incidents.length, n1 = visCalls('mediaerr002').length;
+    await page.goto('https://www.youtube.com/watch?v=mediaerr002', { waitUntil: 'commit' });
+    await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 15000 });
+    const p = await panel();
+    assert.equal(p.m, "The browser couldn't play this video");
+    assert.match(p.r, /\(after 3 automatic retries \(fresh MediaSource, fresh URLs, another format\)\)$/);
+    assert.equal(visCalls('mediaerr002').length - n1, 2, 'one fresh-URL retry');
+    const vids = new Set(log.gv.filter(g => g.v === 'mediaerr002' && media.formats.find(f => String(f.itag) === g.itag)?.mimeType.startsWith('video/')).map(g => g.itag));
+    assert.ok(vids.size >= 2, 'the last retry tried another format: ' + [...vids]);
+    for (let i = 0; i < 50 && !incidents.slice(inc1).some(x => x.kind === 'player-failed'); i++) await page.waitForTimeout(100);
+    assert.equal(incidents.slice(inc1).filter(x => x.kind === 'player-failed').length, 1);
   });
 
   await step('own player: media intent dwell overlaps a slow VISIONOS response instead of starting again after it', async () => {

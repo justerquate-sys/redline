@@ -89,7 +89,7 @@ pub fn position_due(last: f64, now: f64) -> bool {
     now - last >= POSITION_EVERY_MS
 }
 
-const VIDEO_EVENTS: &str = "loadeddata,play,playing,pause,waiting,canplay,seeking,timeupdate,ended,error,ratechange,volumechange";
+const VIDEO_EVENTS: &str = "loadedmetadata,loadeddata,play,playing,pause,waiting,canplay,seeking,timeupdate,ended,error,ratechange,volumechange";
 const TICK_MS: u32 = 250;
 /// No googlevideo answer at all this long after the streams were chosen → fresh URLs once.
 /// (Longer waits: the stuck episode, `fail::START` / `fail::PLAY`.)
@@ -97,6 +97,8 @@ const NO_ANSWER_MS: f64 = 2500.0;
 /// The same, when the streams came from a cached player response.
 const NO_ANSWER_CACHED_MS: f64 = 800.0;
 const VISION_TIMEOUT_MS: u32 = 8000;
+/// A start this close to the end of the media (or past it) plays from the beginning.
+const START_END_SLACK: f64 = 0.5;
 const IDLE_MS: f64 = 2500.0;
 /// TV: the overlay stays this long after the last key while playing (a remote is slower than a mouse).
 const TV_IDLE_MS: f64 = 4000.0;
@@ -378,6 +380,10 @@ pub struct Own {
     stuck: Option<Stuck>,
     /// The MediaSource was rebuilt once in this player's life.
     mse_rebuilt: bool,
+    /// Automatic retries after a media error before the first frame (`media_error`), and the
+    /// first such error with when it happened (reported once the picture comes).
+    media_retries: u32,
+    media_err: Option<(String, f64)>,
     /// Every route was bot-checked shortly before (the app's block): only this player's route is
     /// tried, no parallel recovery; the panel's Try again does the full recovery.
     pub no_recover: bool,
@@ -663,6 +669,8 @@ impl Own {
             load_at: 0.0,
             stuck: None,
             mse_rebuilt: false,
+            media_retries: 0,
+            media_err: None,
             no_recover: false,
             vision_cfg: None,
             route: VisionRoute::Anon,
@@ -1447,6 +1455,15 @@ impl Own {
         if self.duration <= 0.0 {
             self.duration = sv.dur;
         }
+        // A start at (or past) the end of the media plays from the beginning (a resume point left
+        // at the very end, a `t=` past it). Before, every track found nothing to fetch, was "done"
+        // without its init segment, and the end of stream that followed failed the start ("endOfStream
+        // before demuxer initialization completes").
+        let end = [sv.dur, audio.dur, self.duration].into_iter().filter(|d| *d > 0.0).fold(f64::INFINITY, f64::min);
+        if self.start > 0.0 && end.is_finite() && self.start >= end - START_END_SLACK {
+            self.note(format!("start {:.2} s is at the end ({end:.2} s): from the beginning", self.start));
+            self.start = 0.0;
+        }
         let extra = self.start < 4.0;
         self.tracks[V].rep = sv.itag;
         self.tracks[V].mime = sv.mime.clone();
@@ -1515,7 +1532,7 @@ impl Own {
         self.reps.insert(itag, Rep { f, segs, init });
         let tr = &self.tracks[kind];
         if tr.rep == itag && !tr.ready {
-            let next = sched::seg_for(&self.reps[&itag].segs, self.start);
+            let next = sched::start_index(&self.reps[&itag].segs, self.start);
             self.tracks[kind].ready = true;
             self.tracks[kind].next = next;
             // The first segment's start came in the same request: append it now.
@@ -1778,7 +1795,7 @@ impl Own {
                         tr.ops.push_front(Op::Remove(0.0, (t - 10.0).max(0.0)));
                         continue;
                     }
-                    self.fail(format!("appendBuffer: {r}"));
+                    self.media_error(format!("appendBuffer: {r}"));
                     return;
                 }
                 Op::ChangeType(m) => {
@@ -1806,7 +1823,7 @@ impl Own {
                         tr.ops.push_front(Op::Remove(0.0, (t - 10.0).max(0.0)));
                         continue;
                     }
-                    self.fail(format!("appendBuffer: {r}"));
+                    self.media_error(format!("appendBuffer: {r}"));
                     return;
                 }
             }
@@ -1888,8 +1905,15 @@ impl Own {
         }
     }
 
+    /// The element has its metadata, i.e. every SourceBuffer has had its init segment: only then may
+    /// the stream end. Chromium treats `endOfStream()` before that as a fatal error
+    /// (`DEMUXER_ERROR_COULD_NOT_OPEN`, "endOfStream before demuxer initialization completes").
+    fn initialised(&self) -> bool {
+        bridge::media_get(self.vid, "readyState") >= 1.0
+    }
+
     fn maybe_eos(&mut self) {
-        if self.eos || !self.ms_open || !self.sbs_made || self.failed {
+        if self.eos || !self.ms_open || !self.sbs_made || self.failed || !self.initialised() {
             return;
         }
         if let Some(l) = &self.live {
@@ -2438,7 +2462,10 @@ impl Own {
                     self.pump(k);
                     self.maybe_eos();
                 }
-                _ => self.fail(format!("SourceBuffer {ev} ({})", self.tracks[k].mime)),
+                _ => {
+                    let why = format!("SourceBuffer {ev} ({})", self.tracks[k].mime);
+                    self.media_error(why);
+                }
             }
             return true;
         }
@@ -2451,10 +2478,18 @@ impl Own {
         }
         let now = bridge::now();
         match ev {
+            // Every track is initialised: a stream already fully appended may end now.
+            "loadedmetadata" => self.maybe_eos(),
             "loadeddata" => {
                 if self.first_frame.is_none() {
                     let ms = now - self.nav_start;
                     self.first_frame = Some(ms);
+                    if let Some((why, at)) = self.media_err.take() {
+                        let n = self.media_retries;
+                        let reason = format!("{why} before the first frame: recovered after {:.1} s ({n} automatic {})", (now - at) / 1000.0, if n == 1 { "retry" } else { "retries" });
+                        self.note(format!("media error → {reason}"));
+                        self.out.push(Out::Incident { kind: "player-recovered", reason });
+                    }
                     bridge::mark("ytcFirstFrame");
                     if self.poster.is_some() {
                         // The canvas shows the same picture: it goes once the video has presented it
@@ -2528,8 +2563,11 @@ impl Own {
             }
             "error" => {
                 let code = bridge::media_get(self.vid, "error.code");
+                if !(code > 0.0) {
+                    return true; // no error on the element any more: a stale event of a replaced MediaSource
+                }
                 let msg = bridge::media_str(self.vid, "error.message");
-                self.fail(format!("media error {code} {msg}"));
+                self.media_error(format!("media error {code} {msg}"));
                 return true;
             }
             "volumechange" => {
@@ -2773,7 +2811,7 @@ impl Own {
         // Safety net: stuck within 0.5 s of the end with nothing buffered ahead
         // for over a second means the end of stream was missed: signal it, so
         // `ended` (and Up next / the playlist) always follows.
-        if self.live.is_none() && !self.eos && self.waiting && !self.paused && self.duration > 0.0 && self.time() > self.duration - 0.5 && now - self.waiting_since > 1000.0 && bridge::media_str(self.ms, "readyState") == "open" {
+        if self.live.is_none() && !self.eos && self.waiting && !self.paused && self.duration > 0.0 && self.time() > self.duration - 0.5 && now - self.waiting_since > 1000.0 && self.initialised() && bridge::media_str(self.ms, "readyState") == "open" {
             self.eos = true;
             bridge::media_call(self.ms, "endOfStream");
             self.note("stuck at the end: end of stream signalled".into());
@@ -2850,7 +2888,7 @@ impl Own {
         let (n, start) = (s.retries, s.start);
         // googlevideo answered but no picture came: a fresh MediaSource, once.
         if start && self.got_media && !self.mse_rebuilt && self.live.is_none() && self.ms_open {
-            self.rebuild_mse();
+            self.rebuild_mse("data but no picture");
         }
         self.fresh_urls(&format!("stuck retry {n}"));
     }
@@ -2903,11 +2941,68 @@ impl Own {
         self.send_vision(&cfg, &route);
     }
 
+    /// A media error (the element's, a SourceBuffer's, an append the browser refused). Before the
+    /// first frame it is retried in place (`fail::media_retry`: a fresh MediaSource; then fresh URLs
+    /// and indexes too, like Try again; then the next video format), the panel only after those.
+    fn media_error(&mut self, reason: String) {
+        if self.failed {
+            return;
+        }
+        let retry = if self.live.is_none() && self.vision_ms.is_some() { fail::media_retry(self.media_retries, self.first_frame.is_some()) } else { None };
+        let Some(retry) = retry else {
+            let reason = if self.media_retries > 0 && self.first_frame.is_none() { format!("{reason} (after {})", fail::media_retried(self.media_retries)) } else { reason };
+            return self.fail(reason);
+        };
+        self.media_retries += 1;
+        let n = self.media_retries;
+        if self.media_err.is_none() {
+            self.media_err = Some((reason.clone(), bridge::now()));
+        }
+        let why = format!("{reason} before the first frame (automatic retry {n} of {})", fail::MEDIA_RETRIES);
+        self.rebuild_mse(&why);
+        match retry {
+            fail::MediaRetry::FreshSource => {}
+            fail::MediaRetry::FreshUrls => {
+                // The indexes and init segments are asked again too, with the new URLs.
+                for k in [V, A] {
+                    let itag = self.tracks[k].rep;
+                    self.reps.remove(&itag);
+                    self.tracks[k].ready = false;
+                    self.heads.retain(|&x| x != itag);
+                    if itag != 0 && !self.retry_heads.contains(&(itag, k)) {
+                        self.retry_heads.push((itag, k));
+                    }
+                }
+                self.fresh_urls("media error before the first frame");
+                if !self.refreshing {
+                    // No player response to refresh with: the indexes again on the URLs we have.
+                    self.end_refresh();
+                }
+            }
+            fail::MediaRetry::NextFormat => {
+                let old = self.tracks[V].rep;
+                self.bad.push(old);
+                self.build_ladder();
+                match self.desired().map(|i| self.ladder[i].clone()).filter(|f| f.itag != old) {
+                    Some(f) => {
+                        self.note(format!("itag {old} given up: {} {}", f.itag, f.label));
+                        self.start_video_on(f);
+                    }
+                    None => {
+                        // No other format: the same one once more.
+                        self.bad.retain(|&x| x != old);
+                        self.build_ladder();
+                    }
+                }
+            }
+        }
+    }
+
     /// A new MediaSource and SourceBuffers on the same `<video>`; the indexes stay, the tracks
     /// start again (init segment first) at the start position.
-    fn rebuild_mse(&mut self) {
+    fn rebuild_mse(&mut self, why: &str) {
         self.mse_rebuilt = true;
-        self.note("data but no picture: a fresh MediaSource".into());
+        self.note(format!("{why}: a fresh MediaSource"));
         for k in [V, A] {
             if let Some(id) = self.tracks[k].inflight.take() {
                 bridge::abort(id);
@@ -2918,7 +3013,7 @@ impl Own {
                 bridge::media_free(sb);
             }
             let rep = self.tracks[k].rep;
-            let fresh = self.reps.get(&rep).map(|r| (r.f.mime.clone(), sched::resume_index(&r.segs, &[], self.start)));
+            let fresh = self.reps.get(&rep).map(|r| (r.f.mime.clone(), sched::start_index(&r.segs, self.start)));
             let tr = &mut self.tracks[k];
             tr.ops.clear();
             tr.updating = false;
