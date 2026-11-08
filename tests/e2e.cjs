@@ -10410,7 +10410,7 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
   });
 
   // Transcripts: tests/transcripts-steps.cjs (the worker is restarted by the browser now and then, so it is looked up).
-  if (trMock) await transcripts.steps({ step, ctx, sw: () => ctx.serviceWorkers()[0] || sw, mock: trMock, incidents, HOME });
+  if (trMock) await transcripts.steps({ step, ctx, sw: () => ctx.serviceWorkers()[0] || sw, mock: trMock, incidents, HOME, CT_SKY });
 
   await step('popup: Export all settings opens its own tab and saves one file of everything in chrome.storage.local, saying it holds the Deepgram key', async () => {
     const before = await sw.evaluate(() => chrome.storage.local.get(null));

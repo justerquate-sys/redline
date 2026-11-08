@@ -27,6 +27,8 @@ struct TabSave {
     scroll: f64,
     stats: Stats,
     title: String,
+    /// `transcribe::list_mark` when it left.
+    chips: u64,
 }
 
 #[derive(Default)]
@@ -199,7 +201,7 @@ impl App {
         // (The position first: without its cards the page is shorter.)
         let scroll = bridge::scroll_y();
         bridge::park(LIST, &key);
-        let save = TabSave { feed: std::mem::take(&mut self.feed), scroll, stats: std::mem::take(&mut self.stats), title: self.title.clone() };
+        let save = TabSave { feed: std::mem::take(&mut self.feed), scroll, stats: std::mem::take(&mut self.stats), title: self.title.clone(), chips: crate::features::transcribe::list_mark() };
         self.chan.put(key, save);
     }
 
@@ -265,6 +267,7 @@ impl App {
         if !bridge::unpark(LIST, key) {
             return false;
         }
+        crate::features::transcribe::list_back(s.chips);
         self.chan.inplace = false;
         self.feed = s.feed;
         self.stats = s.stats;

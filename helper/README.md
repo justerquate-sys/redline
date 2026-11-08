@@ -14,8 +14,9 @@ Build from source. A prebuilt release asset may come later.
 2. Install FFmpeg, FFprobe, yt-dlp and a JavaScript runtime yt-dlp supports, on your `PATH` (`FFMPEG_LOCATION` and
    `YTDLP_JS_RUNTIME` in `.env` can point elsewhere). The installer downloads nothing.
 3. On macOS, double-click `Install Helper.command`. It builds the helper, registers a background service and the browser
-   connection for Chrome and Brave (another Chromium browser can use Manual pairing in Settings), and creates `.env` and
-   `.data` in the checkout's top folder (git ignores them).
+   connection in Chrome's `NativeMessagingHosts` folder, and creates `.env` and `.data` in the checkout's top folder (git
+   ignores them). A browser that does not read that folder (not yet confirmed for Brave) pairs through Manual pairing in
+   Settings, or with a copy of that file in its own `NativeMessagingHosts` folder.
 4. Load `extension/` in your browser, open Redline's popup and choose **Transcripts: Set up**. Enter your Azure endpoint
    and key there. The key goes to the helper's owner-only `.env` and never into browser storage.
 

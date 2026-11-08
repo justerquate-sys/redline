@@ -11,6 +11,8 @@ pub fn on_click(_act: &str, _arg: &str, _mods: u32) -> bool { false }
 pub fn on_escape() -> bool { false }
 pub fn on_live(_text: &str) {}
 pub fn page_changed() {}
+pub fn list_mark() -> u64 { 0 }
+pub fn list_back(_mark: u64) {}
 pub fn card_chip(_out: &mut String, _v: &Video) {}
 pub fn playlist_chip(_out: &mut String, _id: &str) {}
 pub fn watch_button(_out: &mut String) {}

@@ -44,6 +44,10 @@ struct Known {
     failed: bool,
     asked: bool,
     shown: String,
+    /// What `paint` last worked out, and when it last differed (`T::clock`). A list set aside misses `paint`'s writes;
+    /// coming back it catches up on what changed since (`list_back`).
+    last: String,
+    changed: u64,
 }
 
 enum Reply {
@@ -82,6 +86,9 @@ struct T {
     channel_timer: Option<u32>,
     in_flight: usize,
     again: bool,
+    clock: u64,
+    /// It was on at some point in this page's life: a list set aside may still hold chips.
+    ever_on: bool,
 }
 
 thread_local! {
@@ -129,6 +136,7 @@ fn set_on(on: bool) {
         return;
     }
     if on {
+        with(|t| t.ever_on = true);
         // The first page may have painted before storage answered: dress what is there, without a re-render.
         bridge::decorate(".c[data-v]", ".th", ".tsc", "data-v", &chip_template());
         fill_watch();
@@ -324,6 +332,37 @@ pub fn page_changed() {
     schedule_scan(120);
 }
 
+/// A list is being set aside whole (a channel's tab, `bridge::park`): the moment to catch up from when it comes back.
+pub fn list_mark() -> u64 {
+    with(|t| t.clock)
+}
+
+/// A list set aside is back on the page (`bridge::unpark`), in the task that shows it. Nothing could write to it while
+/// it was away: what changed since `mark` is painted now, the feature may have been turned on or off, and every card is
+/// asked about again. (Not only a tab change: a sort's list comes back without a navigation.)
+pub fn list_back(mark: u64) {
+    if !enabled() {
+        if with(|t| t.ever_on) {
+            bridge::remove_all(".tsc");
+        }
+        return;
+    }
+    bridge::decorate(".c[data-v]", ".th", ".tsc", "data-v", &chip_template());
+    let listed = bridge::attr_list(".tsc[data-arg]", "data-arg");
+    for id in listed.split('\n').filter(|s| is_video_id(s)) {
+        let changed = with(|t| {
+            let v = t.videos.entry(id.to_owned()).or_default();
+            v.asked = false;
+            v.shown.clear();
+            v.changed > mark
+        });
+        if changed {
+            paint(id);
+        }
+    }
+    schedule_scan(120);
+}
+
 fn schedule_scan(delay: u32) {
     let id = with(|t| {
         if t.scan.is_some() {
@@ -367,6 +406,14 @@ fn scan() {
                 ids.push(id.to_owned());
             }
         }
+        // A job that left the live list while its card is set aside (a channel's tab): what became of it is known
+        // before the card comes back.
+        for (id, v) in &mut t.videos {
+            if active(v.status) && !v.asked && v.pending.is_none() {
+                v.asked = true;
+                ids.push(id.clone());
+            }
+        }
         ids
     });
     if ids.is_empty() {
@@ -385,7 +432,13 @@ fn paint(id: &str) {
     let l = look_of(id);
     let key = format!("{}|{}|{}|{}", l.s, l.chip, l.label, l.title);
     let same = with(|t| {
+        let clock = t.clock + 1;
         let v = t.videos.entry(id.to_owned()).or_default();
+        if v.last != key {
+            v.last.clone_from(&key);
+            v.changed = clock;
+            t.clock = clock;
+        }
         let same = v.shown == key;
         v.shown = key;
         same
@@ -450,8 +503,9 @@ fn on_status(batch: Vec<(String, u64)>, reply: Option<&json::Value<'_>>) {
                 });
             }
             let percent = path(reply, &["data", "live", id, "p"]).and_then(json::Value::as_f64).map(|p| p as u32);
+            let had_state = !look_of(id).s.is_empty();
             set_known(id, status, path(found, &["saved"]).and_then(json::Value::as_bool) == Some(true), percent, false);
-            if !look_of(id).s.is_empty() || dressed.split('\n').any(|d| d == id) || status == "cancelled" {
+            if had_state || !look_of(id).s.is_empty() || dressed.split('\n').any(|d| d == id) || status == "cancelled" {
                 paint(id);
             }
         }

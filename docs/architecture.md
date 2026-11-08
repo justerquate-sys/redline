@@ -1365,6 +1365,8 @@ by itself: the session's ready Home (memory) and the pairing token (paired again
 export; its only record worth keeping, the Folders ZIP choice, comes from its worker's console
 (`chrome.storage.local.get(null, d => { delete d.pairingToken; copy(JSON.stringify(d)) })`) into a file that Import reads.
 
+**A channel's lists set aside** (`bridge::park`) are out of the document, so a chip's state cannot be written there. `transcribe::list_mark` notes the moment one leaves; `list_back` runs in the task it returns (a tab or a sort, which is no navigation): it paints what changed since, adds or removes chips if the feature was turned on or off meanwhile, and asks about every card again. The scan also asks about known-active jobs with no card on the page, so a job that left the live list is known before its card comes back.
+
 ## Moving from the old YourTube extension
 
 An earlier, private YourTube extension (a native-YouTube restyling) kept its data in its own storage. The client

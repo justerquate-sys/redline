@@ -49,7 +49,7 @@ async function waitFor(fn, what, timeout = 8000) {
   }
 }
 
-async function steps({ step, ctx, sw, mock, incidents, HOME }) {
+async function steps({ step, ctx, sw, mock, incidents, HOME, CT_SKY }) {
   HOME.rich = true;
   const shots = process.env.YTC_TR_SHOTS;
   const ext = p => `chrome-extension://${EXT_ID}/${p}`;
@@ -1304,6 +1304,153 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     await p.click('#back');
     await p.waitForSelector('.tx-lib:visible');
     await shot(p, 'reader-library-480');
+    assert.deepEqual(p.errors, []);
+    await p.close();
+  });
+
+  // ---- a channel's tabs (real answers, tests/fixtures/channel_tabs.json): lists set aside and brought back.
+  const ctUrl = `https://www.youtube.com/channel/${CT_SKY}`;
+  const land = p => p.waitForFunction(() => document.querySelectorAll('#ytc-list .c').length && !document.querySelector('#ytc-list .c.sk'));
+  const openCt = async (url = ctUrl) => { const p = await open(url); await p.waitForSelector('#ytc-cht'); await land(p); return p; };
+  // In the click's own task: nothing that arrives later (the next status answer) can make this pass.
+  const pressAndRead = (p, sel, read, arg) => p.evaluate(({ sel, read, arg }) => {
+    document.querySelector(sel).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    return (0, eval)(read)(arg);
+  }, { sel, read: read.toString(), arg });
+
+  await step('transcripts channel tabs: off, walking the tabs shows no control and asks the helper nothing', async () => {
+    await disable();
+    const before = await fetches(), nativeBefore = await native();
+    const p = await openCt();
+    for (const id of await p.$$eval('#ytc-cht [id^="ytc-ct-"]', a => a.map(e => e.id))) {
+      await p.click('#' + id);
+      await land(p);
+      assert.equal(await p.locator('.tsc,.tsc-ch').count(), 0, id);
+    }
+    await p.waitForTimeout(300);
+    assert.equal(await fetches(), before);
+    assert.equal(await native(), nativeBefore);
+    await p.close();
+  });
+
+  await step('transcripts channel tabs: every tab\'s video cards carry a chip in the thumbnail\'s corner, clear of the badge; a playlist card has none; each list is asked about once', async () => {
+    mock.reset();
+    await enable();
+    const p = await openCt();
+    const seen = {};
+    for (const id of await p.$$eval('#ytc-cht [id^="ytc-ct-"]', a => a.map(e => e.id))) {
+      await p.click('#' + id);
+      await land(p);
+      const counts = await p.evaluate(() => ({ cards: document.querySelectorAll('#ytc-list .c').length, videos: document.querySelectorAll('#ytc-list .c[data-v]').length, bare: document.querySelectorAll('#ytc-list .c[data-v]:not(.chc):not(:has(.tsc))').length, stray: document.querySelectorAll('#ytc-list .c:not([data-v]) .tsc').length }));
+      seen[id] = counts;
+      assert.equal(counts.bare, 0, `${id}: a video card without a chip`);
+      assert.equal(counts.stray, 0, `${id}: a chip on a card that is not a video`);
+      if (counts.videos) {
+        const n = await p.evaluate(() => { const c = document.querySelector('#ytc-list .c[data-v]:has(.tsc)'); c.dataset.trShown = '1'; return c.dataset.v; });
+        const card = `#ytc-list .c[data-v="${n}"]`;
+        await p.locator(`${card} a.th`).hover();
+        await p.waitForFunction(s => getComputedStyle(document.querySelector(s)).opacity === '1', `${card} .tsc`);
+        const g = await p.evaluate(s => { const c = document.querySelector(s), r = e => e.getBoundingClientRect(), t = r(c.querySelector('a.th')), k = r(c.querySelector('.tsc')), b = c.querySelector('.th b'); const q = b && r(b); return { right: t.right - k.right, top: k.top - t.top, hit: !q || k.right <= q.left || q.right <= k.left || k.bottom <= q.top || q.bottom <= k.top }; }, card);
+        assert.ok(Math.abs(g.right - 6) <= 1.5 && Math.abs(g.top - 6) <= 1.5, `${id}: corner ${JSON.stringify(g)}`);
+        assert.ok(g.hit, `${id}: chip clear of the badge`);
+        await shot(p, `channel-tab-${id.replace('ytc-ct-', '')}-chip`);
+        await p.mouse.move(2, 2);
+      }
+    }
+    for (const t of ['ytc-ct-videos', 'ytc-ct-shorts', 'ytc-ct-streams']) assert.ok(seen[t].videos >= 1, `${t} has video cards: ${JSON.stringify(seen)}`);
+    if (seen['ytc-ct-playlists']) assert.equal(seen['ytc-ct-playlists'].videos, 0, 'a playlist is not one video');
+    await waitFor(() => mock.log.some(l => l.path === '/videos/status'), 'the status batch');
+    assert.deepEqual(p.errors, []);
+    await p.close();
+  });
+
+  await step('transcripts channel tabs: a job\'s live state reaches a list set aside, in the task it comes back (tab and sort); turned off or on while away, the list follows', async () => {
+    mock.reset();
+    await enable();
+    const p = await openCt(), witness = await openCt();
+    const id = await p.$eval('#ytc-list .c[data-v]:has(.tsc)', c => c.dataset.v);
+    const chip = chipOf(id);
+    await witness.waitForSelector(chip);
+    await p.bringToFront();
+    await p.locator(`#ytc-list .c[data-v="${id}"] a.th`).hover();
+    await p.click(chip);
+    await p.waitForFunction(s => document.querySelector(s)?.dataset.s === 'on', chip);
+    await p.mouse.move(2, 2);
+    const j = mock.state.jobs[0];
+    // A tab: live while its list is away. (The witness tab shows when the message has gone out.)
+    await p.click('#ytc-ct-shorts');
+    await land(p);
+    j.status = 'transcribing'; j.progress = 42;
+    await witness.waitForFunction(s => document.querySelector(s)?.innerText === '42%', chip, { timeout: 9000 });
+    const read = s => { const n = document.querySelector(s); return n && [n.dataset.s, n.textContent, n.style.getPropertyValue('--p')]; };
+    assert.deepEqual(await pressAndRead(p, '#ytc-ct-videos', read, chip), ['on', '42%', '42%'], 'the percent is there on the frame the list is back');
+    // Finished while away.
+    await p.click('#ytc-ct-streams');
+    await land(p);
+    const asked = () => mock.log.filter(l => l.path === '/videos/status' && l.body.video_ids.includes(id)).length, asked0 = asked();
+    j.status = 'completed'; j.progress = 100; j.saved = true;
+    await witness.waitForFunction(s => document.querySelector(s)?.dataset.s === 'ok', chip, { timeout: 9000 });
+    // Both tabs ask what became of it (this one has no such card on the page).
+    await waitFor(() => asked() >= asked0 + 2, 'the tab with the list away asks too', 9000);
+    await p.waitForTimeout(200);
+    assert.equal((await pressAndRead(p, '#ytc-ct-videos', read, chip))[0], 'ok', 'Saved, on the frame the list is back');
+    // A sort's list comes back without a navigation.
+    await p.click('#ytc-cs-1');
+    await p.waitForFunction(() => !document.querySelector('#ytc-chs .fx-pg') && document.querySelector('#ytc-cs-1')?.getAttribute('aria-pressed') === 'true');
+    await land(p);
+    j.status = 'removed'; j.saved = false;
+    await witness.bringToFront();
+    await p.bringToFront();
+    const statusesBefore = mock.log.filter(l => l.path === '/videos/status').length;
+    await p.click('#ytc-cs-0');
+    await p.waitForFunction(s => document.querySelector(s)?.dataset.s === 'rm', chip, { timeout: 4000 });
+    assert.ok(mock.log.filter(l => l.path === '/videos/status').length > statusesBefore, 'a sort\'s list is asked about again');
+    await witness.close();
+    // Turned off while a list is away: it comes back with no control at all.
+    await p.click('#ytc-ct-shorts');
+    await land(p);
+    await disable();
+    await p.waitForFunction(() => !document.querySelector('.tsc,.tsc-ch'));
+    assert.equal(await pressAndRead(p, '#ytc-ct-videos', () => document.querySelectorAll('.tsc').length), 0, 'no chip in a list that left with them');
+    // Turned on while a list is away: it comes back dressed. (Shorts left with no chips.)
+    await enable();
+    await p.waitForSelector('#ytc-list .c[data-v] .tsc');
+    assert.equal(await pressAndRead(p, '#ytc-ct-shorts', () => document.querySelectorAll('#ytc-list .c[data-v]:not(:has(.tsc))').length), 0, 'every card of a list that left without them');
+    assert.deepEqual(p.errors, []);
+    await p.close();
+  });
+
+  await step('transcripts channel tabs: Import stays above the tab row on every tab, on the channel\'s own URL; its panel survives a tab change; the row still sticks; turning it on dresses the header', async () => {
+    mock.reset();
+    await disable();
+    const p = await openCt(`${ctUrl}/shorts`);
+    await enable();
+    await p.waitForSelector('.ch .tsc-ch');
+    const above = sel => p.evaluate(s => { const a = document.querySelector(s).getBoundingClientRect(), r = document.querySelector('.chb').getBoundingClientRect(); return a.bottom <= r.top + 0.5; }, sel);
+    assert.ok(await above('.tsc-ch'), 'the import row is in the header, above the tabs');
+    await shot(p, 'channel-tabs-import-1400');
+    await p.click('[data-act="tsc-import"][data-arg="year"]');
+    await waitFor(() => mock.log.some(l => l.path === '/channels/import'), 'the import started');
+    assert.equal(mock.log.find(l => l.path === '/channels/import').body.url, ctUrl, 'the channel, not its tab');
+    await p.waitForFunction(() => { const n = document.querySelector('#ytc-tsc-chp'); return n && !n.hidden; });
+    assert.ok(await above('#ytc-tsc-chp'), 'its panel opens above the tabs, pushing them down');
+    const panel = await p.evaluateHandle(() => document.querySelector('#ytc-tsc-chp'));
+    await p.click('#ytc-ct-videos');
+    await land(p);
+    assert.ok(await panel.evaluate(n => n.isConnected && !n.hidden), 'the same panel, still open, on another tab');
+    assert.ok(await above('#ytc-tsc-chp'));
+    await shot(p, 'channel-tabs-panel-1400');
+    assert.equal(mock.log.filter(l => l.path === '/channels/import').length, 1, 'a tab change starts nothing');
+    await p.evaluate(() => scrollTo(0, 900));
+    await p.waitForFunction(() => scrollY > 300);
+    const stuck = await p.$eval('.chb', e => e.getBoundingClientRect().top);
+    assert.ok(Math.abs(stuck - 64) <= 1, `the tab row under the top bar: ${stuck}`);
+    await p.evaluate(() => scrollTo(0, 0));
+    await p.setViewportSize({ width: 480, height: 800 });
+    await p.waitForTimeout(100);
+    assert.ok(await above('#ytc-tsc-chp'), '480 px');
+    assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scroll at 480 px');
+    await shot(p, 'channel-tabs-panel-480');
     assert.deepEqual(p.errors, []);
     await p.close();
   });
