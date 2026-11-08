@@ -773,19 +773,10 @@ impl App {
 
     /// The remote's Next: Up next's first (a playlist's next item, else YouTube's next video).
     fn tv_next(&mut self) {
-        if let Some(n) = self.tv_next_video() {
+        if let Some(n) = self.up_pressed() {
             self.up_cancel();
             self.up_open(n);
         }
-    }
-
-    fn tv_next_video(&self) -> Option<crate::features::upnext::Next> {
-        let Route::Watch { v, .. } = &self.route else { return None };
-        let w = self.cur_watch()?;
-        crate::features::upnext::next(&w.up, v, true).or_else(|| w.related.items.iter().find_map(|i| match i {
-            crate::parse::Item::Video(c) if c.id != *v => Some(crate::features::upnext::Next { v: c.id.clone(), list: None, now: true }),
-            _ => None,
-        }))
     }
 
     /// The remote's Previous: the playlist's previous item, else the previous video of this session, else this one from

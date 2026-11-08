@@ -742,6 +742,35 @@ module.exports = async function membersTests(h) {
     } finally { verdicts[CLICK] = was; }
   }));
 
+  await step('members-only on TV: the remote\'s Next never lands on a locked card: a locked target, no target at all, a video only the player knows about', async () => {
+    hook();
+    const noTarget = (() => { const j = JSON.parse(nextWith('mbrnotarget', null, 2).str); delete j.contents.twoColumnWatchNextResults.autoplay; return JSON.stringify(j); })();
+    const a0 = HOOK.api;
+    HOOK.api = (ep, b) => (ep === 'next' && !b.continuation && (b.videoId === 'mbrnotarget' || b.videoId === 'mbrlearned1') ? (b.videoId === 'mbrnotarget' ? noTarget : unlabelled.str) : a0(ep, b));
+    const tv = await tvOpen();
+    const nextGoesTo = async (from, to) => {
+      await tvGo(tv, 'code', `https://www.youtube.com/watch?v=${from}`);
+      await tv.waitForSelector('.wr #ytc-list .c', { state: 'attached', timeout: 15000 });
+      await tv.keyboard.press('MediaTrackNext');
+      await tv.waitForFunction(v => new URLSearchParams(location.search).get('v') === v, to, { timeout: 8000 });
+    };
+    try {
+      await tv.setViewportSize({ width: 960, height: 540 });
+      await nextGoesTo(WATCH, related.open.contentId);
+      await nextGoesTo('mbrnotarget', related.open.contentId);
+      // YouTube's target carries no label; a visit to it has told this tab.
+      await tvGo(tv, 'code', `https://www.youtube.com/watch?v=${CLICK}`);
+      await tv.waitForSelector('#ytc-player .pfail', { timeout: 15000 });
+      await tv.evaluate(v => { history.pushState(null, '', `/watch?v=${v}`); dispatchEvent(new PopStateEvent('popstate')); }, 'mbrlearned1');
+      await tv.waitForSelector('.wr #ytc-list .c', { state: 'attached', timeout: 15000 });
+      await tv.waitForFunction(v => (sessionStorage.getItem('ytc:members') || '').includes(v), CLICK);
+      await tv.keyboard.press('MediaTrackNext');
+      // (Its first card was labelled in the column of the video before, so this tab knows that one too.)
+      await tv.waitForFunction(v => new URLSearchParams(location.search).get('v') === v, unlabelled.rel[1].contentId, { timeout: 8000 });
+      assert.deepEqual(tv.errors, []);
+    } finally { unhook(); await tvClose(tv); }
+  });
+
   await step('members-only on TV (960×540 and 1920×1080): the panel inside the safe area with Next video focused, ←/→ between its actions, OK goes on, Back as ever; the label on the 5-column grid and the Up next row', async () => {
     hook();
     const tv = await tvOpen();
