@@ -422,6 +422,8 @@ pub struct App {
     up_prefetched: u32,
     /// Autoplay countdown: (navigation, what plays next, seconds).
     countdown: Option<(u32, upnext::Next, u32)>,
+    /// The failure panel last shown: its reason, whether it offers Next video.
+    panel_shown: Option<(String, bool)>,
     /// The playlist panel last rendered (list id, current video): its current-row mark slides from there.
     pl_last: Option<(String, String)>,
     /// Navigation motion state (`motionglue.rs`).
@@ -627,6 +629,7 @@ pub fn boot() {
         acts: Actions::default(),
         up_prefetched: 0,
         countdown: None,
+        panel_shown: None,
         pl_last: None,
         mo: Default::default(),
         spec_queue: Vec::new(),
@@ -1841,6 +1844,9 @@ impl App {
         if act == player::fail::ACT_RETRY || act == player::fail::ACT_NATIVE {
             return self.player_panel_act(act == player::fail::ACT_RETRY);
         }
+        if act == player::fail::ACT_NEXT {
+            return self.panel_go_next();
+        }
         if act == "p-toggle" && self.wait_toggle() {
             return true;
         }
@@ -2222,7 +2228,7 @@ impl App {
     /// Pages that never show Shorts (Subscriptions, History, channels,
     /// playlists) drop them on arrival, exactly as before they were parsed.
     fn admit(&self, items: &mut Vec<Item>) {
-        if self.fx_surface() == crate::features::filters::Surface::Other {
+        if matches!(self.fx_surface(), crate::features::filters::Surface::Subs | crate::features::filters::Surface::Other) {
             items.retain(|i| !i.is_short());
         }
     }
@@ -2768,6 +2774,9 @@ impl App {
                 if let (Some(h), Some(b)) = (&v.channel_href, &v.channel_bid) {
                     self.channels.entry(h.clone()).or_insert_with(|| b.clone());
                 }
+                if v.members {
+                    crate::features::members::see(&v.id);
+                }
                 self.known.entry(v.id.clone()).or_insert_with(|| v.clone());
             }
         }
@@ -3181,6 +3190,7 @@ impl App {
         if let Some(body) = p.vision_ok.take() {
             let v = p.v.clone();
             self.cache_vision(&v, body);
+            self.members_played(&v);
             self.vision_hold = false;
             // VISIONOS answered OK again: prefetches may resume.
             self.vision_block_until = 0.0;
@@ -3238,6 +3248,9 @@ impl App {
                     let (mut carry, played, frame) = p.failed_state();
                     let (v, list) = (p.v.clone(), p.list.clone());
                     self.bw = p.bw;
+                    if player::fail::members_only(&reason) {
+                        self.members_learn(&v);
+                    }
                     let mut how = player::fail::retries(&reason, played);
                     // (`ytc-test-shortlimit`, localStorage, tests only: the 60 s of a 429 are 2 s.)
                     if how == player::fail::Retries::Once(player::fail::RATE_LIMIT_WAIT_MS) && bridge::local_flag("ytc-test-shortlimit") {
@@ -3298,13 +3311,6 @@ impl App {
         self.player_wait = false;
         self.player_failed = Some(PlayerFailed { v: v.to_string(), t, list, carry, retriable: !player::fail::permanent(reason), frame: None });
         self.show_panel(v, reason);
-    }
-
-    fn show_panel(&mut self, v: &str, reason: &str) {
-        bridge::html(player::ui::BOX, &player::fail::panel(v, reason, self.auto.made()));
-        bridge::attr(player::ui::BOX, "class", "player failed");
-        // TV: the panel's first action takes the focus (the controls it replaced had it).
-        self.tv_failed();
     }
 
     /// Why a player failed, kept for the debug overlay (also the failures an automatic retry mended).

@@ -1,8 +1,8 @@
 //! Home & Search display filters: shared minimum duration (Any…180 min), Home order
-//! (recommended / popular by view count), Shorts, Music and Live switches,
+//! (recommended / popular by view count), Shorts, Music, Live and Members-only switches,
 //! Home Playlists-only. They act on already-parsed items only: no request is ever
 //! made for them. Unknown data stays visible (unknown duration, unknown view
-//! count, no explicit Music label, not confirmed live).
+//! count, no explicit Music label, not confirmed live, no members badge).
 
 use crate::parse::Item;
 use crate::json::Value;
@@ -16,14 +16,16 @@ pub const KEY_PLAYLISTS: &str = "yourTubeHomePlaylistsOnlyV1";
 /// The Shorts switch: the same boolean key the main YourTube extension uses
 /// for its "Shorts in feeds" switch (default off, remembered).
 pub const KEY_SHORTS: &str = "shortsInFeeds";
-pub const KEYS: [&str; 6] = [KEY_DURATION, KEY_ORDER, KEY_MUSIC, KEY_LIVE, KEY_PLAYLISTS, KEY_SHORTS];
+/// The Members-only switch (default on: labelled and shown).
+pub const KEY_MEMBERS: &str = "yourTubeShowMembersV1";
+pub const KEYS: [&str; 7] = [KEY_DURATION, KEY_ORDER, KEY_MUSIC, KEY_LIVE, KEY_PLAYLISTS, KEY_SHORTS, KEY_MEMBERS];
 pub const MAX_MINUTES: u32 = 180;
 pub const PRESETS: [u32; 5] = [0, 10, 20, 30, 60];
 
 /// Display preferences. Defaults: Any length, Recommended, Music off, Live
-/// off, Playlists-only off, Shorts off (the old extension's defaults). "Off" for
-/// Music/Live/Shorts means those videos are hidden.
-#[derive(Clone, Debug, Default, PartialEq)]
+/// off, Playlists-only off, Shorts off (the old extension's defaults), Members-only on. "Off" for
+/// Music/Live/Shorts/Members-only means those videos are hidden.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Prefs {
     pub min_minutes: u32,
     pub popular: bool,
@@ -32,6 +34,15 @@ pub struct Prefs {
     pub playlists_only: bool,
     /// Shorts cards on Home, Search and next to videos (never on other pages).
     pub show_shorts: bool,
+    /// Members-only videos: labelled and shown (on, the owner's public default), hidden on Home,
+    /// Subscriptions, Search and next to videos (off).
+    pub show_members: bool,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Prefs { min_minutes: 0, popular: false, show_music: false, show_live: false, playlists_only: false, show_shorts: false, show_members: true }
+    }
 }
 
 impl Prefs {
@@ -44,6 +55,7 @@ impl Prefs {
             KEY_LIVE => self.show_live = v.as_bool().unwrap_or(false),
             KEY_PLAYLISTS => self.playlists_only = v.as_bool().unwrap_or(false),
             KEY_SHORTS => self.show_shorts = v.as_bool().unwrap_or(false),
+            KEY_MEMBERS => self.show_members = v.as_bool().unwrap_or(true),
             _ => return false,
         }
         true
@@ -58,23 +70,25 @@ impl Prefs {
             KEY_LIVE => self.show_live.to_string(),
             KEY_PLAYLISTS => self.playlists_only.to_string(),
             KEY_SHORTS => self.show_shorts.to_string(),
+            KEY_MEMBERS => self.show_members.to_string(),
             _ => "null".into(),
         }
     }
 
     /// Compact tab mirror (sessionStorage) so a reload filters before chrome.storage answers.
     pub fn mirror(&self) -> String {
-        format!("{}|{}|{}|{}|{}|{}", self.min_minutes, self.popular as u8, self.show_music as u8, self.show_live as u8, self.playlists_only as u8, self.show_shorts as u8)
+        format!("{}|{}|{}|{}|{}|{}|{}", self.min_minutes, self.popular as u8, self.show_music as u8, self.show_live as u8, self.playlists_only as u8, self.show_shorts as u8, self.show_members as u8)
     }
 
-    /// Reads the mirror; a five-field mirror from before the Shorts switch means Shorts off.
+    /// Reads the mirror; a five-field mirror from before the Shorts switch means Shorts off, one without
+    /// the Members-only field means on.
     pub fn from_mirror(s: &str) -> Option<Prefs> {
         let p: Vec<&str> = s.split('|').collect();
-        if p.len() != 5 && p.len() != 6 {
+        if !(5..=7).contains(&p.len()) {
             return None;
         }
         let b = |x: &str| x == "1";
-        Some(Prefs { min_minutes: p[0].parse::<u32>().ok()?.min(MAX_MINUTES), popular: b(p[1]), show_music: b(p[2]), show_live: b(p[3]), playlists_only: b(p[4]), show_shorts: p.get(5).is_some_and(|x| b(x)) })
+        Some(Prefs { min_minutes: p[0].parse::<u32>().ok()?.min(MAX_MINUTES), popular: b(p[1]), show_music: b(p[2]), show_live: b(p[3]), playlists_only: b(p[4]), show_shorts: p.get(5).is_some_and(|x| b(x)), show_members: p.get(6).is_none_or(|x| b(x)) })
     }
 }
 
@@ -89,7 +103,9 @@ pub enum Surface {
     Search,
     /// The watch page's related column.
     Related,
-    /// Subscriptions, History, channels, playlists: shown as YouTube sends them.
+    /// Subscriptions: as YouTube sends it, but for the Members-only switch.
+    Subs,
+    /// History, channels, playlists: shown as YouTube sends them.
     Other,
 }
 
@@ -171,7 +187,7 @@ fn count_prefix(s: &str) -> Option<u64> {
 /// next to videos only; other pages never show them (the app drops them on
 /// arrival there).
 pub fn short_hidden(surf: Surface, p: &Prefs) -> bool {
-    !p.show_shorts || surf == Surface::Other
+    !p.show_shorts || matches!(surf, Surface::Subs | Surface::Other)
 }
 
 /// Whether `item` stays visible on `surf`. `blocked(id)` reports a confirmed
@@ -185,6 +201,12 @@ pub fn keep(item: &Item, surf: Surface, p: &Prefs, blocked: &dyn Fn(&str) -> boo
     }
     match item {
         Item::Video(v) => {
+            if !p.show_members && v.members {
+                return false;
+            }
+            if surf == Surface::Subs {
+                return true;
+            }
             if blocked(&v.id) {
                 return false;
             }
@@ -214,9 +236,10 @@ pub fn keep(item: &Item, surf: Surface, p: &Prefs, blocked: &dyn Fn(&str) -> boo
 /// Whether any filter could hide something on `surf` (cheap check before work).
 pub fn active(surf: Surface, p: &Prefs, any_blocked: bool) -> bool {
     match surf {
-        Surface::Home => any_blocked || p.min_minutes > 0 || !p.show_music || !p.show_live || p.playlists_only || !p.show_shorts,
-        Surface::Search => any_blocked || p.min_minutes > 0 || !p.show_music || !p.show_shorts,
-        Surface::Related => any_blocked || !p.show_music || !p.show_live || !p.show_shorts,
+        Surface::Home => any_blocked || p.min_minutes > 0 || !p.show_music || !p.show_live || p.playlists_only || !p.show_shorts || !p.show_members,
+        Surface::Search => any_blocked || p.min_minutes > 0 || !p.show_music || !p.show_shorts || !p.show_members,
+        Surface::Related => any_blocked || !p.show_music || !p.show_live || !p.show_shorts || !p.show_members,
+        Surface::Subs => !p.show_members,
         Surface::Other => false,
     }
 }
@@ -395,6 +418,41 @@ mod tests {
         let long = vid("bbbbbbbbbbb", "70:00", "");
         p.show_shorts = false;
         assert!(keep(&long, Surface::Home, &p, &none));
+    }
+
+    #[test]
+    fn members_switch() {
+        let none = |_: &str| false;
+        let locked = Item::Video(Video { id: "J3M2L2pLhxA".into(), duration: "3:22".into(), members: true, ..Default::default() });
+        let open = vid("aaaaaaaaaaa", "3:22", "");
+        // On by default: labelled and shown everywhere, nothing to filter for it.
+        let mut p = Prefs { show_music: true, show_live: true, show_shorts: true, ..Default::default() };
+        assert!(p.show_members);
+        for s in [Surface::Home, Surface::Search, Surface::Related, Surface::Subs, Surface::Other] {
+            assert!(keep(&locked, s, &p, &none), "{s:?}");
+            assert!(!active(s, &p, false), "{s:?}");
+        }
+        // Off: hidden on Home, Subscriptions, Search and next to videos; other pages as YouTube sends them.
+        p.show_members = false;
+        for s in [Surface::Home, Surface::Search, Surface::Related, Surface::Subs] {
+            assert!(!keep(&locked, s, &p, &none), "{s:?}");
+            assert!(active(s, &p, false), "{s:?}");
+            assert!(keep(&open, s, &p, &none), "{s:?}: only labelled cards");
+        }
+        assert!(keep(&locked, Surface::Other, &p, &none), "channels, playlists, History");
+        assert!(!active(Surface::Other, &p, false));
+        // Subscriptions keeps every other rule off (minimum length, Music), and never shows Shorts.
+        let mut q = Prefs { min_minutes: 60, ..Default::default() };
+        assert!(keep(&open, Surface::Subs, &q, &none));
+        q.show_shorts = true;
+        assert!(short_hidden(Surface::Subs, &q));
+        // Stored, mirrored; a mirror or a value from before the switch means on.
+        assert!(!Prefs::from_mirror(&p.mirror()).unwrap().show_members);
+        assert!(Prefs::from_mirror("20|1|1|0|0|1").unwrap().show_members);
+        assert!(Prefs::from_mirror("20|1|1|0|0").unwrap().show_members);
+        assert_eq!(p.stored(KEY_MEMBERS), "false");
+        assert!(p.apply(KEY_MEMBERS, &crate::json::jv!("yes")));
+        assert!(p.show_members, "non-boolean → the default");
     }
 
     #[test]

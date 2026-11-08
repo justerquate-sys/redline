@@ -5,6 +5,7 @@
 //! (`playlist.playlist`) and YouTube's autoplay endpoint
 //! (`autoplay.autoplay.sets[0].autoplayVideo`, with `countDownSecs`).
 
+use crate::features::members;
 use crate::parse::text;
 use crate::util::{esc_into, is_safe_id, is_video_id};
 use crate::json::Value;
@@ -18,6 +19,8 @@ pub struct Item {
     /// 0-based position in the playlist.
     pub idx: u32,
     pub cur: bool,
+    /// For a channel's members: a badge, or a row of its "Members-only videos" playlist (`UUMO…`).
+    pub members: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -41,6 +44,14 @@ pub struct Up {
     pub auto: Option<(String, Option<String>)>,
     /// Seconds YouTube counts down before autoplay.
     pub countdown: u32,
+    /// The related column's videos, in order (`parse::next`): what plays when YouTube's target is locked.
+    pub cards: Vec<Card>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Card {
+    pub v: String,
+    pub locked: bool,
 }
 
 /// What plays after the current video.
@@ -85,6 +96,7 @@ pub fn parse(v: &Value) -> Up {
                     len: r.get("lengthText").and_then(text).unwrap_or_default(),
                     idx: r.pointer("/navigationEndpoint/watchEndpoint/index").and_then(Value::as_u64).map(|x| x as u32).unwrap_or(i as u32),
                     cur: r.get("selected").and_then(Value::as_bool).unwrap_or(false),
+                    members: id.starts_with("UUMO") || r.get("badges").and_then(Value::as_array).into_iter().flatten().any(|b| b.get("metadataBadgeRenderer").is_some_and(crate::parse::badge_members)),
                 });
             }
             if pl.total == 0 {
@@ -105,20 +117,36 @@ pub fn parse(v: &Value) -> Up {
     up
 }
 
+/// Whether `v` is known to be for a channel's members: a card's label (here or anywhere this tab has
+/// seen it), or the player's verdict.
+fn locked(up: &Up, v: &str) -> bool {
+    members::has(v) || up.cards.iter().any(|c| c.locked && c.v == v) || up.playlist.as_ref().is_some_and(|p| p.items.iter().any(|i| i.members && i.v == v))
+}
+
+/// The first video of the related column that isn't locked, nor `cur` (`now`: no countdown).
+fn open_card(up: &Up, cur: &str, now: bool) -> Option<Next> {
+    up.cards.iter().find(|c| c.v != cur && !locked(up, &c.v)).map(|c| Next { v: c.v.clone(), list: None, now })
+}
+
 /// The video after `cur`: the next playlist item (always, like YouTube),
-/// else YouTube's autoplay target when Autoplay is on.
+/// else YouTube's autoplay target when Autoplay is on. A video known to be for a channel's members is
+/// never chosen, whatever the Members-only switch says (a member can still open it): the next playlist
+/// item that isn't, and in place of a locked autoplay target the first related card that isn't.
 pub fn next(up: &Up, cur: &str, autoplay: bool) -> Option<Next> {
     if let Some(pl) = &up.playlist {
         let pos = pl.items.iter().position(|i| i.v == cur).or_else(|| pl.items.iter().position(|i| i.cur));
         let after = match pos {
-            Some(p) => pl.items.get(p + 1),
-            None => pl.items.iter().find(|i| i.idx > pl.cur),
+            Some(p) => pl.items.iter().skip(p + 1).find(|i| !locked(up, &i.v)),
+            None => pl.items.iter().find(|i| i.idx > pl.cur && !locked(up, &i.v)),
         };
         if let Some(n) = after {
             return Some(Next { v: n.v.clone(), list: Some(pl.id.clone()), now: true });
         }
     }
     let (v, list) = up.auto.as_ref().filter(|_| autoplay)?;
+    if locked(up, v) {
+        return open_card(up, cur, false);
+    }
     // Never wrap around to an earlier item of the same playlist (no unasked loop).
     if let Some(pl) = up.playlist.as_ref().filter(|p| Some(&p.id) == list.as_ref()) {
         let at = |x: &str| pl.items.iter().position(|i| i.v == x);
@@ -137,6 +165,12 @@ pub fn prev(up: &Up, cur: &str) -> Option<Next> {
         None => pl.items.iter().rev().find(|i| i.idx < pl.cur),
     };
     before.map(|n| Next { v: n.v.clone(), list: Some(pl.id.clone()), now: true })
+}
+
+/// What a pressed Next takes: `next` as with Autoplay on (the press asked for it), else the first
+/// related card that isn't locked.
+pub fn next_pressed(up: &Up, cur: &str) -> Option<Next> {
+    next(up, cur, true).or_else(|| open_card(up, cur, true))
 }
 
 pub fn watch_href(v: &str, list: Option<&str>) -> String {
@@ -191,6 +225,12 @@ pub fn panel(pl: Option<&Playlist>, cur: &str) -> String {
         esc_into(&mut out, &it.title);
         out.push_str("</span><span class=\"plb\">");
         esc_into(&mut out, &it.by);
+        if it.members || members::has(&it.v) {
+            if !it.by.is_empty() {
+                out.push_str(" · ");
+            }
+            out.push_str(members::LABEL);
+        }
         out.push_str("</span></span></a></li>");
     }
     out.push_str("</ol></details>");
@@ -268,6 +308,43 @@ mod tests {
         assert_eq!(next(&up, "-Bxc4gJluC0", false), None);
         assert_eq!(next(&up, "UURYhAVph5g", true), None, "never itself");
         assert!(panel(None, "x").is_empty());
+    }
+
+    #[test]
+    fn locked_videos_are_never_next() {
+        let it = |v: &str, idx: u32, members: bool| Item { v: v.into(), idx, members, ..Default::default() };
+        let card = |v: &str, locked: bool| Card { v: v.into(), locked };
+        // A locked playlist row is skipped; a playlist of nothing else ends in the autoplay target.
+        let pl = Playlist { id: "PLx".into(), total: 4, items: vec![it("aaaaaaaaaaa", 0, false), it("bbbbbbbbbbb", 1, true), it("ccccccccccc", 2, false), it("ddddddddddd", 3, true)], ..Default::default() };
+        let mut up = Up { playlist: Some(pl), auto: Some(("eeeeeeeeeee".into(), None)), cards: vec![card("eeeeeeeeeee", false)], ..Default::default() };
+        assert_eq!(next(&up, "aaaaaaaaaaa", false).unwrap().v, "ccccccccccc");
+        assert_eq!(next(&up, "ccccccccccc", true).unwrap().v, "eeeeeeeeeee", "the last row is locked");
+        assert_eq!(next(&up, "ccccccccccc", false), None);
+        // YouTube's target carries a label in the related column: the first open card instead, with its countdown.
+        up.playlist = None;
+        up.cards = vec![card("eeeeeeeeeee", true), card("fffffffffff", true), card("ggggggggggg", false)];
+        assert_eq!(next(&up, "aaaaaaaaaaa", true), Some(Next { v: "ggggggggggg".into(), list: None, now: false }));
+        assert_eq!(next(&up, "aaaaaaaaaaa", false), None, "Autoplay off");
+        up.cards = vec![card("eeeeeeeeeee", true)];
+        assert_eq!(next(&up, "aaaaaaaaaaa", true), None, "nothing open: stay");
+        // A verdict the card lacked (the player said so).
+        up.auto = Some(("hhhhhhhhhhh".into(), None));
+        up.cards = vec![card("hhhhhhhhhhh", false), card("iiiiiiiiiii", false)];
+        assert_eq!(next(&up, "aaaaaaaaaaa", true).unwrap().v, "hhhhhhhhhhh");
+        members::learn("hhhhhhhhhhh");
+        assert_eq!(next(&up, "aaaaaaaaaaa", true).unwrap().v, "iiiiiiiiiii");
+        members::forget("hhhhhhhhhhh");
+        // A press takes the first open card even without a target, without a countdown.
+        up.auto = None;
+        assert_eq!(next(&up, "aaaaaaaaaaa", true), None);
+        assert_eq!(next_pressed(&up, "hhhhhhhhhhh"), Some(Next { v: "iiiiiiiiiii".into(), list: None, now: true }));
+        // The real "Members-only videos" panel carries no badge: its id says it (recorded 8 Nov 2026).
+        let v = crate::json::jv!({"contents": {"twoColumnWatchNextResults": {"playlist": {"playlist": {"playlistId": "UUMO1cyGje-DRza7ei9M_oYHNA", "contents": [
+            {"playlistPanelVideoRenderer": {"videoId": "J3M2L2pLhxA", "title": {"simpleText": "t"}}}]}}}}});
+        assert!(parse(&v).playlist.unwrap().items[0].members);
+        // The row says so.
+        let h = panel(Some(&Playlist { id: "PLx".into(), total: 1, items: vec![Item { v: "aaaaaaaaaaa".into(), by: "Ch".into(), members: true, ..Default::default() }], ..Default::default() }), "");
+        assert!(h.contains("Ch · Members only"), "{h}");
     }
 
     #[test]

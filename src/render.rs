@@ -462,6 +462,7 @@ fn video_card(out: &mut String, v: &Video, plan: ImgPlan, i: usize) {
         out.push_str("</b>");
     }
     crate::features::card_bar(out, v);
+    crate::features::card_badge(out, v);
     out.push_str("</a><div class=\"d\"><a class=\"t\" href=\"");
     out.push_str(&href);
     out.push_str("\" title=\"");

@@ -253,7 +253,12 @@ const BOT = { responseContext: {}, playabilityStatus: { status: 'LOGIN_REQUIRED'
 const FRESH_VD = 'CgtGcmVzaEUyRTAwMSjAgICABjIKCgJERRIEEgAgQw%3D%3D';
 // FX.bot: 'visitor' = bot check unless the fresh visitor; 'account' = unless signed (SAPISIDHASH); 'all' = always.
 const botChecked = (body, headers) => (!FX.botVideo || body.videoId === FX.botVideo) && (FX.bot === 'visitor' ? body.context.client.visitorData !== FRESH_VD : FX.bot === 'account' ? !headers.authorization : FX.bot === 'all');
+// tests/members.cjs answers its own videos and feeds.
+const MEMBERS_HOOK = { api: null, vision: null };
 function visionFixture(v) {
+  const hooked = MEMBERS_HOOK.vision?.(v);
+  if (hooked) return hooked;
+  if (v === 'errorpanel1') return { playabilityStatus: { status: 'ERROR', reason: 'Something went wrong (e2e)' } };
   if (v === 'unplayable1') return { playabilityStatus: { status: 'UNPLAYABLE', reason: 'Forced failure (e2e)' } };
   if (v === 'members0001') return { playabilityStatus: { status: 'UNPLAYABLE', reason: 'Join this channel to get access to members-only content like this video, and other exclusive perks.' } };
   if (v === 'agerestrict') return { playabilityStatus: { status: 'LOGIN_REQUIRED', reason: 'Sign in to confirm your age' } };
@@ -546,6 +551,8 @@ const shelvesContStr = (() => {
   return JSON.stringify(j);
 })();
 function apiFixture(ep, body) {
+  const hooked = MEMBERS_HOOK.api?.(ep, body);
+  if (hooked) return hooked;
   if (AUDIT.worst && ep === 'search' && body.query === 'worst' && !body.continuation && !body.params) return worstSearchStr;
   if (AUDIT.worst && ep === 'next' && body.videoId === WORST_ID && !body.continuation && !body.playlistId) return worstNextStr;
   if (ep === 'browse' && /^CHIP(GAMING|POD)/.test(body.continuation || '')) return body.continuation.startsWith('CHIPGAMING') ? chipFeed(7, 'g') : chipFeed(8, 'p');
@@ -3258,8 +3265,9 @@ chrome.runtime.onMessage.addListener(m => {
 
   // ---- Failures stay in the player: a panel in the
   // player box with the message and the reason, Try again (a new player, fresh VISIONOS) and Open on YouTube.
+  // (A verdict about the video itself says so in plain words and has no Try again: tests/members.cjs too.)
   const visCalls = (v, from = 0) => log.api.slice(from).filter(a => a.ep === 'player' && a.body.videoId === v && a.body.context.client.clientName === 'VISIONOS');
-  const panel = async () => ({ url: new URL(page.url()).search, m: await page.textContent('#ytc-player.failed .pfm'), r: await page.textContent('#ytc-player.failed .pfr .pfw') });
+  const panel = async () => ({ url: new URL(page.url()).search, m: await page.textContent('#ytc-player.failed .pfm'), r: await page.getAttribute('#ytc-player.failed .pfail', 'data-r') ?? await page.textContent('#ytc-player.failed .pfr .pfw') });
   // The panel's buttons: label centred in its box (±0.5 px), both on one row, centred in the player (±1 px).
   const panelGeometry = () => page.evaluate(() => {
     const box = document.getElementById('ytc-player').getBoundingClientRect(), bs = [...document.querySelectorAll('#ytc-player .pfb .pfbt')];
@@ -3274,11 +3282,13 @@ chrome.runtime.onMessage.addListener(m => {
     await page.waitForSelector('#ytc-player.failed .pfail');
     await page.waitForTimeout(600);
     assert.deepEqual(await panel(), { url: '?v=unplayable1&t=7', m: "YouTube won't play this video here", r: 'VISIONOS UNPLAYABLE: Forced failure (e2e)' });
-    assert.equal(await page.textContent('.pfr'), `VISIONOS UNPLAYABLE: Forced failure (e2e) · ${VER}`, 'the technical line says which code ran');
+    assert.equal(await page.textContent('.pfl'), 'Forced failure (e2e)', 'YouTube\'s words without our prefix');
+    assert.equal(await page.textContent('.pfail>.pfv'), VER, 'the version says which code ran');
     assert.equal(log.docs.length, docs + 1, 'no navigation after the failure');
     assert.equal(await page.locator('#ytc-video').count(), 0, 'media released');
-    assert.equal(await page.$eval('.pfr', e => getComputedStyle(e).userSelect), 'text', 'the reason is selectable');
-    assert.deepEqual(await page.locator('#ytc-player .pfbt').allTextContents(), ['Try again', 'Open on YouTube']);
+    assert.equal(await page.$eval('.pfail>.pfv', e => getComputedStyle(e).userSelect), 'text', 'the version is selectable');
+    await page.waitForFunction(() => document.querySelectorAll('#ytc-player .pfbt').length === 2);
+    assert.deepEqual(await page.locator('#ytc-player .pfbt').allTextContents(), ['Next video', 'Open on YouTube']);
     for (const w of [1400, 2560]) {
       await page.setViewportSize({ width: w, height: w === 2560 ? 1440 : 900 });
       await page.waitForTimeout(300);
@@ -3306,23 +3316,29 @@ chrome.runtime.onMessage.addListener(m => {
   });
 
   await step('failure panel: Try again (pointer and Enter) re-mounts the player with a fresh VISIONOS call; Open on YouTube goes native at the time', async () => {
-    const docs = log.docs.length, inc0 = incidents.length, n0 = visCalls('unplayable1').length;
-    await page.click('#ytc-pfretry');
-    for (let i = 0; i < 50 && visCalls('unplayable1').length < n0 + 1; i++) await page.waitForTimeout(100);
+    await page.goto('https://www.youtube.com/watch?v=errorpanel1&t=7', { waitUntil: 'commit' });
     await page.waitForSelector('#ytc-player.failed .pfail');
-    assert.equal(visCalls('unplayable1').length, n0 + 1, 'one fresh VISIONOS call');
+    await page.waitForTimeout(300);
+    assert.equal(await page.textContent('.pfr'), `VISIONOS ERROR: Something went wrong (e2e) · ${VER}`, 'the technical line says which code ran');
+    assert.equal(await page.$eval('.pfr', e => getComputedStyle(e).userSelect), 'text', 'the reason is selectable');
+    assert.deepEqual(await page.locator('#ytc-player .pfbt').allTextContents(), ['Try again', 'Open on YouTube']);
+    const docs = log.docs.length, inc0 = incidents.length, n0 = visCalls('errorpanel1').length;
+    await page.click('#ytc-pfretry');
+    for (let i = 0; i < 50 && visCalls('errorpanel1').length < n0 + 1; i++) await page.waitForTimeout(100);
+    await page.waitForSelector('#ytc-player.failed .pfail');
+    assert.equal(visCalls('errorpanel1').length, n0 + 1, 'one fresh VISIONOS call');
     await page.focus('#ytc-pfretry');
     await page.keyboard.press('Enter');
-    for (let i = 0; i < 50 && visCalls('unplayable1').length < n0 + 2; i++) await page.waitForTimeout(100);
+    for (let i = 0; i < 50 && visCalls('errorpanel1').length < n0 + 2; i++) await page.waitForTimeout(100);
     await page.waitForSelector('#ytc-player.failed .pfail');
-    assert.equal(visCalls('unplayable1').length, n0 + 2, 'Enter on the focused button retries too');
+    assert.equal(visCalls('errorpanel1').length, n0 + 2, 'Enter on the focused button retries too');
     assert.equal(log.docs.length, docs, 'Try again stays in the page');
     for (let i = 0; i < 30 && incidents.slice(inc0).filter(x => x.kind === 'player-failed').length < 2; i++) await page.waitForTimeout(100);
     assert.equal(incidents.slice(inc0).filter(x => x.kind === 'player-failed').length, 2, 'each attempt reports its failure');
-    nativeOk.push('https://www.youtube.com/watch?v=unplayable1&t=7s&yt-native=1');
+    nativeOk.push('https://www.youtube.com/watch?v=errorpanel1&t=7s&yt-native=1');
     await page.locator('#ytc-player .pfbt', { hasText: 'Open on YouTube' }).click();
     await page.waitForURL(/yt-native=1/, { timeout: 8000 });
-    assert.equal(new URL(page.url()).search, '?v=unplayable1&t=7s&yt-native=1');
+    assert.equal(new URL(page.url()).search, '?v=errorpanel1&t=7s&yt-native=1');
     await page.waitForFunction(() => window.__nativeBundle === 1, null, { timeout: 5000 });
   });
 
@@ -3984,7 +4000,8 @@ chrome.runtime.onMessage.addListener(m => {
       await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
       await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 5000 });
       assert.equal(await page.textContent('.pfm'), m);
-      assert.ok((await page.textContent('.pfr')).endsWith(` · ${VER}`), 'no retries named, the version');
+      assert.equal(await page.textContent('.pfail>.pfv'), VER, 'no retries named, the version');
+      assert.equal(await page.locator('#ytc-pfretry').count(), 0, 'Try again wouldn\'t change it');
       await page.waitForTimeout(v === 'unplayable1' ? 2500 : 300);
       assert.equal(visCalls(v).length - n0, 1, `${v}: one player response`);
       assert.ok(!kindsOf(inc0).includes('player-retry'));
@@ -8525,6 +8542,7 @@ chrome.runtime.onMessage.addListener(m => {
   await require('./tv-watch.cjs')(tvChecks);
   await require('./tv-actions.cjs')(tvChecks);
   await require('./tv-motion.cjs')(tvChecks);
+  await require('./members.cjs')({ ...tvChecks, page, ctx, sw, HOOK: MEMBERS_HOOK, json, fixture, homeFirst, nextStr, searchStr, VER, NEXT, nativeOk, problems, readyDel });
   await step('TV browsing (960×540 and 1920×1080): rail, Home signed out and in, topic chips, the grid walk with its fixed row, Search screen and results, channel, playlist, a failed page; every screen inside the safe area, ≥ 17 px type, rings never clipped, no dead ends, Back rules', async () => {
     const tv = await tvOpen();
     const geo = {};
@@ -9506,7 +9524,7 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
         await tv.waitForFunction(() => { const a = document.activeElement; return a && a !== document.body && a.closest('#ytc-player'); }, null, { timeout: 5000 });
 
         // Failure: the panel in the middle, Try again focused, ←/→ between its actions.
-        await tvGo(tv, 'code', 'https://www.youtube.com/watch?v=unplayable1');
+        await tvGo(tv, 'code', 'https://www.youtube.com/watch?v=errorpanel1');
         await tv.waitForSelector('#ytc-player .pfail');
         await tv.waitForFunction(() => document.activeElement && document.activeElement.matches('#ytc-player .pfbt'), null, { timeout: 5000 });
         await tv.waitForTimeout(400); // (the panel fades in)
@@ -9669,7 +9687,7 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
   await step('no player failure ever left by itself: every native watch page was opened by the test or the panel\'s Open on YouTube', async () => {
     const auto = log.docs.filter(u => /\/watch\?/.test(u) && u.includes('yt-native=1') && !nativeOk.includes(u));
     assert.deepEqual(auto, []);
-    assert.ok(log.docs.some(u => u === 'https://www.youtube.com/watch?v=unplayable1&t=7s&yt-native=1') || ONLY, 'the manual button was exercised');
+    assert.ok(log.docs.some(u => u === 'https://www.youtube.com/watch?v=errorpanel1&t=7s&yt-native=1') || ONLY, 'the manual button was exercised');
   });
   await step('no page errors', async () => { assert.deepEqual(errors, []); });
 

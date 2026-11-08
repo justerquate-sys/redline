@@ -4,18 +4,25 @@
 //! the technical reason, Try again / Open on YouTube), and a stall shows a small "Still
 //! loading — retrying…" status while the player keeps retrying in place. Nobody presses Try again
 //! for what Try again would fix (owner, 8 Nov 2026): a reason that isn't permanent gets it by itself
-//! first (`Auto`), and once more on coming back to the tab. Pure parts here (messages, markup, the
-//! retry schedules); `own.rs` and `app.rs` drive them.
+//! first (`Auto`), and once more on coming back to the tab. A verdict Try again can't change
+//! (`offers_retry`: members-only, upcoming, sign-in, removed, unplayable) gets no such button: its
+//! panel says it in plain words, without our technical prefix, and offers Next video / Open on
+//! YouTube. Pure parts here (messages, markup, the retry schedules); `own.rs` and `app.rs` drive them.
 
 use crate::util::esc_into;
 
 /// The panel's buttons and the stuck status' buttons (handled by the app, not the player).
 pub const ACT_RETRY: &str = "pf-retry";
 pub const ACT_NATIVE: &str = "pf-native";
+/// A verdict's panel: the next video (`upnext::next_pressed`).
+pub const ACT_NEXT: &str = "pf-next";
 /// The persistent status element inside the player box (shown by `.player.stuck`).
 pub const STUCK: &str = "ytc-pstuck";
 /// The panel's Try again button (focused when the panel replaces a focused control).
 pub const RETRY_BTN: &str = "ytc-pfretry";
+/// A verdict's panel: its plain line and its buttons (`next` may answer after the player did).
+pub const LINE: &str = "ytc-pfl";
+pub const BUTTONS: &str = "ytc-pfb";
 
 /// The panel's reason while the connection is down (the app probes and continues by itself).
 pub const OFFLINE_REASON: &str = "offline: youtube.com isn't answering (connection or DNS); continuing when it's back";
@@ -35,6 +42,38 @@ pub fn permanent(reason: &str) -> bool {
         || reason == OFFLINE_REASON
         || reason.starts_with("no compatible formats")
         || reason.strip_prefix("VISIONOS ").is_some_and(|r| r.starts_with(|c: char| c.is_ascii_uppercase()))
+}
+
+/// The player's verdict that a video is for a channel's members. (VISIONOS is always asked in English:
+/// `api::vision_request`, so YouTube's sentence is known.)
+pub fn members_only(reason: &str) -> bool {
+    reason.starts_with("VISIONOS ") && reason.to_ascii_lowercase().contains("members")
+}
+
+/// Whether the panel offers Try again: everything but a verdict about the video itself. The bot check (Try
+/// again asks every route again), a connection that's down, YouTube's "something went wrong" and a live
+/// event about to begin can change; a members-only, private, removed or age-restricted video, one this
+/// browser has no format for, or a premiere hours away cannot.
+pub fn offers_retry(reason: &str) -> bool {
+    if !permanent(reason) || reason == OFFLINE_REASON {
+        return true;
+    }
+    if let Some(said) = reason.strip_prefix(super::own::UPCOMING_REASON) {
+        return said.contains("few moments");
+    }
+    if reason.starts_with("VISIONOS LOGIN_REQUIRED") {
+        return super::own::bot_check("LOGIN_REQUIRED", reason);
+    }
+    if !members_only(reason) && reason.starts_with("VISIONOS ERROR") {
+        let low = reason.to_ascii_lowercase();
+        return ["went wrong", "try again", "error occurred"].iter().any(|w| low.contains(w));
+    }
+    false
+}
+
+/// A verdict that YouTube's own page may well get past (it knows the account): Open on YouTube comes first.
+fn open_helps(reason: &str) -> bool {
+    reason.starts_with("VISIONOS LOGIN_REQUIRED") || reason.starts_with("VISIONOS CONTENT_CHECK_REQUIRED") || reason.starts_with("no compatible formats") || reason.starts_with("own player turned off")
 }
 
 /// How a failure is retried.
@@ -209,7 +248,7 @@ pub fn message(reason: &str) -> String {
         return "The client's own player is turned off".into();
     }
     let low = r.to_ascii_lowercase();
-    if low.contains("members") {
+    if members_only(r) {
         return "Members-only video".into();
     }
     if r.starts_with("VISIONOS LOGIN_REQUIRED") {
@@ -245,25 +284,106 @@ pub fn message(reason: &str) -> String {
     "This video isn't loading".into()
 }
 
+/// YouTube's own sentence: the reason without our `VISIONOS <STATUS>: ` prefix and our notes after it.
+fn said(reason: &str) -> &str {
+    let Some((_, rest)) = reason.strip_prefix("VISIONOS ").and_then(|r| r.split_once(": ")) else { return "" };
+    rest.split(" · ").next().unwrap_or("").trim()
+}
+
+/// "This video is available to this channel's members on level: X (or any higher level). …" →
+/// (X, or higher). The channel names its levels; the sentence around them is always English.
+fn members_level(reason: &str) -> Option<(&str, bool)> {
+    let (_, rest) = reason.split_once("members on level: ")?;
+    let (level, higher) = match rest.split_once(" (or any higher level)") {
+        Some((l, _)) => (l, true),
+        None => (rest.split_once(". ").map_or(rest, |x| x.0).trim_end_matches('.'), false),
+    };
+    let level = level.trim();
+    (!level.is_empty()).then_some((level, higher))
+}
+
+/// A verdict's one plain line under the headline. Members-only: who it's for, with the channel's level when
+/// YouTube names it, else YouTube's sentence, but never its invitation to join. Others: YouTube's
+/// words when the headline doesn't already say them. `channel`: empty until `next` answered.
+pub fn line(reason: &str, channel: &str) -> String {
+    if members_only(reason) {
+        let who = if channel.is_empty() { "this channel" } else { channel };
+        if let Some((level, higher)) = members_level(reason) {
+            return format!("This video is for members of {who} at the {level} level{}.", if higher { " or higher" } else { "" });
+        }
+        let kept = said(reason).split_once("Join this ").map_or(said(reason), |x| x.0).trim();
+        return if kept.is_empty() { format!("This video is for members of {who}.") } else { kept.to_string() };
+    }
+    let words = said(reason);
+    if words == message(reason) { String::new() } else { words.to_string() }
+}
+
+fn button(s: &mut String, act: &str, label: &str, on: bool, id: &str) {
+    s.push_str("<button type=\"button\"");
+    if !id.is_empty() {
+        s.push_str(&format!(" id=\"{id}\""));
+    }
+    s.push_str(&format!(" class=\"{}\" data-act=\"{act}\">{label}</button>", if on { "pfbt on" } else { "pfbt" }));
+}
+
+/// A verdict's buttons, the primary (focused) one first: Next video when there is one, unless YouTube's page
+/// may well play it.
+pub fn verdict_buttons(reason: &str, next: bool) -> String {
+    let mut s = String::new();
+    if next && !open_helps(reason) {
+        button(&mut s, ACT_NEXT, "Next video", true, "");
+        button(&mut s, ACT_NATIVE, "Open on YouTube", false, "");
+    } else {
+        button(&mut s, ACT_NATIVE, "Open on YouTube", true, "");
+        if next {
+            button(&mut s, ACT_NEXT, "Next video", false, "");
+        }
+    }
+    s
+}
+
 /// The failure panel (replaces the player box's content; the box keeps its size). `poster` is the
-/// video's thumbnail, dimmed behind the panel. `made`: `Auto::made`.
-pub fn panel(video_id: &str, reason: &str, made: u32) -> String {
+/// video's thumbnail, dimmed behind the panel. `made`: `Auto::made`. `channel` and `next` (an up-next
+/// video exists) only matter to a verdict's panel. The raw reason stays in the overlay, the reports and,
+/// on a verdict's panel, `data-r`.
+pub fn panel(video_id: &str, reason: &str, made: u32, channel: &str, next: bool) -> String {
     let mut s = String::with_capacity(reason.len() + 900);
     if crate::util::is_video_id(video_id) {
         s.push_str("<img class=\"pfp\" alt=\"\" src=\"https://i.ytimg.com/vi_webp/");
         s.push_str(video_id);
         s.push_str("/mqdefault.webp\">");
     }
-    s.push_str("<div class=\"pfail\" data-pop=\"pfail\" role=\"alert\"><p class=\"pfm\">");
+    s.push_str("<div class=\"pfail\" data-pop=\"pfail\" role=\"alert\"");
+    if !offers_retry(reason) {
+        s.push_str(" data-r=\"");
+        esc_into(&mut s, reason);
+        s.push('"');
+    }
+    s.push_str("><p class=\"pfm\">");
     esc_into(&mut s, &message(reason));
-    s.push_str("</p><p class=\"pfr\"><span class=\"pfw\">");
-    esc_into(&mut s, reason);
-    s.push_str("</span><span class=\"pfv\">");
-    esc_into(&mut s, &diagnostics(made));
-    s.push_str("</span></p><div class=\"pfb\">");
-    s.push_str(&format!("<button type=\"button\" id=\"{RETRY_BTN}\" class=\"pfbt on\" data-act=\"{ACT_RETRY}\">Try again</button>"));
-    s.push_str(&format!("<button type=\"button\" class=\"pfbt\" data-act=\"{ACT_NATIVE}\">Open on YouTube</button>"));
-    s.push_str("</div></div>");
+    s.push_str("</p>");
+    if offers_retry(reason) {
+        s.push_str("<p class=\"pfr\"><span class=\"pfw\">");
+        esc_into(&mut s, reason);
+        s.push_str("</span><span class=\"pfv\">");
+        esc_into(&mut s, &diagnostics(made));
+        s.push_str("</span></p><div class=\"pfb\">");
+        button(&mut s, ACT_RETRY, "Try again", true, RETRY_BTN);
+        button(&mut s, ACT_NATIVE, "Open on YouTube", false, "");
+        s.push_str("</div></div>");
+        return s;
+    }
+    let plain = line(reason, channel);
+    if !plain.is_empty() {
+        s.push_str(&format!("<p class=\"pfl\" id=\"{LINE}\">"));
+        esc_into(&mut s, &plain);
+        s.push_str("</p>");
+    }
+    s.push_str(&format!("<div class=\"pfb\" id=\"{BUTTONS}\">"));
+    s.push_str(&verdict_buttons(reason, next));
+    s.push_str("</div><p class=\"pfv\">");
+    esc_into(&mut s, diagnostics(made).trim_start_matches(" · "));
+    s.push_str("</p></div>");
     s
 }
 
@@ -552,12 +672,87 @@ mod tests {
 
     #[test]
     fn panel_escapes_and_has_both_buttons() {
-        let h = panel("aqz-KE-bpKQ", "VISIONOS UNPLAYABLE: <b>x</b>", 0);
+        let h = panel("aqz-KE-bpKQ", "index of itag 243: <b>x</b>", 0, "", false);
         assert!(h.contains("&lt;b&gt;x&lt;/b&gt;") && !h.contains("<b>x"));
         assert!(h.contains("data-act=\"pf-retry\">Try again<") && h.contains("data-act=\"pf-native\">Open on YouTube<"));
         assert!(h.contains("vi_webp/aqz-KE-bpKQ/"));
-        assert!(!panel("bad\"id", "r", 0).contains("<img"));
+        assert!(!panel("bad\"id", "r", 0, "", false).contains("<img"));
         assert!(stuck_html().contains("Still loading — retrying…"));
+    }
+
+    // YouTube's words, read 8 Nov 2026 (VISIONOS, hl=en, signed out).
+    const MEMBERS: &str = "VISIONOS UNPLAYABLE: This video is available to this channel's members on level: Супер-Звезды (or any higher level). Join this YouTube channel from your computer or mobile app.";
+
+    #[test]
+    fn a_members_verdict_says_who_it_is_for_without_the_invitation() {
+        assert!(members_only(MEMBERS) && permanent(MEMBERS) && !offers_retry(MEMBERS));
+        assert_eq!(message(MEMBERS), "Members-only video");
+        assert_eq!(line(MEMBERS, "Grey Wiese"), "This video is for members of Grey Wiese at the Супер-Звезды level or higher.");
+        assert_eq!(line(MEMBERS, ""), "This video is for members of this channel at the Супер-Звезды level or higher.");
+        let one = "VISIONOS UNPLAYABLE: This video is available to this channel's members on level: Gold. Join this channel to get access.";
+        assert_eq!(line(one, "C"), "This video is for members of C at the Gold level.");
+        // Without a level: nothing of "Join this channel…"; another sentence stays as YouTube said it.
+        let join = "VISIONOS UNPLAYABLE: Join this channel to get access to members-only content like this video, and other exclusive perks.";
+        assert_eq!(line(join, "C"), "This video is for members of C.");
+        let first = "VISIONOS UNPLAYABLE: This video is for members first and goes public on 1 Dec. Join this channel to watch now.";
+        assert_eq!(line(first, "C"), "This video is for members first and goes public on 1 Dec.");
+        // A title that merely says "members" never arrives here; a retriable reason never counts.
+        assert!(!members_only("googlevideo HTTP 403 after a player refresh"));
+        // The panel: no prefix, no Try again, Next video first when there is one; the raw reason for developers only.
+        let v = env!("CARGO_PKG_VERSION");
+        let h = panel("aqz-KE-bpKQ", MEMBERS, 0, "<Grey>", true);
+        assert!(!h.contains("Try again") && !h.contains("pfr"), "{h}");
+        assert!(!h.replace("data-r=\"VISIONOS", "").contains("VISIONOS"), "{h}");
+        assert!(h.contains("<p class=\"pfl\" id=\"ytc-pfl\">This video is for members of &lt;Grey&gt; at the"), "{h}");
+        assert!(h.contains(&format!("<p class=\"pfv\">{v}</p>")), "{h}");
+        let (a, b) = (h.find("Next video").unwrap(), h.find("Open on YouTube").unwrap());
+        assert!(a < b && h.contains("class=\"pfbt on\" data-act=\"pf-next\""), "{h}");
+        let alone = panel("aqz-KE-bpKQ", MEMBERS, 0, "", false);
+        assert!(!alone.contains("Next video") && alone.contains("class=\"pfbt on\" data-act=\"pf-native\""), "{alone}");
+    }
+
+    #[test]
+    fn try_again_only_where_it_can_help() {
+        let up = super::super::own::UPCOMING_REASON;
+        // Verdicts: no Try again, YouTube's words without our prefix, or nothing when the headline said them.
+        for (r, line_is) in [
+            (format!("{up}: Premieres in 2 hours"), ""),
+            (up.to_string(), ""),
+            ("VISIONOS LOGIN_REQUIRED: Sign in to confirm your age".to_string(), "Sign in to confirm your age"),
+            ("VISIONOS LOGIN_REQUIRED: This video is private".to_string(), "This video is private"),
+            ("VISIONOS ERROR: This video has been removed by the uploader".to_string(), ""),
+            ("VISIONOS ERROR: ".to_string(), ""),
+            ("VISIONOS UNPLAYABLE: Forced failure (e2e)".to_string(), "Forced failure (e2e)"),
+            ("VISIONOS CONTENT_CHECK_REQUIRED: x".to_string(), "x"),
+            ("no compatible formats (12 offered: av01 only)".to_string(), ""),
+            ("own player turned off (op: false)".to_string(), ""),
+        ] {
+            assert!(!offers_retry(&r), "{r}");
+            assert_eq!(line(&r, ""), line_is, "{r}");
+            let h = panel("aqz-KE-bpKQ", &r, 0, "", true);
+            assert!(!h.contains("Try again") && !h.contains("class=\"pfr\""), "{h}");
+            assert!(h.contains("Next video") && h.contains("Open on YouTube"), "{h}");
+            assert!(!h.replace(&format!("data-r=\"{}\"", crate::util::esc(&r)), "").contains("VISIONOS"), "{h}");
+        }
+        // Open on YouTube first where YouTube's page may play it.
+        let age = verdict_buttons("VISIONOS LOGIN_REQUIRED: Sign in to confirm your age", true);
+        assert!(age.find("Open on YouTube").unwrap() < age.find("Next video").unwrap() && age.contains("class=\"pfbt on\" data-act=\"pf-native\""), "{age}");
+        // What can change keeps it, with the technical line and the version.
+        for r in [
+            "VISIONOS LOGIN_REQUIRED: Sign in to confirm you’re not a bot · tried: anonymous (bot check), fresh visitor (bot check)",
+            "VISIONOS ERROR: Something went wrong",
+            "VISIONOS ERROR: An error occurred. Please try again later.",
+            "index of itag 243: HTTP 503",
+            "no first frame 30 s after the streams were chosen (fresh URLs)",
+            "VISIONOS player HTTP 500",
+            OFFLINE_REASON,
+        ] {
+            assert!(offers_retry(r), "{r}");
+            let h = panel("aqz-KE-bpKQ", r, 1, "", true);
+            assert!(h.contains("data-act=\"pf-retry\">Try again<") && !h.contains("Next video"), "{h}");
+            assert!(h.contains(&format!("· 1 automatic Try again · {}", env!("CARGO_PKG_VERSION"))), "{h}");
+        }
+        assert!(offers_retry(&format!("{up}: This live event will begin in a few moments.")), "about to begin");
     }
 
     #[test]
@@ -725,13 +920,13 @@ mod tests {
         assert_eq!(diagnostics(1), format!(" · 1 automatic Try again · {v}"));
         assert_eq!(diagnostics(3), format!(" · 3 automatic Try agains · {v}"));
         let reason = "SourceBuffer error (audio/webm; codecs=\"opus\")";
-        let h = panel("aqz-KE-bpKQ", reason, 3);
+        let h = panel("aqz-KE-bpKQ", reason, 3, "", false);
         assert!(h.contains(&format!("<span class=\"pfv\"> · 3 automatic Try agains · {v}</span>")), "{h}");
         // The headline comes from the reason alone, in every class of reason.
         assert!(h.contains("The browser couldn"), "{h}");
         let up = format!("{}: Premieres in 2 hours", super::super::own::UPCOMING_REASON);
-        assert!(panel("aqz-KE-bpKQ", &up, 0).contains("<p class=\"pfm\">Premieres in 2 hours</p>"));
-        assert!(panel("aqz-KE-bpKQ", "VISIONOS ERROR: Gone · x", 0).contains("<p class=\"pfm\">Gone</p>"));
+        assert!(panel("aqz-KE-bpKQ", &up, 0, "", false).contains("<p class=\"pfm\">Premieres in 2 hours</p>"));
+        assert!(panel("aqz-KE-bpKQ", "VISIONOS ERROR: Gone · x", 0, "", false).contains("<p class=\"pfm\">Gone</p>"));
     }
 
     #[test]

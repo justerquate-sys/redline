@@ -147,6 +147,7 @@ impl Fx {
     pub fn new(signed_in: bool) -> Fx {
         features::shared(|s| s.signed_in = signed_in);
         let prefs = Prefs::from_mirror(&bridge::session_get(PREFS_SESSION)).unwrap_or_default();
+        features::members::load(&bridge::session_get(features::members::SESSION_KEY));
         Fx {
             prefs,
             touched: HashSet::new(),
@@ -235,6 +236,7 @@ impl App {
             Route::Home => Surface::Home,
             Route::Search { .. } => Surface::Search,
             Route::Watch { .. } => Surface::Related,
+            Route::Subs => Surface::Subs,
             _ => Surface::Other,
         }
     }
@@ -249,10 +251,12 @@ impl App {
         }
         let prefs = &self.fx.prefs;
         let checker = &self.fx.checker;
+        // A card that turned out to be members-only only when it was clicked goes by the switch too.
+        let hide_learned = !prefs.show_members && surf != Surface::Other;
         features::shared(|s| {
             let rules = &s.rules;
             let blocked = |id: &str| checker.verdict(id, rules) == Some(websites::Verdict::Blocked);
-            items.iter().filter(|it| (!wl || !s.saves.hidden(it.key())) && filters::keep(it, surf, prefs, &blocked)).cloned().collect()
+            items.iter().filter(|it| (!wl || !s.saves.hidden(it.key())) && filters::keep(it, surf, prefs, &blocked) && !(hide_learned && s.members.has(it.key()))).cloned().collect()
         })
     }
 
@@ -343,11 +347,25 @@ impl App {
         if self.fx.nparked && self.route == Route::Home {
             self.fx_chip_reset();
         }
-        if std::mem::take(&mut self.fx.check_bars) && self.feed.shown.iter().any(|i| self.fx.recent.contains(i.key())) {
+        if (std::mem::take(&mut self.fx.check_bars) && self.feed.shown.iter().any(|i| self.fx.recent.contains(i.key()))) || self.fx_members_stale() {
             self.fx_refilter(false);
         }
         self.fx_bar();
         self.fx_queue_checks();
+    }
+
+    /// A page restored from memory was rendered before the player's verdict on one of its cards: it
+    /// needs the label (or, with the switch off, to lose the card).
+    fn fx_members_stale(&self) -> bool {
+        let hide = !self.fx.prefs.show_members && self.fx_surface() != Surface::Other;
+        self.feed.shown.iter().any(|i| {
+            let Item::Video(v) = i else { return false };
+            if v.members || !features::members::has(&v.id) {
+                return false;
+            }
+            let card = format!("#{LIST} .c[data-v=\"{}\"]", v.id);
+            bridge::any(&card) && (hide || !bridge::any(&format!("{card} .mo")))
+        })
     }
 
     pub(super) fn fx_bar(&mut self) {
@@ -708,6 +726,11 @@ impl App {
                 self.fx_set_pref(filters::KEY_SHORTS, false);
                 self.fx_panel_sync(!kbd);
             }
+            "fx-members" => {
+                self.fx.prefs.show_members = !self.fx.prefs.show_members;
+                self.fx_set_pref(filters::KEY_MEMBERS, false);
+                self.fx_panel_sync(!kbd);
+            }
             "fx-pl" => {
                 self.fx.prefs.playlists_only = !self.fx.prefs.playlists_only;
                 self.fx_set_pref(filters::KEY_PLAYLISTS, false);
@@ -834,6 +857,7 @@ impl App {
         bridge::attr(&features::control_id("fx-music", ""), "aria-checked", tf(p.show_music));
         bridge::attr(&features::control_id("fx-live", ""), "aria-checked", tf(p.show_live));
         bridge::attr(&features::control_id("fx-shorts", ""), "aria-checked", tf(p.show_shorts));
+        bridge::attr(&features::control_id("fx-members", ""), "aria-checked", tf(p.show_members));
         bridge::attr(&features::control_id("fx-pl", ""), "aria-checked", tf(p.playlists_only));
         let sum = features::summary(&p, surf);
         bridge::text("ytc-fx-sum", &sum);

@@ -86,6 +86,9 @@ impl Serialize for ItemRecord<'_> {
                     m.serialize_entry("l", &true)?;
                 }
                 nonempty(&mut m, "m", &v.meta)?;
+                if v.members {
+                    m.serialize_entry("mo", &true)?;
+                }
                 if v.progress > 0 {
                     m.serialize_entry("p", &v.progress)?;
                 }
@@ -171,6 +174,7 @@ pub(crate) fn item_from(v: &In) -> Option<Item> {
                 anim: anim_url(so(v, "a")),
                 music: v.get("u").and_then(In::as_bool).unwrap_or(false),
                 short: v.get("r").and_then(In::as_bool).unwrap_or(false),
+                members: v.get("mo").and_then(In::as_bool).unwrap_or(false),
             }))
         }
         "p" => {
@@ -367,7 +371,7 @@ mod tests {
     fn compact_schema_bytes_and_escaping_stay_compatible() {
         let text = "A \"quote\", \\ slash, \n\0東京🦀";
         let items = vec![
-            Item::Video(Video { id: "abcdefghijk".into(), title: text.into(), channel: "Channel".into(), channel_href: Some(String::new()), channel_bid: Some("UCchannel".into()), meta: "1.2M views".into(), duration: "1:23".into(), live: true, progress: 42, thumb: Some("https://i.ytimg.com/one.jpg".into()), thumb2x: Some("https://i.ytimg.com/two.jpg".into()), thumb_w: 360, thumb2x_w: 720, anim: Some(String::new()), music: true, short: true }),
+            Item::Video(Video { id: "abcdefghijk".into(), title: text.into(), channel: "Channel".into(), channel_href: Some(String::new()), channel_bid: Some("UCchannel".into()), meta: "1.2M views".into(), duration: "1:23".into(), live: true, progress: 42, thumb: Some("https://i.ytimg.com/one.jpg".into()), thumb2x: Some("https://i.ytimg.com/two.jpg".into()), thumb_w: 360, thumb2x_w: 720, anim: Some(String::new()), music: true, short: true, members: false }),
             Item::Playlist(PlaylistCard { id: "PLone".into(), title: text.into(), channel: "Channel".into(), channel_href: Some("/@channel".into()), count: "12 videos".into(), thumb: Some("https://i.ytimg.com/list.jpg".into()), first_video: Some("abcdefghijk".into()) }),
             Item::Channel(ChannelCard { href: "/@channel".into(), bid: Some("UCchannel".into()), title: text.into(), meta: "12 videos".into(), avatar: Some("https://yt3.ggpht.com/a.jpg".into()) }),
             Item::Video(Video::default()), Item::Playlist(PlaylistCard::default()), Item::Channel(ChannelCard::default()),
@@ -389,6 +393,18 @@ mod tests {
         }
         let index = vec![text.to_string(), "/results?search_query=x".into()];
         assert_eq!(index_json(&index), json!(index).to_string());
+    }
+
+    #[test]
+    fn the_members_label_survives_a_snapshot() {
+        let on = Item::Video(Video { id: "abcdefghijk".into(), members: true, ..Default::default() });
+        let v: serde_json::Value = serde_json::from_str(&serde_json::to_string(&ItemRecords(std::slice::from_ref(&on))).unwrap()).unwrap();
+        assert_eq!(v[0]["mo"], json!(true));
+        let text = v[0].to_string();
+        let back = crate::json::parse_str(&text).unwrap();
+        assert_eq!(item_from(&back), Some(on), "a snapshot's card stays labelled");
+        let old = crate::json::parse_str(r#"{"i":"abcdefghijk","k":"v"}"#).unwrap();
+        assert!(matches!(item_from(&old), Some(Item::Video(v)) if !v.members), "snapshots from before the label");
     }
 
     #[test]

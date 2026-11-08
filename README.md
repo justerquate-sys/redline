@@ -55,7 +55,7 @@ Measured on real youtube.com, signed out, in November 2026 (medians; methods and
 | **Home exactly as YouTube's** | Your Home is YouTube's own answer, same videos and order, with your own topics next to YouTube's chips. |
 | **Recovers by itself** | A media error or an expired link mid-video is repaired in place, without reloading the page; if that fails, it says why. |
 | **Watch later, newest first** | Your latest saves on top; removing one is instant. |
-| **Filters** | Minimum length, show or hide Music and Live, Home by popularity, playlists only; hide videos that link to websites you block. |
+| **Filters** | Minimum length, show or hide Music, Live and members-only videos, Home by popularity, playlists only; hide videos that link to websites you block. |
 | **Search** | Your recent searches and YouTube's suggestions in one list, YouTube's search filters, results ready as you pause typing. |
 | **Voice search** | Optional, with your own [Deepgram](https://deepgram.com/) key: hover the mic, or hold ⌥ Option / Alt, and speak. |
 | **Keyboard shortcuts** | `?` lists them: `/` search, `g h` Home, `g s` Subscriptions, and more. |
@@ -276,7 +276,7 @@ YouTube's own. A fix comes as a new version here; the TV app picks it up by itse
 <summary><b>What doesn't work yet?</b></summary>
 
 Writing comments and rating them, the subscription bell levels, channel tabs other than Videos, live chat and live
-captions, Shorts-style looping. Age-restricted and members-only videos open on YouTube. Some networks get YouTube's
+captions, Shorts-style looping. Age-restricted and members-only videos need YouTube's own page (labelled on their cards where YouTube says so; the player offers it). Some networks get YouTube's
 "confirm you're not a bot" check; the player then retries and, if all fails, shows the reason. Chromium browsers and
 Google TV / Android TV only for now. More in [docs/architecture.md](docs/architecture.md) ("Known gaps").
 </details>

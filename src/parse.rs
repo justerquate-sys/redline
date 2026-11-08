@@ -36,6 +36,9 @@ pub struct Video {
     /// A Short (reel endpoint, `/shorts/` URL, SHORTS badge or a Shorts
     /// lockup). `duration` then holds the badge text "Shorts".
     pub short: bool,
+    /// YouTube marks it for a channel's members (`members_style`, `members_icon`, `members_label`):
+    /// the card's label, the Members-only switch, and next-video selection skips it.
+    pub members: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -656,6 +659,7 @@ fn video_renderer(x: &Value) -> Res {
     (v.thumb2x, v.thumb2x_w) = t2.map(|(u, w)| (Some(u), w)).unwrap_or_default();
     v.anim = anim_url(st(x, &["richThumbnail", "movingThumbnailRenderer", "movingThumbnailDetails", "thumbnails", "0", "url"]));
     v.music = arr(x, &["badges"]).iter().any(|b| st(b, &["metadataBadgeRenderer", "label"]).is_some_and(music_label));
+    v.members = arr(x, &["badges"]).iter().any(|b| b.get("metadataBadgeRenderer").is_some_and(badge_members));
     if short {
         v.short = true;
         v.live = false;
@@ -776,6 +780,39 @@ fn lockup_music(md: &Value, img: &Value) -> bool {
         })
 }
 
+/// A members badge's enum: `BADGE_STYLE_TYPE_MEMBERS_ONLY` (renderers, TV lines), `BADGE_MEMBERS_ONLY` (view
+/// models). Any other members enum ("Members first", early access, is locked the same way while YouTube sends
+/// it) counts as well: the badge goes when the video turns public.
+fn members_style(s: &str) -> bool {
+    s.contains("MEMBERS")
+}
+
+/// The icon on those badges.
+fn members_icon(s: &str) -> bool {
+    s == "SPONSORSHIP_STAR"
+}
+
+/// The badge's words when it has neither enum: exact labels as YouTube writes them (read from its responses in
+/// these languages, 8 Nov 2026), only ever compared with a badge's own text, never a title.
+pub fn members_label(s: &str) -> bool {
+    matches!(s.trim().to_lowercase().as_str(), "members only" | "members-only" | "members first" | "только для спонсоров" | "nur für kanalmitglieder")
+}
+
+/// `metadataBadgeRenderer` (`videoRenderer` and its kin, a TV tile's line, a playlist panel row).
+pub fn badge_members(b: &Value) -> bool {
+    st(b, &["style"]).is_some_and(members_style) || st(b, &["icon", "iconType"]).is_some_and(members_icon) || st(b, &["label"]).is_some_and(members_label)
+}
+
+/// A lockup's badges: `metadataRows[].badges[].badgeViewModel` (where YouTube sends it) and thumbnail badges.
+fn lockup_members(md: &Value, img: &Value) -> bool {
+    let row = |b: &Value| st(b, &["badgeStyle"]).is_some_and(members_style) || st(b, &["iconName"]).is_some_and(members_icon) || st(b, &["badgeText"]).is_some_and(members_label);
+    let thumb = |b: &Value| st(b, &["badgeStyle"]).is_some_and(members_style) || st(b, &["text"]).is_some_and(members_label);
+    arr(md, &["metadata", "contentMetadataViewModel", "metadataRows"]).iter().flat_map(|r| arr(r, &["badges"]).iter()).any(|b| b.get("badgeViewModel").is_some_and(row))
+        || arr(img, &["overlays"]).iter().any(|o| {
+            arr(o, &["thumbnailBottomOverlayViewModel", "badges"]).iter().chain(arr(o, &["thumbnailOverlayBadgeViewModel", "thumbnailBadges"]).iter()).any(|b| b.get("thumbnailBadgeViewModel").is_some_and(thumb))
+        })
+}
+
 fn lockup(x: &Value, stats: &mut Stats) -> Res {
     let ctype = st(x, &["contentType"]).unwrap_or("");
     let id = st(x, &["contentId"]).unwrap_or("");
@@ -826,7 +863,8 @@ fn lockup(x: &Value, stats: &mut Stats) -> Res {
                 None => (None, None),
             };
             let music = lockup_music(md, img);
-            Res::Item(Item::Video(Video { id: id.into(), title, channel, channel_href, channel_bid, meta: join(&rest), duration, live, progress, thumb, thumb2x, thumb_w, thumb2x_w, anim, music, short }))
+            let members = lockup_members(md, img);
+            Res::Item(Item::Video(Video { id: id.into(), title, channel, channel_href, channel_bid, meta: join(&rest), duration, live, progress, thumb, thumb2x, thumb_w, thumb2x_w, anim, music, short, members }))
         }
         "LOCKUP_CONTENT_TYPE_PLAYLIST" | "LOCKUP_CONTENT_TYPE_PODCAST" | "LOCKUP_CONTENT_TYPE_ALBUM" | "LOCKUP_CONTENT_TYPE_COURSE" => {
             if !is_safe_id(id) {
@@ -918,7 +956,9 @@ fn tile(x: &Value, stats: &mut Stats) -> Res {
                 Some((h, b)) => (Some(h), b),
                 None => (None, None),
             };
-            let music = arr(md, &["lines"]).iter().flat_map(|l| arr(l, &["lineRenderer", "items"]).iter()).any(|it| st(it, &["lineItemRenderer", "badge", "metadataBadgeRenderer", "label"]).is_some_and(music_label));
+            let line_badges = || arr(md, &["lines"]).iter().flat_map(|l| arr(l, &["lineRenderer", "items"]).iter()).filter_map(|it| at(it, &["lineItemRenderer", "badge", "metadataBadgeRenderer"]));
+            let music = line_badges().any(|b| st(b, &["label"]).is_some_and(music_label));
+            let members = line_badges().any(badge_members);
             Res::Item(Item::Video(Video {
                 id: vid.into(),
                 title,
@@ -936,6 +976,7 @@ fn tile(x: &Value, stats: &mut Stats) -> Res {
                 anim: None,
                 music,
                 short: false,
+                members,
             }))
         }
         "TILE_CONTENT_TYPE_PLAYLIST" => {
@@ -1194,6 +1235,11 @@ pub fn next(v: &Value) -> Watch {
         let mut wk = Walker { feed: &mut w.related, seen: HashSet::new(), search: false, item_tp: None, own_tp: None };
         wk.descend(sr);
     }
+    // What next-video selection may fall back on when YouTube's target is locked.
+    w.up.cards = w.related.items.iter().filter_map(|i| match i {
+        Item::Video(c) if !c.short && !c.live => Some(crate::features::upnext::Card { v: c.id.clone(), locked: c.members }),
+        _ => None,
+    }).collect();
     w
 }
 
@@ -1468,6 +1514,71 @@ mod tests {
         let f = continuation(&fixture("next_cont.json"));
         assert!(videos(&f).len() >= 15);
         assert!(f.cont.is_some());
+    }
+
+    #[test]
+    fn members_only_cards_in_every_shape() {
+        // Real signed-out responses (8 Nov 2026), trimmed: a channel's "Members-only videos" playlist on WEB
+        // (lockupViewModel, `metadataRows[].badges[].badgeViewModel`) and on the TV client (tileRenderer,
+        // `lines[].lineItemRenderer.badge.metadataBadgeRenderer`).
+        let f = fixture("members.json");
+        let web = browse(f.get("web_playlist").unwrap());
+        let vs = videos(&web);
+        assert_eq!(vs.len(), 2);
+        assert!(vs.iter().all(|v| v.members), "{vs:?}");
+        assert_eq!((vs[0].id.as_str(), vs[0].duration.as_str(), vs[0].channel.as_str()), ("J3M2L2pLhxA", "3:22", "Grey Wiese"));
+        assert!(!vs[0].meta.contains("Members"), "the badge isn't meta text: {}", vs[0].meta);
+        let tv = browse(f.get("tv_playlist").unwrap());
+        let ts = videos(&tv);
+        assert_eq!(ts.len(), 2);
+        assert!(ts.iter().all(|v| v.members), "{ts:?}");
+        assert_eq!((ts[0].id.as_str(), ts[0].duration.as_str()), ("J3M2L2pLhxA", "3:22"));
+        // Ordinary recordings carry none (a title may say "members"; only a badge counts).
+        for name in ["search.json", "channel_videos.json", "playlist.json", "tv_playlist.json", "tv_shelves.json", "home.json"] {
+            let v = fixture(name);
+            assert!(videos(&browse(&v)).iter().chain(videos(&search(&v)).iter()).all(|x| !x.members), "{name}");
+        }
+
+        // `videoRenderer` and its kin: the enum, the icon alone, the label alone; the words of a title never.
+        let vr = |badges: &str, title: &str| {
+            let text = format!(r#"{{"videoRenderer": {{"videoId": "aaaaaaaaaaa", "title": {{"simpleText": "{title}"}}, "badges": {badges}}}}}"#);
+            let mut feed = Feed::default();
+            walk_into(&mut feed, &crate::json::parse_str(&text).unwrap());
+            videos(&feed)[0].members
+        };
+        assert!(vr(r#"[{"metadataBadgeRenderer": {"style": "BADGE_STYLE_TYPE_MEMBERS_ONLY", "label": "Только для спонсоров"}}]"#, "x"));
+        assert!(vr(r#"[{"metadataBadgeRenderer": {"icon": {"iconType": "SPONSORSHIP_STAR"}, "label": "Какая-то надпись"}}]"#, "x"));
+        assert!(vr(r#"[{"metadataBadgeRenderer": {"label": "Nur für Kanalmitglieder"}}]"#, "x"));
+        assert!(vr(r#"[{"metadataBadgeRenderer": {"style": "BADGE_STYLE_TYPE_MEMBERS_FIRST", "label": "Members first"}}]"#, "x"), "early access, locked while YouTube says so");
+        assert!(!vr("[]", "Members only: a story about members-only videos"));
+        assert!(!vr(r#"[{"metadataBadgeRenderer": {"style": "BADGE_STYLE_TYPE_SIMPLE", "label": "4K"}}]"#, "members only"));
+        assert!(!vr(r#"[{"metadataBadgeRenderer": {"style": "BADGE_STYLE_TYPE_SIMPLE", "label": "Top members of the month"}}]"#, "x"), "another badge's words");
+        // A verified channel's own badge is no members badge (`ownerBadges`, not read).
+        let owner = crate::json::jv!({"videoRenderer": {"videoId": "aaaaaaaaaaa", "ownerBadges": [{"metadataBadgeRenderer": {"style": "BADGE_STYLE_TYPE_VERIFIED", "label": "Members only"}}]}});
+        let mut feed = Feed::default();
+        walk_into(&mut feed, &owner);
+        assert!(!videos(&feed)[0].members);
+
+        // A lockup's title, or a metadata part that says it, doesn't count; a thumbnail badge does.
+        let lk = |row: &str, thumb: &str, title: &str| {
+            let text = format!(r#"{{"lockupViewModel": {{"contentType": "LOCKUP_CONTENT_TYPE_VIDEO", "contentId": "aaaaaaaaaaa",
+                "metadata": {{"lockupMetadataViewModel": {{"title": {{"content": "{title}"}}, "metadata": {{"contentMetadataViewModel": {{"metadataRows": [{row}]}}}}}}}},
+                "contentImage": {{"thumbnailViewModel": {{"overlays": [{{"thumbnailBottomOverlayViewModel": {{"badges": [{{"thumbnailBadgeViewModel": {{"text": "{thumb}"}}}}]}}}}]}}}}}}}}"#);
+            let mut feed = Feed::default();
+            walk_into(&mut feed, &crate::json::parse_str(&text).unwrap());
+            videos(&feed)[0].members
+        };
+        assert!(lk(r#"{"badges": [{"badgeViewModel": {"badgeStyle": "BADGE_MEMBERS_ONLY", "badgeText": "Только для спонсоров"}}]}"#, "3:22", "x"));
+        assert!(lk(r#"{"badges": [{"badgeViewModel": {"iconName": "SPONSORSHIP_STAR"}}]}"#, "3:22", "x"));
+        assert!(lk("{}", "Members only", "x"));
+        assert!(!lk(r#"{"metadataParts": [{"text": {"content": "Members only"}}]}"#, "3:22", "Members only"));
+        assert!(!lk(r#"{"badges": [{"badgeViewModel": {"badgeStyle": "BADGE_COMMERCE", "badgeText": "Fundraiser"}}]}"#, "3:22", "for members"));
+        // Next: a locked target is known from its card.
+        let nx = crate::json::jv!({"contents": {"twoColumnWatchNextResults": {"secondaryResults": {"secondaryResults": {"results": [
+            {"lockupViewModel": {"contentType": "LOCKUP_CONTENT_TYPE_VIDEO", "contentId": "aaaaaaaaaaa", "metadata": {"lockupMetadataViewModel": {"title": {"content": "a"}, "metadata": {"contentMetadataViewModel": {"metadataRows": [{"badges": [{"badgeViewModel": {"badgeStyle": "BADGE_MEMBERS_ONLY"}}]}]}}}}}},
+            {"lockupViewModel": {"contentType": "LOCKUP_CONTENT_TYPE_VIDEO", "contentId": "bbbbbbbbbbb", "metadata": {"lockupMetadataViewModel": {"title": {"content": "b"}}}}}]}}}}});
+        let up = next(&nx).up;
+        assert_eq!(up.cards, vec![crate::features::upnext::Card { v: "aaaaaaaaaaa".into(), locked: true }, crate::features::upnext::Card { v: "bbbbbbbbbbb".into(), locked: false }]);
     }
 
     #[test]

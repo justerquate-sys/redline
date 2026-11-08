@@ -863,7 +863,7 @@ MSE/media error (only after three automatic recoveries within two minutes, at an
 automatic Try agains below, the app shows a **panel
 in the player box** over the dimmed poster (a compact card centred in the box; it settles in: `@starting-style`, no spinner): a one-line
 message, the technical reason in smaller, selectable monospace text, followed by what ran (` · 3 automatic Try agains · 0.14.3`: the client's version
-and the Try agains made without being asked; the public build has no telemetry, so the next screenshot settles which code ran and what it tried), and two buttons. **Try again**
+and the Try agains made without being asked; the public build has no telemetry, so the next screenshot settles which code ran and what it tried), and two buttons. A verdict about the video itself reads differently (below: *Verdicts*). **Try again**
 re-mounts the player for the same video and time with a fresh VISIONOS call (never the cached or a
 prefetched response; it also lifts the bot-check block, so every route is tried again). **Open on
 YouTube** opens YouTube's own watch page at that time (`/watch?v=ID&t=Ns&yt-native=1`); it is the only
@@ -879,7 +879,7 @@ code: 152 - 4". Messages (`fail::message`, unit-tested):
 | upcoming / premiere | YouTube's words, e.g. "Premieres in 2 hours" (else "This live stream hasn't started yet") |
 | `VISIONOS LOGIN_REQUIRED` bot check | "YouTube asks to sign in to confirm you're not a bot" |
 | `VISIONOS LOGIN_REQUIRED` age | "Age-restricted — sign-in needed" (other sign-in reasons: "Sign-in needed to watch this video") |
-| any reason mentioning members | "Members-only video" |
+| a `VISIONOS` reason mentioning members | "Members-only video" |
 | `VISIONOS ERROR` | YouTube's words (e.g. "This video has been removed by the uploader"), else "Video unavailable" |
 | `VISIONOS UNPLAYABLE` | "YouTube won't play this video here" |
 | `VISIONOS CONTENT_CHECK_REQUIRED` | "YouTube asks to confirm before showing this video" |
@@ -889,6 +889,17 @@ code: 152 - 4". Messages (`fail::message`, unit-tested):
 | live playlist / segment errors | "This live stream isn't loading" |
 | own player turned off (`op: false`) | "The client's own player is turned off" |
 | anything else (googlevideo, index, stuck to the end) | "This video isn't loading" |
+
+*Verdicts* (8 Nov 2026, owner on a members-only video: "the window should be better"; `fail::offers_retry`, `fail::line`, `fail::verdict_buttons`).
+What Try again can't change has no such button and no technical line: the headline above, one plain line (YouTube's sentence without our
+`VISIONOS <STATUS>:` prefix; nothing when the headline already said it), the buttons, and a very quiet version under them. **Next video**
+(`upnext::next_pressed`: the next item or YouTube's target, else the first related card, never a locked one; whatever Autoplay says, the press asked for it) comes first and takes the
+focus, unless the viewer is typing somewhere; where YouTube's page knows more than we do (sign-in, age, a content check, no format here, the own player off) **Open on YouTube** does. `next` often
+answers after the player: the panel then gets the channel's name and the button in place (`App::panel_sync`; its card doesn't enter again). The raw reason stays in the debug overlay, the
+reports and incidents, and the panel's `data-r`. Try again stays where it can help: everything that retries, the bot check (it asks every route again), no connection, YouTube's "something went
+wrong"/"try again later", a live event "in a few moments". A premiere hours away has none: the viewer opens it again when it's time.
+Members-only: "This video is for members of <channel> at the <level> level or higher." VISIONOS is always asked in English (`api.rs`), so the sentence is known; the level is the channel's own
+word, whatever its language. No level in the sentence: YouTube's words, but never its "Join this channel…" (owner: "I'd rather not get the wantiness to buy anything").
 
 *The automatic Try again* (8 Nov 2026, owner: "why not make it so that it refreshes by itself"; nobody presses Try again for
 what Try again would fix; `fail::permanent`, `fail::Auto`, `App::after_player`'s `Out::Failed`, the one choke point of every
@@ -1237,12 +1248,12 @@ created. Importing twice is harmless (the second run merges into the same record
 
 Privacy (features): the keys below are the only additional records in `chrome.storage.local`:
 `yourTubeMinimumHomeDurationV1`, `yourTubeHomeOrderV1`, `yourTubeShowMusicV1`, `yourTubeShowLiveV1`,
-`yourTubeHomePlaylistsOnlyV1`, `shortsInFeeds` (the Shorts switch, boolean; the old extension's key for it), `yourTubeHistoryV1` (last 100 searches), `yourTubeProgressV1` (≤ 2,000 resume
+`yourTubeHomePlaylistsOnlyV1`, `shortsInFeeds` (the Shorts switch, boolean; the old extension's key for it), `yourTubeShowMembersV1` (the Members-only switch), `yourTubeHistoryV1` (last 100 searches), `yourTubeProgressV1` (≤ 2,000 resume
 records: id, position, duration, completed, time), `yourTubeBlockedWebsitesV1` (≤ 50 domains),
 `yourTubeRecommendationTopicsV1` (≤ 20 topics), `yourTubeNativeTopicsV1` (order/hide of YouTube's own Home
 chips: `{version:1, topics:[{key, name, hide?}]}`, ≤ 20 records). The Autoplay switch is `ap` in `ytcConfigV1` (written only when
 off). Never stored: descriptions, topic cards, chip/continuation tokens, search-filter params, website verdicts (description *hosts* for ≤ 500 videos are kept in memory only). The filter
-preferences are mirrored in this tab's `sessionStorage` (`ytc:fx`) so a reload filters before storage answers.
+preferences are mirrored in this tab's `sessionStorage` (`ytc:fx`) so a reload filters before storage answers; `ytc:members` (sessionStorage, ≤ 100 video ids) is what the player's verdict said was members-only.
 
 Privacy (voice search): the outside service **Deepgram** receives microphone audio only while a dictation runs (from
 the dwell / key press to the end; never otherwise) plus the user's key in the WebSocket handshake. The key is stored
@@ -1304,11 +1315,25 @@ for the hedge deadline.
   on: Shorts from Home, Search and related become cards with a "Shorts" badge in place of the duration and
   open our normal watch page; they pass the other filters but are kept at any minimum length; other pages never
   show them; hidden Shorts don't count toward preloading or chunks), Music (shows/hides videos YouTube labels "Music"/"Music
-  video"; default hidden), Home only: Relevance/Popularity (sorts everything loaded, on screen and preloaded,
+  video"; default hidden), **Members-only videos** (below), Home only: Relevance/Popularity (sorts everything loaded, on screen and preloaded,
   by view count; unknown counts last; Relevance restores YouTube's order), Live (Home + related; Search keeps
   YouTube's own), Playlists only (with a Show all reset). Everything applies to parsed items at once; no
   request is ever made for a filter. A note says how many loaded cards are hidden. If four chunks in a row
   are hidden entirely, scrolling stops fetching and offers "Load more".
+- **Members-only videos** (8 Nov 2026, owner: "it shouldn't be a thing where you click a video, it looks like a normal video"; `parse.rs`, `features/members.rs`, `upnext.rs`).
+  YouTube's signal, read from real signed-out responses (a channel's `UUMO…` playlist on WEB and TVHTML5, its "Members only" channel chip, 8 Nov 2026): `lockupViewModel`
+  `metadata.contentMetadataViewModel.metadataRows[].badges[].badgeViewModel` (`badgeStyle: BADGE_MEMBERS_ONLY`, `iconName: SPONSORSHIP_STAR`, `badgeText` localized: "Members only", "Только для спонсоров",
+  "Nur für Kanalmitglieder"); `metadataBadgeRenderer` (`style: BADGE_STYLE_TYPE_MEMBERS_ONLY`, `icon.iconType: SPONSORSHIP_STAR`) in `videoRenderer.badges`, a TV `tileRenderer`'s
+  `lines[].lineRenderer.items[].lineItemRenderer.badge` and the watch page's own `videoPrimaryInfoRenderer.badges`. The enum or the icon decide; the words are a fallback, compared whole with a
+  badge's own text only, so a title that says "members" never matches. Any other `…MEMBERS…` enum counts the same, so "Members first" (early access) is locked while YouTube sends it and free once it stops; that
+  badge itself was never seen in the recordings (34 channels scanned). A playlist panel's rows carry no badge: `UUMO…` says it for them. Every video card shows a **Members only** label on the duration's row, at the
+  other end (`features::card_badge`; desktop grid, Search, related, channels, playlists, History, Watch later, the TV's grid and Up next row; a playlist panel's row in its byline).
+  **The switch** (default on: shown and labelled, the owner's public default; `yourTubeShowMembersV1`) off hides them on Home, Subscriptions (`Surface::Subs`: only this switch applies there), Search and next to
+  videos; channels, playlists and History keep them, like every filter's `Surface::Other`. The TV app has no Filters panel: labelled and shown. **Never next**: `upnext::next` skips what's known to be locked whatever the switch says: the next
+  playlist item that isn't, and in place of a locked autoplay target the first related card that isn't (end of video, countdown, prefetch). A viewer who is a member can still click the card: the player decides, and with
+  the usual anonymous route that means the panel with Open on YouTube, where the account is known. **Learning from a click**: YouTube doesn't always say (a card without the signal, a Short): the player's verdict
+  labels the id from then on, by the switch, never next (`features::members`, ≤ 100 ids, this tab's `sessionStorage` `ytc:members`, nothing leaves the device); a page kept in memory gets it when it returns
+  (`fx_members_stale`); a video that plays after all is forgotten at once.
 - **Home topic row** (one row: All · YouTube's own chips · your topics · + Topic). **YouTube's chips** are the
   Home response's feed filter chips (signed in, e.g. Gaming, Podcasts); a click loads that chip's feed through
   the chip's own continuation token (the next chip uses the token from the current response's bar), All

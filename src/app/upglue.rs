@@ -5,7 +5,8 @@
 
 use super::{App, Mode, Timer};
 use crate::bridge;
-use crate::features::upnext::{self, Next};
+use crate::features::{members, upnext::{self, Next}};
+use crate::player::{fail, ui};
 use crate::parse::Watch;
 use crate::render;
 use crate::route::Route;
@@ -41,6 +42,82 @@ impl App {
             self.pl_last = Some((pl.id.clone(), v.to_string()));
         }
         self.up_head();
+        self.panel_sync();
+    }
+
+    // -------------------------------------------- a verdict's panel, what it knows from `next`
+
+    /// The channel the panel names: the page's, else the card's.
+    fn panel_channel(&self, v: &str) -> String {
+        self.cur_watch().map(|w| w.channel.clone()).filter(|c| !c.is_empty()).or_else(|| self.known.get(v).map(|k| k.channel.clone())).unwrap_or_default()
+    }
+
+    fn panel_next(&self) -> Option<Next> {
+        let Route::Watch { v, .. } = &self.route else { return None };
+        upnext::next_pressed(&self.cur_watch()?.up, v)
+    }
+
+    /// The failure panel in the player box.
+    pub(super) fn show_panel(&mut self, v: &str, reason: &str) {
+        let next = self.panel_next().is_some();
+        bridge::html(ui::BOX, &fail::panel(v, reason, self.auto.made(), &self.panel_channel(v), next));
+        bridge::attr(ui::BOX, "class", "player failed");
+        self.panel_shown = Some((reason.to_string(), next));
+        // TV: the panel's first action takes the focus (the controls it replaced had it).
+        self.tv_failed();
+        self.panel_focus();
+    }
+
+    /// A verdict's first action takes the focus unless the viewer is somewhere else (typing a search).
+    fn panel_focus(&self) {
+        let free = !bridge::any(":focus") || bridge::any("body:focus") || bridge::any("#ytc-player :focus");
+        if free && self.panel_shown.as_ref().is_some_and(|p| !fail::offers_retry(&p.0)) {
+            bridge::focus_sel(ui::BOX, ".pfail .pfbt");
+        }
+    }
+
+    /// `next` answered after the player's verdict: the channel's name and the Next video button arrive.
+    fn panel_sync(&mut self) {
+        let Some((reason, had)) = self.panel_shown.clone() else { return };
+        let Route::Watch { v, .. } = self.route.clone() else { return };
+        if fail::offers_retry(&reason) || !bridge::any("#ytc-player .pfail") {
+            return;
+        }
+        if fail::members_only(&reason) {
+            bridge::text(fail::LINE, &fail::line(&reason, &self.panel_channel(&v)));
+        }
+        let next = self.panel_next().is_some();
+        if next != had {
+            bridge::html(fail::BUTTONS, &fail::verdict_buttons(&reason, next));
+            self.panel_shown = Some((reason, next));
+            self.tv_failed();
+            self.panel_focus();
+        }
+    }
+
+    /// The panel's Next video.
+    pub(super) fn panel_go_next(&mut self) -> bool {
+        let Some(n) = self.panel_next() else { return false };
+        self.up_cancel();
+        self.up_open(n);
+        true
+    }
+
+    /// The player's verdict that `v` is for a channel's members, its card perhaps unlabelled: labelled from
+    /// now on, by the switch, and never next.
+    pub(super) fn members_learn(&mut self, v: &str) {
+        members::learn(v);
+        bridge::session_set(members::SESSION_KEY, &members::mirror());
+        if self.feed.shown.iter().any(|i| i.key() == v) {
+            self.fx_refilter(false);
+        }
+    }
+
+    /// It played after all (a member's route, early access gone public).
+    pub(super) fn members_played(&mut self, v: &str) {
+        if members::forget(v) {
+            bridge::session_set(members::SESSION_KEY, &members::mirror());
+        }
     }
 
     fn up_title(&self, v: &str) -> String {

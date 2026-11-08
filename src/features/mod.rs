@@ -5,7 +5,7 @@
 //! file holds the state shared with `render.rs` and the markup of the
 //! filter bar.
 //!
-//! Stored (chrome.storage.local, these keys only): the six filter
+//! Stored (chrome.storage.local, these keys only): the seven filter
 //! preferences (incl. the Shorts switch, `shortsInFeeds`), `yourTubeHistoryV1`, `yourTubeProgressV1`,
 //! `yourTubeBlockedWebsitesV1`, `yourTubeRecommendationTopicsV1`. Never
 //! stored: descriptions, recommendation payloads, continuation tokens,
@@ -16,6 +16,7 @@ pub mod filters;
 pub mod history;
 pub mod home_chips;
 pub mod import;
+pub mod members;
 pub mod progress;
 pub mod search_filters;
 pub mod topics;
@@ -36,6 +37,7 @@ pub struct Shared {
     pub progress: progress::Store,
     pub saves: watch_later::Saves,
     pub rules: websites::Rules,
+    pub members: members::Known,
 }
 
 thread_local! {
@@ -63,6 +65,15 @@ pub fn card_bar(out: &mut String, v: &Video) {
         }
         None if v.progress > 0 => out.push_str(&format!("<i class=\"pg\" style=\"width:{}%\"></i>", v.progress)),
         None => {}
+    }
+}
+
+/// The thumbnail's "Members only" label (the duration's own row, at the other end).
+pub fn card_badge(out: &mut String, v: &Video) {
+    if v.members || members::has(&v.id) {
+        out.push_str("<b class=\"mo\">");
+        out.push_str(members::LABEL);
+        out.push_str("</b>");
     }
 }
 
@@ -283,6 +294,7 @@ pub fn panel(p: &Prefs, surf: Surface, server: Option<(&str, &search_filters::Vi
     out.push_str("<div class=\"fx-row\">");
     switch(&mut out, "fx-shorts", "Shorts", p.show_shorts, "Show Shorts on Home, in search results and next to videos");
     switch(&mut out, "fx-music", "Music", p.show_music, "Show videos YouTube labels Music");
+    switch(&mut out, "fx-members", "Members-only videos", p.show_members, "Show videos for a channel's members, labelled");
     if surf == Surface::Home {
         switch(&mut out, "fx-live", "Live", p.show_live, "Show live streams on Home and next to videos");
         switch(&mut out, "fx-pl", "Playlists only", p.playlists_only, "Show only playlists from the loaded Home feed");
