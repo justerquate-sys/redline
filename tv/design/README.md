@@ -12,7 +12,7 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
 |---|---|---|
 | Root size | `font-size: 100vw / 80` | 1 rem = 12 CSS px on a 960×540 WebView (DPR 2), 24 px at 1920×1080, 48 px at 3840×2160: one layout at every resolution |
 | Safe area | `--sx: 2rem`, `--sy: 1.575rem` | 2.5 % left and right (48 px at 1080p), 3.5 % top and bottom (38 px): current Google TV sets do not overscan. Content and focus rings stay inside; backgrounds and pictures may bleed |
-| Ring | `--ring: .1875rem` (4.5 px at 1080p), offset `.1875rem` | white `#f1f1f1` (the accent `--ac`), the only focus ring; inside the box where the box itself sits on the safe edge (rail tiles, menu rows, the search query) |
+| Ring | `--ring: calc(1rem / 6)` (4 px at 1080p; 2 CSS px = 4 device px on the 960×540 WebView: outlines snap to whole device pixels), offset `.1875rem` | white `#f1f1f1` (the accent `--ac`), the only focus ring; inside the box where the box itself sits on the safe edge (rail tiles, menu rows, the search query) |
 | Focus | Steady white frame, no scale | Focus, rail expansion, panels and key feedback are immediate; the focused surface steps to `#272727` (chips: `#3f3f3f`) |
 | Colours | bg `#0f0f0f`, panels `#181818` / `#212121`, surface `#272727`, raised `#3f3f3f`, selected `#303030`, accent white `#f1f1f1`, brand and progress red `#ff0033`, text `#f1f1f1`, secondary `#aaa` | the one palette, the same as the desktop's |
 | Type (1080p px) | page headings 33 (`1.375rem`), player title 33, card titles and panel text 22.5 (`.9375rem`), rail labels and buttons 21–22.5 (`.875–.9375rem`), secondary 19.5 (`.8125rem`), never below 18 (`.75rem`: duration badges, the failure reason); captions 43.5 (`1.8125rem`) | card titles 2 lines, ellipsis; the e2e audit fails any text under 17 px at 1080p |
@@ -39,8 +39,8 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
   query on top (↑ reaches it). Edit opens the keyboard again; a physical keyboard can also type. Search opens
   above the playing video and its drawers too, then returns to the originating focus when closed.
 - **Player**: full screen at once. The overlay (any key; hidden 4 s after the last one while playing): title
-  1.375 rem (33 px) and channel (22.5 px, the name across the row's width, never cut while it fits) top-left over a
-  scrim, on the same left edge (2.5 rem) as the time row (elapsed · chapter · remaining, 19.5 px), the bar (4 px, 6 px
+  1.375 rem (33 px) and channel (22.5 px white, the name across the row's width, never cut while it fits) top-left over
+  a scrim at least .82 opaque down past the channel row (10:1 over a white frame, measured), on the same left edge (2.5 rem) as the time row (elapsed · chapter · remaining, 19.5 px), the bar (4 px, 6 px
   focused, chapter gaps, an 18 px knob) and the 2.5 rem (60 px) round buttons with 28.5 px icons (play/pause,
   captions, speed, quality, like, Watch later, comments, more info; the speed and quality pills as tall). The focused
   action has a visible 19.5 px label below it. ←/→ on the bar scrub 10 s per press (30, 60, 120 s while held)

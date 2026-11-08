@@ -7636,6 +7636,27 @@ chrome.runtime.onMessage.addListener(m => {
     if (was && was.focus) was.focus({ preventScroll: true });
     return bad;
   });
+  // The pixels of a screen region (CSS px, DPR 1): relative luminance and the RGB of each, read from a screenshot.
+  const tvPixels = async (tv, r) => {
+    const clip = { x: Math.floor(r.x), y: Math.floor(r.y), width: Math.ceil(r.w), height: Math.ceil(r.h) };
+    const png = (await tv.screenshot({ clip, animations: 'disabled' })).toString('base64');
+    return tv.evaluate(async b64 => {
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const img = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+      const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
+      const g = cv.getContext('2d'); g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, img.width, img.height).data, lin = v => (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4, lum = [];
+      for (let i = 0; i < d.length; i += 4) lum.push(0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2]));
+      return { w: img.width, h: img.height, lum };
+    }, png);
+  };
+  // The centre of the bright marks in a region (luminance above the region's median, weighted by how far above).
+  const brightCentre = px => {
+    const bg = [...px.lum].sort((a, b) => a - b)[px.lum.length >> 1];
+    let sx = 0, sy = 0, sw = 0;
+    px.lum.forEach((l, i) => { const wgt = Math.max(0, l - bg - 0.1); sx += wgt * (i % px.w + 0.5); sy += wgt * (Math.floor(i / px.w) + 0.5); sw += wgt; });
+    return sw ? [sx / sw, sy / sw] : null;
+  };
   const focusedInfo = tv => tv.evaluate(() => { const a = document.activeElement, r = a.getBoundingClientRect(); return { tag: a.tagName, id: a.id, cls: String(a.className), href: a.getAttribute('href'), nav: a.dataset.nav || '', x: r.left, y: r.top, w: r.width, h: r.height }; });
   // The 10-foot audit of what is on screen now (the TV rules, measured): 1. the focused stop exists, is shown and,
   // with its ring and its scale, lies inside the safe area (2.5 % left and right, 3.5 % top and bottom) and no
@@ -7778,7 +7799,7 @@ chrome.runtime.onMessage.addListener(m => {
         await tvShot(tv, 'rail-open');
         assert.deepEqual(await tvAudit(tv, `rail open ${W}`), []);
         const railW = await tv.evaluate(() => document.querySelector('#ytc-side .rl[data-nav=subs]').getBoundingClientRect().width);
-        assert.ok(railW > W * 0.1, `the open rail shows the labels (${railW})`);
+        assert.ok(Math.abs(railW - 252 * H / 1080) <= 1, `the open rail shows the labels: items 252 px wide at 1080p (${railW})`);
         const gridX = await tv.evaluate(() => document.querySelector('.tvcd').getBoundingClientRect().left);
         assert.deepEqual(await back(tv), { handled: false, exit: true }, 'Back on the rail at Home leaves the app');
         // → from the rail returns to where the focus was in the content.
@@ -7806,13 +7827,13 @@ chrome.runtime.onMessage.addListener(m => {
           return { tiles, logoX: (logo.left + logo.right) / 2, logoY: (logo.top + logo.bottom) / 2, chipY: (chips.top + chips.bottom) / 2 };
         });
         const k = H / 1080;
-        assert.ok(rail.tiles.every(t => t.l <= 50 * k && t.l >= 40 * k && t.w >= 56 * k && t.w <= 64 * k && Math.abs(t.w - t.h) < 1 && t.iw >= 27 * k && t.iw <= 31 * k), `rail tiles at the left edge: ${JSON.stringify(rail.tiles)}`);
+        assert.ok(rail.tiles.every(t => Math.abs(t.l - 48 * k) <= 1 && Math.abs(t.w - 60 * k) <= 1 && Math.abs(t.w - t.h) < 1 && Math.abs(t.iw - 30 * k) <= 1), `rail tiles on the safe edge (48 px at 1080p), 60 px with 30 px icons, ±1 px: ${JSON.stringify(rail.tiles)}`);
         assert.ok(rail.tiles.every(t => Math.abs(t.dx) <= k && Math.abs(t.dy) <= k), `rail icons centred: ${JSON.stringify(rail.tiles)}`);
         const tileX = rail.tiles[0].l + rail.tiles[0].w / 2;
         assert.ok(Math.abs(rail.logoX - tileX) <= k && Math.abs(rail.logoY - rail.chipY) <= k, `the logo over the icons, on the chips' row: ${JSON.stringify([rail.logoX, tileX, rail.logoY, rail.chipY])}`);
         // The content starts right after the rail (130–140 px at 1080p) and the cards keep a readable scale.
         const cards = await tv.evaluate(() => { const c = document.querySelector('#ytc-list .c'), t = c.querySelector('.t'), m = c.querySelector('.m'), b = c.querySelector('.th b'); return { l: c.getBoundingClientRect().left, w: c.getBoundingClientRect().width, t: parseFloat(getComputedStyle(t).fontSize), m: parseFloat(getComputedStyle(m).fontSize), b: b ? parseFloat(getComputedStyle(b).fontSize) : 99 }; });
-        assert.ok(cards.l >= 130 * k && cards.l <= 140 * k && cards.t >= 22 * k && cards.t <= 24 * k && cards.m >= 19 * k && cards.m <= 20 * k && cards.b >= 17 * k, `cards: ${JSON.stringify(cards)}`);
+        assert.ok(Math.abs(cards.l - 138 * k) <= 1 && cards.t >= 22 * k && cards.t <= 24 * k && cards.m >= 19 * k && cards.m <= 20 * k && cards.b >= 17 * k, `cards: ${JSON.stringify(cards)}`);
         await tv.evaluate(() => document.activeElement.blur());
         await tv.waitForTimeout(400);
         geo[W] = await tvGeometry(tv, '#ytc-side .rl,.rmk .lmk,#ytc-list .c:nth-child(-n+8),#ytc-list .c:nth-child(-n+8) .th'); // (text-sized boxes like chips follow the font's own metrics)
@@ -8331,6 +8352,19 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
         assert.ok(lay.btns.every(b => Math.abs(b.h - lay.play.h) < 1 && b.w <= H * 160 / 1080), `every action as tall as the round ones: ${JSON.stringify(lay.btns)}`);
         // The title overlay: about 32 px, the channel about 22 px and never cut while it fits ("Blende" for "Blender").
         assert.ok(lay.titleFs <= H * 34 / 1080 && lay.titleFs >= H * 30 / 1080, `the title at about 32 px (${lay.titleFs})`);
+        // The channel name stays readable over a white frame (the worst picture): ≥ 4.5:1 between its glyphs and the
+        // scrim-covered picture right of it, measured on the screenshot's pixels.
+        {
+          await tv.evaluate(() => { document.querySelector('#ytc-player video').style.visibility = 'hidden'; document.getElementById('ytc-player').style.background = '#fff'; });
+          await tv.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+          assert.ok(await tv.evaluate(() => !document.getElementById('ytc-player').classList.contains('idle')), 'the overlay is still shown');
+          const t = await tv.evaluate(() => { const rg = document.createRange(); rg.selectNodeContents(document.querySelector('#ytc-info .wc')); const q = rg.getBoundingClientRect(); return { x: q.left, y: q.top, w: q.width, h: q.height }; });
+          const k = H / 1080, text = await tvPixels(tv, t), bg = await tvPixels(tv, { x: t.x + t.w + 12 * k, y: t.y, w: 40 * k, h: t.h });
+          const ratio = (Math.max(...text.lum) + 0.05) / (Math.max(...bg.lum) + 0.05);
+          await tv.evaluate(() => { document.querySelector('#ytc-player video').style.visibility = ''; document.getElementById('ytc-player').style.background = ''; });
+          console.log(`     (channel name over a white frame at ${W}: ${ratio.toFixed(2)}:1)`);
+          assert.ok(ratio >= 4.5, `the channel name at ${ratio.toFixed(2)}:1 over a white frame`);
+        }
         for (const name of ['Blender', 'MonkevDev', 'Blender Foundation']) {
           const c = await tv.evaluate(async n => { const c = document.querySelector('#ytc-info .wc'), was = c.textContent; c.textContent = n; await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); const s = getComputedStyle(c), rg = document.createRange(); rg.selectNodeContents(c); const out = { tw: rg.getBoundingClientRect().width, sw: c.scrollWidth, cw: c.clientWidth, sh: c.scrollHeight, ch: c.clientHeight, fs: parseFloat(s.fontSize), lh: parseFloat(s.lineHeight) }; c.textContent = was; return out; }, name);
           assert.ok(c.sw <= c.cw && c.sh <= c.ch && c.lh >= c.fs && c.cw > c.tw + H * 0.1, `the channel name ${name} shown whole: ${JSON.stringify(c)}`);
@@ -8371,6 +8405,14 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
           if (b === '#ytc-qual') assert.ok(await tv.evaluate(() => document.activeElement.matches('.mql button.on')), 'the current quality is focused');
           assert.deepEqual(await tvAudit(tv, `menu ${b} ${W}`), []);
           await tvShot(tv, `player-menu-${b.slice(5)}`);
+          // The playing rung's dot and the chosen value's check share a centre (±1 px).
+          if (b === '#ytc-qual') {
+            const rows = await tv.evaluate(() => ['.mql button.cur:not(.on)', '.mql button.on'].map(sel => { const e = document.querySelector('#ytc-menu ' + sel); if (!e) return null; const q = e.getBoundingClientRect(), s = getComputedStyle(e), pad = parseFloat(s.paddingRight), ring = parseFloat(getComputedStyle(document.documentElement).fontSize) / 6; return { x: q.right - pad - 1.75 * parseFloat(getComputedStyle(document.documentElement).fontSize), y: q.top + ring + 2, w: 1.75 * parseFloat(getComputedStyle(document.documentElement).fontSize) + 2, h: q.height - 2 * ring - 4, top: q.top, right: q.right }; }));
+            assert.ok(rows[0] && rows[1], 'the quality menu has a playing rung and a chosen value: ' + JSON.stringify(rows));
+            const [dot, check] = await Promise.all(rows.map(async r => { const c = brightCentre(await tvPixels(tv, r)); return c && [Math.floor(r.x) + c[0] - r.right, Math.floor(r.y) + c[1] - r.top]; }));
+            console.log(`     (menu marks at ${W}: dot ${dot && dot.map(v => v.toFixed(2))}, check ${check && check.map(v => v.toFixed(2))} from their rows' right/top)`);
+            assert.ok(dot && check && Math.abs(dot[0] - check[0]) <= 1 && Math.abs(dot[1] - check[1]) <= 1, `dot and check on one centre: ${JSON.stringify([dot, check])}`);
+          }
           await tv.keyboard.press('ArrowDown');
           assert.ok(await tv.evaluate(() => !!document.activeElement.closest('#ytc-menu')), 'the remote walks the menu');
           assert.deepEqual(await back(tv), { handled: true, exit: false });

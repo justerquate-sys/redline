@@ -376,6 +376,12 @@ pub fn page_cols(w: f64, tv: bool) -> usize {
     if tv { TV_COLS } else { grid_cols(w) }
 }
 
+/// Cards per DOM write on a fixed grid of `cols`: `chunk`, plus what completes the last row once `shown` cards
+/// are on the page (TV: a batch never leaves a ragged row while the next one is on its way).
+pub fn row_chunk(shown: usize, cols: usize, chunk: usize) -> usize {
+    if cols == 0 { chunk } else { chunk + (cols - (shown + chunk) % cols) % cols }
+}
+
 fn img_tail(out: &mut String, eager: bool, high: bool) {
     out.push_str(" alt=\"\"");
     if !eager {
@@ -1274,5 +1280,8 @@ mod tests {
         // TV: five cards per row on a 960 CSS px WebView as on a 1920 one (the desktop would give 3 and 5).
         assert_eq!((page_cols(960.0, true), page_cols(1920.0, true), page_cols(960.0, false)), (5, 5, 3));
         assert_eq!(ImgPlan::first(Lay::Grid, page_cols(960.0, true)).high, 5);
+        // A batch of 24 after 20 / 23 / 25 cards on a five-column grid: 25 / 27 / 25, every row full.
+        assert_eq!([20, 23, 25].map(|n| row_chunk(n, TV_COLS, 24)), [25, 27, 25]);
+        assert!((0..40).all(|n| (n + row_chunk(n, TV_COLS, 24)) % TV_COLS == 0));
     }
 }

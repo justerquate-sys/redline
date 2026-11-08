@@ -2207,11 +2207,13 @@ impl App {
 
     /// Moves up to CHUNK buffered items into the DOM (one write).
     fn render_chunk(&mut self) {
-        // CHUNK counted cards (hidden Shorts ride along without taking a slot).
+        // CHUNK counted cards (hidden Shorts ride along without taking a slot); on TV as many more as complete the
+        // grid's last row (`render::row_chunk`; the buffer and continuation thresholds still count in CHUNKs).
         let hide_shorts = self.counted(&self.feed.buf) != self.feed.buf.len();
+        let want = if crate::tv::on() { render::row_chunk(self.counted(&self.feed.shown), render::TV_COLS, CHUNK) } else { CHUNK };
         let (mut n, mut counted) = (0, 0);
         for it in &self.feed.buf {
-            if counted == CHUNK {
+            if counted == want {
                 break;
             }
             n += 1;

@@ -1115,7 +1115,7 @@ details.pl:not([open]) summary::after{transform:translateY(2px) rotate(-135deg)}
    and bottom: --sx × --sy; current Google TV sets do not overscan); backgrounds and pictures may bleed. One focus style everywhere: a steady white frame (the accent) and a raised neutral surface. Remote focus, panels and
    scrolling are immediate. Video carries the colour; chrome never grows or shifts under the remote. No pointer: no hover affordances, no hover-only controls. */
 @property --sr{syntax:"<length>";inherits:false;initial-value:0px}
-html[data-ytc-tv]{font-size:calc(100vw / 80);--sx:2rem;--sy:1.575rem;--ring:.1875rem;--tvrow:2.875rem;scroll-padding:5rem 0 var(--sy);overflow-x:clip}
+html[data-ytc-tv]{font-size:calc(100vw / 80);--sx:2rem;--sy:1.575rem;--ring:calc(1rem / 6);--tvrow:2.875rem;scroll-padding:5rem 0 var(--sy);overflow-x:clip}
 html[data-ytc-tv] #ytc{--sw:0px;font-size:.875rem;line-height:1.35;--tvf:Roboto,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-family:var(--tvf);--e-out:cubic-bezier(.22,1,.36,1);--mv:0;--d-press:0ms;--d-hover:0ms;--d-pop:0ms;--d-pop-out:0ms;--d-panel:0ms;--d-page:0ms;--d-spring:0ms;--d-spring-soft:0ms;--d-spring-pop:0ms}
 html[data-ytc-tv] #ytc :focus-visible{animation:none}
 html[data-ytc-tv] #ytc :focus{outline:none}
@@ -1272,13 +1272,15 @@ html[data-ytc-tv] .player video{object-fit:contain}
 html[data-ytc-tv] .player .pov{cursor:default}
 /* The top: title and channel over a scrim. */
 html[data-ytc-tv] #ytc-info{position:fixed;z-index:11;left:2.5rem;top:var(--sy);width:46rem;padding:0;pointer-events:none;transition:none;}
-html[data-ytc-tv] .watch .wp::before{content:"";position:fixed;z-index:11;left:0;right:0;top:0;height:10rem;background:linear-gradient(rgba(15,15,15,.85),rgba(15,15,15,.6) 50%,rgba(15,15,15,0));pointer-events:none;transition:none;}
+/* (The top scrim stays at least .82 opaque down past the channel row of a two-line title, then fades out: white text
+   keeps 4.5:1 and more over a white frame.) */
+html[data-ytc-tv] .watch .wp::before{content:"";position:fixed;z-index:11;left:0;right:0;top:0;height:12rem;background:linear-gradient(rgba(15,15,15,.9),rgba(15,15,15,.82) 60%,rgba(15,15,15,0));pointer-events:none;transition:none;}
 html[data-ytc-tv] .wp:has(#ytc-player.idle)::before,html[data-ytc-tv] .wp:has(#ytc-player.menu)::before,html[data-ytc-tv] #ytc-player.idle~#ytc-info,html[data-ytc-tv] #ytc-player.menu~#ytc-info,html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on) #ytc-info,html[data-ytc-tv] .wp:has(.pfail)::before,html[data-ytc-tv] #ytc-player:has(.pfail)~#ytc-info{opacity:0;transition:none;}
 html[data-ytc-tv] #ytc .wt{margin:0;font-size:1.375rem;line-height:1.75rem;font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 html[data-ytc-tv] #ytc-info .wo{display:flex;flex-wrap:nowrap;align-items:center;gap:.5rem;margin-top:.5rem;min-height:1.25rem}
 html[data-ytc-tv] #ytc-info .wo .av{width:1.25rem;height:1.25rem;border-radius:50%}
 html[data-ytc-tv] #ytc-info .wn{flex:1 1 auto;min-width:0;max-width:none}
-html[data-ytc-tv] #ytc-info .wc{font-size:.9375rem;line-height:1.25rem;font-weight:500;color:var(--mu)}
+html[data-ytc-tv] #ytc-info .wc{font-size:.9375rem;line-height:1.25rem;font-weight:500;color:var(--tx)}
 html[data-ytc-tv] #ytc-info :is(.wn .m,.wsub,.wa,.desc,.ych){display:none}
 /* The bottom: time row, the thick seek bar, the round buttons. */
 html[data-ytc-tv] .pctl{z-index:12;padding:4.5rem 2.5rem 3.25rem;background:linear-gradient(rgba(15,15,15,0),rgba(15,15,15,.9) 70%);transition:none;}
@@ -1361,9 +1363,10 @@ html[data-ytc-tv] #ytc .pmenu[data-m=cc] .pmi::before{content:"Captions and audi
 html[data-ytc-tv] #ytc .pmenu[data-m=sb] .pmi::before{content:"Segment skipping"}
 html[data-ytc-tv] #ytc .pmenu button{min-height:2.375rem;padding:0 .75rem;border-radius:.5rem;font-size:.9375rem;transform:none;text-align:left}
 html[data-ytc-tv] #ytc .pmenu :is(.mpre,.mql,.mls) button{display:flex;align-items:center;justify-content:space-between}
-/* (The playing rung's dot sits on the check mark's column.) */
-html[data-ytc-tv] #ytc .pmenu :is(.mpre,.mql,.mls) button.cur::after{flex:none;width:.3125rem;height:.3125rem;margin:0 .71875rem 0 0}
-html[data-ytc-tv] #ytc .pmenu :is(.mpre,.mql,.mls) button.on::after{content:"";width:.875rem;height:.4375rem;margin:-.25rem .125rem 0 0;border:solid currentColor;border-width:0 0 .1458rem .1458rem;rotate:-45deg;background:none;border-radius:0}
+/* The chosen value's check and the playing rung's dot: one fixed box, each mark centred in it by its mask, so they share
+   a centre at every pixel density. */
+html[data-ytc-tv] #ytc .pmenu :is(.mpre,.mql,.mls) button:is(.on,.cur)::after{content:"";display:block;flex:none;position:static;width:1rem;height:1rem;margin:0 .125rem 0 0;padding:0;border:0;border-radius:0;rotate:none;background:currentColor;-webkit-mask:radial-gradient(circle,#000 0 .15625rem,transparent calc(.15625rem + .5px)) center/100% 100% no-repeat;mask:radial-gradient(circle,#000 0 .15625rem,transparent calc(.15625rem + .5px)) center/100% 100% no-repeat}
+html[data-ytc-tv] #ytc .pmenu :is(.mpre,.mql,.mls) button.on::after{-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4.5 11.4l5 5 10-10.5' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4.5 11.4l5 5 10-10.5' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
 html[data-ytc-tv] #ytc .pmenu button.on{background:none;color:var(--ac);font-weight:600}
 html[data-ytc-tv] #ytc .pmenu button:focus{background:var(--cb);outline:var(--ring) solid var(--ac);outline-offset:calc(-1 * var(--ring))}
 html[data-ytc-tv] #ytc .pmenu .pmk{display:none}
