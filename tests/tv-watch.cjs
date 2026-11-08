@@ -26,7 +26,7 @@ module.exports = async function tvWatchTests({ step, tvOpen, tvClose, tvGo, tvAu
       const el = document.querySelector(s), r = el.getBoundingClientRect();
       return { right: r.right, top: r.top, bottom: r.bottom, width: r.width, W: innerWidth, H: innerHeight, inside: el.contains(document.activeElement), modal: el.getAttribute('aria-modal') };
     }, selector);
-    assert.ok(state.inside && state.modal === 'true' && state.right === state.W && state.top === 0 && state.bottom === state.H && state.width >= state.W * .4, JSON.stringify(state));
+    assert.ok(state.inside && state.modal === 'true' && state.right === state.W && state.top === 0 && state.bottom === state.H && state.width >= state.W * .3 && state.width <= state.W * .37, JSON.stringify(state));
   };
 
   await step('TV comments: explicitly opened by remote, no playback requests, replies/sort/paging, close and reopen preserve state, Back restores focus (960×540 and 1920×1080)', async () => {

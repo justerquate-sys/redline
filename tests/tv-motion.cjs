@@ -17,6 +17,8 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, TVSIZES }) => {
             const r = card.getBoundingClientRect();
             return [r.x, r.y, r.width, r.height];
           });
+          // (After the first rendered frame: until then a card in view still has its content-visibility placeholder size.)
+          await tv.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
           const before = await box();
           await tv.keyboard.press('ArrowRight');
           assert.ok(await tv.evaluate(() => document.activeElement.matches('#ytc-list .c:nth-child(2) a.t')), 'Right focuses the next card');

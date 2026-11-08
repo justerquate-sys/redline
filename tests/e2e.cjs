@@ -7621,17 +7621,32 @@ chrome.runtime.onMessage.addListener(m => {
     const vp = tv.viewportSize();
     await tv.screenshot({ path: path.join(tvShots, `${name}-${vp.width}.png`) });
   };
+  // Five cards per row; the fifth card focused keeps its ring inside the safe area (2.5 % on the right). Returns the
+  // problems (none: []); the focus comes back to where it was.
+  const tvRowEnd = tv => tv.evaluate(() => {
+    const was = document.activeElement, cards = [...document.querySelectorAll('#ytc-list .c')].filter(c => c.querySelector('a.t'));
+    const row = cards.filter(c => c.offsetTop === cards[0].offsetTop), bad = [];
+    if (row.length !== 5) bad.push(`${row.length} cards on the first row`);
+    const last = row[row.length - 1];
+    last.querySelector('a.t').focus({ preventScroll: true });
+    const r = last.getBoundingClientRect(), th = getComputedStyle(last.querySelector('.th'));
+    const ring = parseFloat(th.outlineWidth) + parseFloat(th.outlineOffset);
+    if (th.outlineColor === 'rgba(0, 0, 0, 0)' || th.outlineStyle === 'none') bad.push('no ring on the fifth card');
+    if (r.right + ring > innerWidth * 0.975 + 1) bad.push(`the fifth card's ring ends at ${r.right + ring} > ${innerWidth * 0.975}`);
+    if (was && was.focus) was.focus({ preventScroll: true });
+    return bad;
+  });
   const focusedInfo = tv => tv.evaluate(() => { const a = document.activeElement, r = a.getBoundingClientRect(); return { tag: a.tagName, id: a.id, cls: String(a.className), href: a.getAttribute('href'), nav: a.dataset.nav || '', x: r.left, y: r.top, w: r.width, h: r.height }; });
   // The 10-foot audit of what is on screen now (the TV rules, measured): 1. the focused stop exists, is shown and,
-  // with its ring and its scale, lies inside the overscan-safe area (5 % per side) and no ancestor clips it;
-  // 2. every focus stop fixed to the screen (rail, overlay, panels) lies in the safe area; 3. every text shown on
-  // screen is at least 22 px at 1080p (11 CSS px at 540); 4. the root font-size is 1/60 of the width.
+  // with its ring and its scale, lies inside the safe area (2.5 % left and right, 3.5 % top and bottom) and no
+  // ancestor clips it; 2. every focus stop fixed to the screen (rail, overlay, panels) lies in the safe area; 3. every
+  // text shown on screen is at least 17 px at 1080p (8.5 CSS px at 540); 4. the root font-size is 1/80 of the width.
   const tvAudit = (tv, what) => tv.evaluate(what => {
-    const W = innerWidth, H = innerHeight, sx = W * 0.05, sy = H * 0.05, e = 1, bad = [];
+    const W = innerWidth, H = innerHeight, sx = W * 0.025, sy = H * 0.035, e = 1, bad = [];
     const px = v => Math.round(v);
     const shown = el => el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && el.getClientRects().length > 0;
     const inSafe = (r, ext) => r.left - ext >= sx - e && r.top - ext >= sy - e && r.right + ext <= W - sx + e && r.bottom + ext <= H - sy + e;
-    if (Math.abs(parseFloat(getComputedStyle(document.documentElement).fontSize) - W / 60) > 0.05) bad.push('root font-size is not 100vw/60');
+    if (Math.abs(parseFloat(getComputedStyle(document.documentElement).fontSize) - W / 80) > 0.05) bad.push('root font-size is not 100vw/80');
     const a = document.activeElement;
     if (!a || a === document.body || !shown(a)) bad.push(`no focus shown (${a && a.tagName}#${a && a.id})`);
     else if (a.id === 'ytc-main') {
@@ -7674,7 +7689,7 @@ chrome.runtime.onMessage.addListener(m => {
       if (r.right < 0 || r.left > W || r.bottom < 0 || r.top > H) continue;
       if (!inSafe(r, 0)) bad.push(`fixed stop ${el.tagName}.${el.className}#${el.id} ${[r.left, r.top, r.right, r.bottom].map(px)} outside the safe area`);
     }
-    const min = 22 * H / 1080 - 0.01;
+    const min = 17 * H / 1080 - 0.01;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const p = n.parentElement;
@@ -7728,7 +7743,7 @@ chrome.runtime.onMessage.addListener(m => {
   await require('./tv-keyboard.cjs')(tvChecks);
   await require('./tv-watch.cjs')(tvChecks);
   await require('./tv-motion.cjs')(tvChecks);
-  await step('TV browsing (960×540 and 1920×1080): rail, Home signed out and in, topic chips, the grid walk with its fixed row, Search screen and results, channel, playlist, a failed page; every screen inside the safe area, ≥ 22 px type, rings never clipped, no dead ends, Back rules', async () => {
+  await step('TV browsing (960×540 and 1920×1080): rail, Home signed out and in, topic chips, the grid walk with its fixed row, Search screen and results, channel, playlist, a failed page; every screen inside the safe area, ≥ 17 px type, rings never clipped, no dead ends, Back rules', async () => {
     const tv = await tvOpen();
     const geo = {};
     try {
@@ -7763,7 +7778,7 @@ chrome.runtime.onMessage.addListener(m => {
         await tvShot(tv, 'rail-open');
         assert.deepEqual(await tvAudit(tv, `rail open ${W}`), []);
         const railW = await tv.evaluate(() => document.querySelector('#ytc-side .rl[data-nav=subs]').getBoundingClientRect().width);
-        assert.ok(railW > W * 0.15, `the open rail shows the labels (${railW})`);
+        assert.ok(railW > W * 0.1, `the open rail shows the labels (${railW})`);
         const gridX = await tv.evaluate(() => document.querySelector('.tvcd').getBoundingClientRect().left);
         assert.deepEqual(await back(tv), { handled: false, exit: true }, 'Back on the rail at Home leaves the app');
         // → from the rail returns to where the focus was in the content.
@@ -7771,7 +7786,7 @@ chrome.runtime.onMessage.addListener(m => {
         assert.ok(await tv.evaluate(() => document.activeElement.matches('.tvpc .tvb')), '→ leaves the rail back to the content');
         assert.equal(await tv.evaluate(() => document.querySelector('.tvcd').getBoundingClientRect().left), gridX, 'the content never moved under the rail');
 
-        // Signed in: Home's feed with YouTube's chips, four cards per row.
+        // Signed in: Home's feed with YouTube's chips, five cards per row.
         HOME.rich = true; FX.homeChips = true;
         await tvGo(tv, 'signed', 'https://www.youtube.com/');
         await tv.waitForSelector('#ytc-list .c a.t');
@@ -7780,7 +7795,24 @@ chrome.runtime.onMessage.addListener(m => {
         await tv.waitForTimeout(300);
         await tvShot(tv, 'home');
         const cols = await tv.evaluate(() => { const xs = [...document.querySelectorAll('#ytc-list .c')].map(c => c.offsetTop); return xs.filter(y => y === xs[0]).length; });
-        assert.equal(cols, 4, 'four cards per row');
+        assert.equal(cols, 5, 'five cards per row');
+        assert.deepEqual(await tvRowEnd(tv), [], `Home's row end ${W}`);
+        // The rail hugs the left edge: its tiles start at the safe edge (≤ 50 px at 1080p), their icons centred
+        // (±1 px at 1080p), YouTube's logo centred over them and on the first row of the page.
+        const rail = await tv.evaluate(() => {
+          const r = e => e.getBoundingClientRect();
+          const tiles = [...document.querySelectorAll('#ytc-side .rl')].map(t => { const a = r(t), i = r(t.querySelector('svg')); return { l: a.left, w: a.width, h: a.height, dx: (i.left + i.right) / 2 - (a.left + a.right) / 2, dy: (i.top + i.bottom) / 2 - (a.top + a.bottom) / 2, iw: i.width }; });
+          const logo = r(document.querySelector('#ytc-side .rmk .lmk')), chips = r(document.querySelector('#ytc-fx-tc .fx-ch'));
+          return { tiles, logoX: (logo.left + logo.right) / 2, logoY: (logo.top + logo.bottom) / 2, chipY: (chips.top + chips.bottom) / 2 };
+        });
+        const k = H / 1080;
+        assert.ok(rail.tiles.every(t => t.l <= 50 * k && t.l >= 40 * k && t.w >= 56 * k && t.w <= 64 * k && Math.abs(t.w - t.h) < 1 && t.iw >= 27 * k && t.iw <= 31 * k), `rail tiles at the left edge: ${JSON.stringify(rail.tiles)}`);
+        assert.ok(rail.tiles.every(t => Math.abs(t.dx) <= k && Math.abs(t.dy) <= k), `rail icons centred: ${JSON.stringify(rail.tiles)}`);
+        const tileX = rail.tiles[0].l + rail.tiles[0].w / 2;
+        assert.ok(Math.abs(rail.logoX - tileX) <= k && Math.abs(rail.logoY - rail.chipY) <= k, `the logo over the icons, on the chips' row: ${JSON.stringify([rail.logoX, tileX, rail.logoY, rail.chipY])}`);
+        // The content starts right after the rail (130–140 px at 1080p) and the cards keep a readable scale.
+        const cards = await tv.evaluate(() => { const c = document.querySelector('#ytc-list .c'), t = c.querySelector('.t'), m = c.querySelector('.m'), b = c.querySelector('.th b'); return { l: c.getBoundingClientRect().left, w: c.getBoundingClientRect().width, t: parseFloat(getComputedStyle(t).fontSize), m: parseFloat(getComputedStyle(m).fontSize), b: b ? parseFloat(getComputedStyle(b).fontSize) : 99 }; });
+        assert.ok(cards.l >= 130 * k && cards.l <= 140 * k && cards.t >= 22 * k && cards.t <= 24 * k && cards.m >= 19 * k && cards.m <= 20 * k && cards.b >= 17 * k, `cards: ${JSON.stringify(cards)}`);
         await tv.evaluate(() => document.activeElement.blur());
         await tv.waitForTimeout(400);
         geo[W] = await tvGeometry(tv, '#ytc-side .rl,.rmk .lmk,#ytc-list .c:nth-child(-n+8),#ytc-list .c:nth-child(-n+8) .th'); // (text-sized boxes like chips follow the font's own metrics)
@@ -7829,6 +7861,12 @@ chrome.runtime.onMessage.addListener(m => {
           await tv.waitForSelector('.grid .c.sk');
           await tvShot(tv, 'loading');
           assert.deepEqual(await tvAudit(tv, `loading ${W}`), []);
+          // The skeleton in the final geometry: a result card (title, channel, views) as tall as its skeleton.
+          const skH = await tv.evaluate(() => document.querySelector('.grid .c.sk').getBoundingClientRect().height);
+          await tv.waitForSelector('#ytc-list .c:not(.sk) a.t', { timeout: 8000 });
+          const realH = await tv.evaluate(() => { const c = [...document.querySelectorAll('#ytc-list .c:not(.sk)')].find(c => { const t = c.querySelector('.t'); return c.querySelectorAll('.m').length === 2 && t.getBoundingClientRect().height > parseFloat(getComputedStyle(t).lineHeight) * 1.5; }); return c ? c.getBoundingClientRect().height : null; });
+          assert.ok(realH !== null, 'a result card with a two-line title, its channel and views');
+          assert.ok(Math.abs(skH - realH) <= 1, `skeleton ${skH} px, result card ${realH} px`);
         } finally { IMG.search = 0; }
 
         // Search opens its own remote keyboard; Back reveals recent searches.
@@ -7842,7 +7880,7 @@ chrome.runtime.onMessage.addListener(m => {
         await tv.waitForFunction(() => document.activeElement && document.activeElement.matches('#ytc-tvk .tvk-keys button'));
         assert.equal(await tv.getAttribute('#ytc', 'data-tvq'), '1');
         await tv.waitForTimeout(300);
-        { const q = await tv.evaluate(() => document.getElementById('ytc-tvquery').getBoundingClientRect().height); assert.ok(q >= W / 60 * 2.95, `the large query control (${q} px)`); }
+        { const q = await tv.evaluate(() => document.getElementById('ytc-tvquery').getBoundingClientRect().height); assert.ok(q >= W / 80 * 2.45 && q <= W / 80 * 2.55, `the query control, as tall as a rail tile (${q} px)`); }
         assert.deepEqual(await tvAudit(tv, `search ${W}`), []);
         await tvShot(tv, 'search');
         assert.deepEqual(await back(tv), { handled: true, exit: false });
@@ -7861,7 +7899,7 @@ chrome.runtime.onMessage.addListener(m => {
         await tv.waitForSelector('#ytc-sug .sg:not(.hs)', { timeout: 5000 });
         await tvShot(tv, 'search-typed');
         assert.deepEqual(await tvAudit(tv, `search typed ${W}`), []);
-        assert.ok(await tv.evaluate(() => [...document.querySelectorAll('#ytc-sug .sg')].filter(e => e.getClientRects().length).every(e => e.getBoundingClientRect().bottom <= innerHeight * 0.95 + 1)), 'every row inside the safe area');
+        assert.ok(await tv.evaluate(() => [...document.querySelectorAll('#ytc-sug .sg')].filter(e => e.getClientRects().length).every(e => e.getBoundingClientRect().bottom <= innerHeight * 0.965 + 1)), 'every row inside the safe area');
         // Back closes the screen and the focus returns to the rail's Search.
         assert.deepEqual(await back(tv), { handled: true, exit: false });
         assert.equal(await tv.getAttribute('#ytc', 'data-tvq'), '');
@@ -7877,6 +7915,7 @@ chrome.runtime.onMessage.addListener(m => {
         assert.equal(await tv.getAttribute('#ytc', 'data-tvq'), '');
         await tv.waitForTimeout(200);
         assert.deepEqual(await tvAudit(tv, `results ${W}`), []);
+        assert.deepEqual(await tvRowEnd(tv), [], `the results' row end ${W}`);
         await tvShot(tv, 'search-results');
         await tv.keyboard.press('ArrowUp');
         assert.equal(await tv.evaluate(() => document.activeElement.id), 'ytc-tvquery', '↑ from the results reaches the query');
@@ -7931,7 +7970,7 @@ chrome.runtime.onMessage.addListener(m => {
           assert.deepEqual(box, [W, H], 'a full screen');
           if (mode === 'code') {
             const code = await tv.evaluate(() => { const c = document.querySelector('.tvc'); return { text: c.textContent, size: parseFloat(getComputedStyle(c).fontSize) }; });
-            assert.ok(code.text === 'WMB-QZX-TPR' && code.size >= H * 0.09, `the code is large: ${JSON.stringify(code)}`);
+            assert.ok(code.text === 'WMB-QZX-TPR' && code.size >= H * 0.075, `the code is large: ${JSON.stringify(code)}`);
             assert.equal(await tv.textContent('.tvu'), 'google.com/device', 'the URL the device flow returned');
             const qr = await tv.evaluate(() => { const s = document.querySelector('.tvq'); const r = s.getBoundingClientRect(); return { w: r.width, d: s.querySelector('path').getAttribute('d').length, vb: s.getAttribute('viewBox') }; });
             assert.ok(qr.w >= H * 0.3 && qr.d > 200 && (+qr.vb.split(' ')[2] - 29) % 4 === 0, `a QR code: ${JSON.stringify(qr)}`);
@@ -8203,7 +8242,7 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
       await tv.waitForFunction(() => document.activeElement && document.activeElement.matches('#ytc-list a.t'), null, { timeout: 5000 });
       await tv.waitForTimeout(1500); // the speculative prefetch of the cards in view has run
       const cards = await tv.$$eval('#ytc-list .c a.t', a => a.map(e => new URL(e.href).searchParams.get('v')));
-      assert.ok(cards.length >= 16, 'enough cards: ' + cards.length);
+      assert.ok(cards.length >= 20, 'enough cards: ' + cards.length);
       const at = () => tv.evaluate(() => new URL(document.activeElement.href).searchParams.get('v'));
       const prefetched = since => new Set(log.api.slice(since).filter(r => r.ep === 'next' || r.ep === 'player').map(r => r.body.videoId).filter(Boolean));
       const a0 = log.api.length;
@@ -8215,9 +8254,9 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
       const before = prefetched(a0);
       await tv.keyboard.up('ArrowDown');
       await tv.waitForTimeout(600);
-      // (Four cards per row: the press went to the second row, the repeats passed the third and rest on the fourth.)
-      const passed = [cards[8]];
-      assert.equal(rest, cards[12], 'three rows down, the same card as three presses would reach');
+      // (Five cards per row: the press went to the second row, the repeats passed the third and rest on the fourth.)
+      const passed = [cards[10]];
+      assert.equal(rest, cards[15], 'three rows down, the same card as three presses would reach');
       for (const v of passed) assert.ok(!before.has(v), 'a card passed by the held key is not prefetched: ' + v + ' ' + JSON.stringify([...before]));
       assert.ok(prefetched(a0).has(rest), 'where it rests is prefetched once the key is released');
       assert.deepEqual(tv.errors, []);
@@ -8259,7 +8298,7 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
     } finally { p.kill(); }
   });
 
-  await step('TV player (960×540 and 1920×1080): full screen at once, overlay on any key and gone 4 s after, title/time/thick bar/round buttons in the safe area, ←/→ scrub with the storyboard frame and one seek, menus as a right panel on the current value, captions bottom-centre above the bar, the skip notice, More info, Up next, Back rules, failure and offline panels', async () => {
+  await step('TV player (960×540 and 1920×1080): full screen at once, overlay on any key and gone 4 s after, title/channel/time/bar/60 px round buttons in the safe area, ←/→ scrub with the storyboard frame and one seek, menus as a right panel on the current value, captions bottom-centre above the bar, the skip notice, More info, Up next, Back rules, failure and offline panels', async () => {
     const tv = await tvOpen();
     try {
       for (const [W, H] of TVSIZES) {
@@ -8279,12 +8318,23 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
         await tvShot(tv, 'player-overlay');
         const lay = await tv.evaluate(() => {
           const r = s => { const e = document.querySelector(s); const q = e.getBoundingClientRect(); return { l: q.left, t: q.top, r: q.right, b: q.bottom, w: q.width, h: q.height }; };
-          return { title: r('#ytc-info .wt'), seek: r('#ytc-seek .psegs'), time: r('#ytc-time'), rem: r('#ytc-trem'), play: r('#ytc-player .prow .pb'), row: [...document.querySelectorAll('#ytc-player .prow > .pb, #ytc-player .prow .wl')].filter(b => b.checkVisibility()).map(b => (b.getAttribute('aria-label') || b.className).replace(/:.*/, '')) };
+          return { title: r('#ytc-info .wt'), titleFs: parseFloat(getComputedStyle(document.querySelector('#ytc-info .wt')).fontSize), seek: r('#ytc-seek .psegs'), time: r('#ytc-time'), rem: r('#ytc-trem'), play: r('#ytc-player .prow .pb'), btns: [...document.querySelectorAll('#ytc-player .prow > .pb, #ytc-player .prow .wl')].filter(b => b.checkVisibility()).map(b => { const q = b.getBoundingClientRect(); return { w: q.width, h: q.height }; }), row: [...document.querySelectorAll('#ytc-player .prow > .pb, #ytc-player .prow .wl')].filter(b => b.checkVisibility()).map(b => (b.getAttribute('aria-label') || b.className).replace(/:.*/, '')) };
         });
-        assert.ok(lay.title.l >= W * 0.05 - 1 && lay.title.t >= H * 0.05 - 1 && lay.title.t < H * 0.12, `title top-left: ${JSON.stringify(lay.title)}`);
-        assert.ok(lay.time.b <= lay.seek.t && lay.rem.r <= W * 0.95 + 1 && lay.rem.l > W / 2, `elapsed / remaining over the bar ends: ${JSON.stringify([lay.time, lay.rem])}`);
-        assert.ok(lay.seek.h >= H * 0.0074 - 0.5, `a thick bar (${lay.seek.h})`);
-        assert.ok(lay.play.w >= H * 0.088 && Math.abs(lay.play.w - lay.play.h) < 1, `large round buttons (${lay.play.w})`);
+        assert.ok(lay.title.l >= W * 0.025 - 1 && lay.title.t >= H * 0.035 - 1 && lay.title.t < H * 0.1, `title top-left: ${JSON.stringify(lay.title)}`);
+        assert.ok(lay.time.b <= lay.seek.t && lay.rem.r <= W * 0.975 + 1 && lay.rem.l > W / 2, `elapsed / remaining over the bar ends: ${JSON.stringify([lay.time, lay.rem])}`);
+        // One left edge: the title, the time and the first button start at the same x.
+        assert.ok(Math.abs(lay.title.l - lay.time.l) < 1 && Math.abs(lay.title.l - lay.play.l) < 1, `title, time and buttons aligned: ${JSON.stringify([lay.title.l, lay.time.l, lay.play.l])}`);
+        // 4 px at 1080p (6 px focused, a scale of the same bar).
+        assert.ok(Math.abs(lay.seek.h - H * 4 / 1080) < 0.6 || Math.abs(lay.seek.h - H * 6 / 1080) < 0.6, `a 4 px bar (${lay.seek.h})`);
+        // Round buttons of 60–64 px at 1080p (not the old 96 px), the text pills as tall.
+        assert.ok(lay.play.w >= H * 56 / 1080 && lay.play.w <= H * 64 / 1080 && Math.abs(lay.play.w - lay.play.h) < 1, `round buttons of 60–64 px at 1080p (${lay.play.w})`);
+        assert.ok(lay.btns.every(b => Math.abs(b.h - lay.play.h) < 1 && b.w <= H * 160 / 1080), `every action as tall as the round ones: ${JSON.stringify(lay.btns)}`);
+        // The title overlay: about 32 px, the channel about 22 px and never cut while it fits ("Blende" for "Blender").
+        assert.ok(lay.titleFs <= H * 34 / 1080 && lay.titleFs >= H * 30 / 1080, `the title at about 32 px (${lay.titleFs})`);
+        for (const name of ['Blender', 'MonkevDev', 'Blender Foundation']) {
+          const c = await tv.evaluate(async n => { const c = document.querySelector('#ytc-info .wc'), was = c.textContent; c.textContent = n; await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); const s = getComputedStyle(c), rg = document.createRange(); rg.selectNodeContents(c); const out = { tw: rg.getBoundingClientRect().width, sw: c.scrollWidth, cw: c.clientWidth, sh: c.scrollHeight, ch: c.clientHeight, fs: parseFloat(s.fontSize), lh: parseFloat(s.lineHeight) }; c.textContent = was; return out; }, name);
+          assert.ok(c.sw <= c.cw && c.sh <= c.ch && c.lh >= c.fs && c.cw > c.tw + H * 0.1, `the channel name ${name} shown whole: ${JSON.stringify(c)}`);
+        }
         assert.deepEqual(lay.row, ['Play/pause', 'Captions', 'Speed', 'Quality', 'I like this', 'Save to Watch later', 'Comments', 'More info'], JSON.stringify(lay.row));
         assert.deepEqual(await tvAudit(tv, `overlay ${W}`), []);
         const wk = await tvWalk(tv, '#ytc-seek,#ytc-player .prow :is(.pb,.wl)', 20);
@@ -8340,7 +8390,7 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
         await tv.waitForFunction(() => document.getElementById('ytc-player').classList.contains('idle'), null, { timeout: 6000 });
         await tv.waitForTimeout(400);
         const ccOff = await tv.evaluate(() => { const c = document.getElementById('ytc-cc').getBoundingClientRect(); return { cx: (c.left + c.right) / 2, b: c.bottom }; });
-        assert.ok(Math.abs(ccOff.cx - W / 2) < W * 0.01 && ccOff.b <= H * 0.95 + 1 && ccOff.b > H * 0.85, `captions bottom-centre in the safe area: ${JSON.stringify(ccOff)}`);
+        assert.ok(Math.abs(ccOff.cx - W / 2) < W * 0.01 && ccOff.b <= H * 0.965 + 1 && ccOff.b > H * 0.85, `captions bottom-centre in the safe area: ${JSON.stringify(ccOff)}`);
         await tvShot(tv, 'player-captions');
         // More info: the description as a right panel; Back closes it.
         await tv.keyboard.press('ArrowDown');
@@ -8360,7 +8410,7 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
         assert.deepEqual(await tvAudit(tv, `up next ${W}`), []);
         await tvShot(tv, 'player-upnext');
         await tv.keyboard.press('ArrowRight');
-        assert.ok(await tv.evaluate(() => { const r = document.activeElement.closest('.c').getBoundingClientRect(); return r.right <= innerWidth * 0.95 + 1; }), 'the next card is brought into the safe area');
+        assert.ok(await tv.evaluate(() => { const r = document.activeElement.closest('.c').getBoundingClientRect(); return r.right <= innerWidth * 0.975 + 1; }), 'the next card is brought into the safe area');
         assert.deepEqual(await back(tv), { handled: true, exit: false });
         assert.ok(await tv.evaluate(() => !!document.activeElement.closest('#ytc-player .prow')), 'Back from Up next returns to the buttons');
         // Back with the overlay open while playing hides it; with it hidden, the watch page is left (the shell goes back).
@@ -8386,7 +8436,7 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
         await tv.keyboard.press('ArrowUp');
         assert.equal(await tv.evaluate(() => document.activeElement.id), 'ytc-sbtb', '↑ from the row\'s end reaches the skip notice');
         const sb = await tv.evaluate(() => { const r = document.querySelector('#ytc-player .psbt').getBoundingClientRect(); return { r: r.right, b: r.bottom, l: r.left }; });
-        assert.ok(sb.r <= W * 0.95 + 1 && sb.l > W / 2, `bottom right: ${JSON.stringify(sb)}`);
+        assert.ok(sb.r <= W * 0.975 + 1 && sb.l > W / 2, `bottom right: ${JSON.stringify(sb)}`);
         assert.deepEqual(await tvAudit(tv, `skip ${W}`), []);
         await tvShot(tv, 'player-skip');
 

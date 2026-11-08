@@ -1109,13 +1109,13 @@ details.pl:not([open]) summary::after{transform:translateY(2px) rotate(-135deg)}
 #ytc-imp .imp-b{display:flex;justify-content:flex-end;align-items:center;gap:16px}
 /* ===== TV app (tv/, html[data-ytc-tv]) =====
    The 10-foot interface (design reference: tv/design/look-sheet.html and its README). One layout at every
-   resolution: the root font-size is 1/60 of the viewport width, so 1rem = 16 CSS px on the 960×540 WebView most
-   Google TV sets report (32 device px at DPR 2), 32 px at 1920×1080 and 64 px at 3840: everything below is in rem
-   and looks the same on all of them. Content and focus rings stay in the overscan-safe area (5 % per side:
-   --sx × --sy); backgrounds and pictures may bleed. One focus style everywhere: a steady white frame (the accent) and a raised neutral surface. Remote focus, panels and
+   resolution: the root font-size is 1/80 of the viewport width, so 1rem = 12 CSS px on the 960×540 WebView most
+   Google TV sets report (24 device px at DPR 2), 24 px at 1920×1080 and 48 px at 3840: everything below is in rem
+   and looks the same on all of them. Content and focus rings stay in the safe area (2.5 % left and right, 3.5 % top
+   and bottom: --sx × --sy; current Google TV sets do not overscan); backgrounds and pictures may bleed. One focus style everywhere: a steady white frame (the accent) and a raised neutral surface. Remote focus, panels and
    scrolling are immediate. Video carries the colour; chrome never grows or shifts under the remote. No pointer: no hover affordances, no hover-only controls. */
 @property --sr{syntax:"<length>";inherits:false;initial-value:0px}
-html[data-ytc-tv]{font-size:calc(100vw / 60);--sx:3rem;--sy:1.6875rem;--ring:.1875rem;--tvrow:2.875rem;scroll-padding:5rem 0 var(--sy);overflow-x:clip}
+html[data-ytc-tv]{font-size:calc(100vw / 80);--sx:2rem;--sy:1.575rem;--ring:.1875rem;--tvrow:2.875rem;scroll-padding:5rem 0 var(--sy);overflow-x:clip}
 html[data-ytc-tv] #ytc{--sw:0px;font-size:.875rem;line-height:1.35;--tvf:Roboto,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-family:var(--tvf);--e-out:cubic-bezier(.22,1,.36,1);--mv:0;--d-press:0ms;--d-hover:0ms;--d-pop:0ms;--d-pop-out:0ms;--d-panel:0ms;--d-page:0ms;--d-spring:0ms;--d-spring-soft:0ms;--d-spring-pop:0ms}
 html[data-ytc-tv] #ytc :focus-visible{animation:none}
 html[data-ytc-tv] #ytc :focus{outline:none}
@@ -1128,30 +1128,30 @@ html[data-ytc-tv] :is(#ytc .logo,#ytc-mic,#ytc-vk,.qx,#ytc-hfx,.c .ca,.fx-ed,.fx
 
 /* ---- the rail: YouTube's logo, Search, the pages, the account at the bottom. Collapsed it shows the icons; the
    focus entering it reveals labels over the content at once; the page keeps its position. */
-html[data-ytc-tv] #ytc-side{position:fixed;inset:0 auto 0 0;width:7rem;padding:0;margin:0;overflow:visible;z-index:30;clip-path:none;background:none}
-html[data-ytc-tv] #ytc-side::after{content:"";position:absolute;inset:0 auto 0 0;width:18rem;z-index:-1;background:linear-gradient(90deg,var(--pn) 15.5rem,color-mix(in srgb,var(--pn) 0%,transparent));opacity:0;transform:none;transition:none;pointer-events:none}
+html[data-ytc-tv] #ytc-side{position:fixed;inset:0 auto 0 0;width:5.25rem;padding:0;margin:0;overflow:visible;z-index:30;clip-path:none;background:none}
+html[data-ytc-tv] #ytc-side::after{content:"";position:absolute;inset:0 auto 0 0;width:15.5rem;z-index:-1;background:linear-gradient(90deg,var(--pn) 13.5rem,color-mix(in srgb,var(--pn) 0%,transparent));opacity:0;transform:none;transition:none;pointer-events:none}
 html[data-ytc-tv] #ytc-side:focus-within::after{opacity:1;transform:none;}
-html[data-ytc-tv] .rmk{position:absolute;left:3.75rem;top:var(--sy);display:flex;align-items:center;gap:.625rem;height:2rem}
-html[data-ytc-tv] #ytc .rmk .lmk{width:2rem;height:1.4375rem;stroke:none;transform:none}
-html[data-ytc-tv] .rmk b{font-size:1.125rem;font-weight:600;letter-spacing:0;color:var(--tx);opacity:0;translate:none;transition:none;}
+html[data-ytc-tv] .rmk{position:absolute;left:2.375rem;top:calc(var(--sy) + .5rem);display:flex;align-items:center;gap:.5rem;height:2rem}
+html[data-ytc-tv] #ytc .rmk .lmk{width:1.75rem;height:1.25rem;stroke:none;transform:none}
+html[data-ytc-tv] .rmk b{font-size:1rem;font-weight:600;letter-spacing:0;color:var(--tx);opacity:0;translate:none;transition:none;}
 html[data-ytc-tv] #ytc-side:focus-within .rmk b{opacity:1;translate:0;}
-html[data-ytc-tv] .rls{position:absolute;left:3.375rem;top:5.25rem;width:12.5rem}
-html[data-ytc-tv] .rla{position:absolute;left:3.375rem;top:25.875rem;width:12.5rem}
-html[data-ytc-tv] #ytc-side .rl{position:relative;isolation:isolate;transform-origin:0 50%;display:flex;align-items:center;gap:1rem;box-sizing:border-box;width:12.5rem;height:2.5rem;margin:0 0 .375rem;padding:0 .625rem;border:0;border-radius:.5rem;background:none;color:var(--mu);font:500 .9375rem/1 var(--tvf);white-space:nowrap;text-align:left;cursor:default;transition:none;}
+html[data-ytc-tv] .rls{position:absolute;left:var(--sx);top:5rem;width:10.5rem}
+html[data-ytc-tv] .rla{position:absolute;left:var(--sx);top:25.875rem;width:10.5rem}
+html[data-ytc-tv] #ytc-side .rl{position:relative;isolation:isolate;transform-origin:0 50%;display:flex;align-items:center;gap:.75rem;box-sizing:border-box;width:10.5rem;height:2.5rem;margin:0 0 .375rem;padding:0 .625rem;border:0;border-radius:.5rem;background:none;color:var(--mu);font:500 .875rem/1 var(--tvf);white-space:nowrap;text-align:left;cursor:default;transition:none;}
 /* Collapsed, an item is as wide as its icon (the remote measures boxes; full-width items would lie under the cards). */
 html[data-ytc-tv] #ytc-side:not(:focus-within) .rl{width:2.5rem}
 html[data-ytc-tv] #ytc-side .rl::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:var(--cb);opacity:0;transition:none;}
-html[data-ytc-tv] #ytc-side .rl svg{width:1.25rem;height:1.25rem;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;transform:none}
+html[data-ytc-tv] #ytc-side .rl svg{display:block;width:1.25rem;height:1.25rem;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;transform:none}
 html[data-ytc-tv] #ytc-side .rl span{opacity:0;translate:none;transition:none;}
 html[data-ytc-tv] #ytc-side:focus-within .rl span{opacity:1;translate:0;}
-html[data-ytc-tv] #ytc-side .rl:focus{color:var(--tx);outline:var(--ring) solid var(--ac);outline-offset:.125rem;scale:none}
+html[data-ytc-tv] #ytc-side .rl:focus{color:var(--tx);outline:var(--ring) solid var(--ac);outline-offset:calc(-1 * var(--ring));scale:none}
 html[data-ytc-tv] #ytc-side .rl:focus::before{opacity:1}
 html[data-ytc-tv] #ytc-side .rl:active{transform:none}
 /* An update is ready: an accent dot on About & updates. */
-html[data-ytc-tv] #ytc-side .rl.upd::after{content:"";position:absolute;left:1.625rem;top:.4375rem;width:.5rem;height:.5rem;border-radius:50%;background:var(--ac);box-shadow:0 0 0 .1875rem var(--bg)}
+html[data-ytc-tv] #ytc-side .rl.upd::after{content:"";position:absolute;left:1.625rem;top:.4375rem;width:.4375rem;height:.4375rem;border-radius:50%;background:var(--ac);box-shadow:0 0 0 .125rem var(--bg)}
 /* The page's item: one persistent accent pill (a strip over all seven rows clipped to the active one by --st/--sb,
    written by Rust): navigation and rail expansion update the frame immediately. */
-html[data-ytc-tv] #ytc-side .sdi{position:absolute;top:0;left:0;width:12.5rem;height:calc(7 * var(--tvrow) - .375rem);--sr:10rem;background:var(--on);opacity:1;clip-path:inset(var(--st) var(--sr) var(--sb) 0 round .5rem);transition:none;}
+html[data-ytc-tv] #ytc-side .sdi{position:absolute;top:0;left:0;width:10.5rem;height:calc(7 * var(--tvrow) - .375rem);--sr:8rem;background:var(--on);opacity:1;clip-path:inset(var(--st) var(--sr) var(--sb) 0 round .5rem);transition:none;}
 html[data-ytc-tv] #ytc-side:focus-within .sdi{--sr:0px;}
 html[data-ytc-tv] #ytc:not(:is([data-nav=home],[data-nav=subs],[data-nav=history],[data-nav=wl],[data-nav=playlists],[data-nav=liked],[data-nav=search])) #ytc-side .sdi{opacity:0}
 html[data-ytc-tv] #ytc:is([data-nav=home] .rl[data-nav=home],[data-nav=subs] .rl[data-nav=subs],[data-nav=history] .rl[data-nav=history],[data-nav=wl] .rl[data-nav=wl],[data-nav=playlists] .rl[data-nav=playlists],[data-nav=liked] .rl[data-nav=liked],[data-nav=search] .rl[data-nav=search]){color:var(--ac)}
@@ -1162,101 +1162,103 @@ html[data-ytc-tv] #ytc[data-tvq="1"] #ytc-side .rl[data-nav=search]{background:v
 html[data-ytc-tv] #ytc[data-tvq="1"] #ytc-side .rl:not([data-nav=search]){color:var(--mu)}
 html[data-ytc-tv] #ytc[data-nav=watch] #ytc-side{display:none}
 
-/* ---- pages: the content starts right of the collapsed rail and ends 3.75rem from the right (a focused card at the
+/* ---- pages: the content starts right of the collapsed rail and ends 2.5rem from the right (a focused card at the
    row's end and its frame still end inside the safe area). A fixed scrim fades what scrolls under the top. */
-html[data-ytc-tv] #ytc-main{padding:calc(var(--sy) + .5rem) 3.75rem 4rem 7.75rem}
+html[data-ytc-tv] #ytc-main{padding:calc(var(--sy) + .5rem) 2.5rem 3rem 5.75rem}
 html[data-ytc-tv] #ytc:not([data-nav=watch]) #ytc-main::before{content:"";position:fixed;z-index:6;left:0;right:0;top:0;height:var(--scrim);background:linear-gradient(var(--bg) calc(var(--scrim) - .75rem),color-mix(in srgb,var(--bg) 0%,transparent));pointer-events:none}
 /* (The scrim ends just above where each page's first row sits, the focused card's ring included.) */
-html[data-ytc-tv] #ytc-main{--scrim:5rem}html[data-ytc-tv] #ytc[data-nav=search] #ytc-main{--scrim:5.5rem}
-html[data-ytc-tv] #ytc-main:has(.feed>.m.sub){--scrim:6.25rem}html[data-ytc-tv] #ytc-main:has(.feed>.ch){--scrim:6.875rem}
-html[data-ytc-tv] #ytc .fh{min-height:2.25rem;margin:0 0 1.25rem;gap:1rem;position:relative;z-index:7}
-html[data-ytc-tv] #ytc h1{font-size:1.5rem;line-height:2.25rem;font-weight:500;letter-spacing:-.01em}
-html[data-ytc-tv] #ytc .m.sub{margin:-1.125rem 0 1.25rem;font-size:.875rem;line-height:1.25rem;color:var(--mu);position:relative;z-index:7}
-html[data-ytc-tv] .grid{--cols:4;grid-template-columns:repeat(4,minmax(0,1fr));gap:1.5rem}
-html[data-ytc-tv] .c{contain-intrinsic-size:auto 11.25rem;transition:none;}
+html[data-ytc-tv] #ytc-main{--scrim:4.625rem}html[data-ytc-tv] #ytc[data-nav=search] #ytc-main{--scrim:5.125rem}
+html[data-ytc-tv] #ytc-main:has(.feed>.m.sub){--scrim:5.875rem}html[data-ytc-tv] #ytc-main:has(.feed>.ch){--scrim:7.125rem}
+html[data-ytc-tv] #ytc .fh{min-height:2rem;margin:0 0 1rem;gap:.75rem;position:relative;z-index:7}
+html[data-ytc-tv] #ytc h1{font-size:1.375rem;line-height:2rem;font-weight:500;letter-spacing:-.01em}
+html[data-ytc-tv] #ytc .m.sub{margin:-.875rem 0 1rem;font-size:.8125rem;line-height:1.125rem;color:var(--mu);position:relative;z-index:7}
+html[data-ytc-tv] .grid{--cols:5;grid-template-columns:repeat(5,minmax(0,1fr));gap:1.25rem}
+/* (A card not yet rendered holds the size of a result card: a 16:9 thumbnail of a fifth of the row, title, channel, views.) */
+html[data-ytc-tv] .c{contain-intrinsic-size:auto calc((100vw - 13.25rem) * 9 / 80 + 5.375rem);transition:none;}
 /* The focused card: no paint containment (it would cut the ring), lifted above its neighbours. */
 html[data-ytc-tv] .c:focus-within{content-visibility:visible;transform:none;z-index:3}
-html[data-ytc-tv] .th{border-radius:.625rem;outline:var(--ring) solid transparent;outline-offset:.1875rem;transition:none;}
+html[data-ytc-tv] .th{border-radius:.5rem;outline:var(--ring) solid transparent;outline-offset:.1875rem;transition:none;}
 html[data-ytc-tv] .c:focus-within .th{outline-color:var(--ac)}
 html[data-ytc-tv] .th::after{display:none}
-html[data-ytc-tv] .th b{right:.375rem;bottom:.375rem;padding:.0625rem .3125rem;border-radius:.3125rem;font-size:.6875rem;line-height:1rem}
+html[data-ytc-tv] .th b{right:.3125rem;bottom:.3125rem;padding:.0625rem .25rem;border-radius:.25rem;font-size:.75rem;line-height:1rem}
 html[data-ytc-tv] .th i{height:.1875rem}
-html[data-ytc-tv] .d{padding-top:.625rem}
-html[data-ytc-tv] #ytc .t{font-size:.875rem;line-height:1.125rem;max-height:2.25rem;font-weight:500;letter-spacing:0}
-html[data-ytc-tv] #ytc .m{font-size:.75rem;line-height:1rem;margin-top:.25rem;color:var(--mu)}
+html[data-ytc-tv] .d{padding-top:.5rem}
+html[data-ytc-tv] #ytc .t{font-size:.9375rem;line-height:1.1875rem;max-height:2.375rem;font-weight:500;letter-spacing:0}
+html[data-ytc-tv] #ytc .m{font-size:.8125rem;line-height:1.0625rem;margin-top:.1875rem;color:var(--mu)}
 html[data-ytc-tv] #ytc .c:focus-within .t{color:var(--ac)}
 html[data-ytc-tv] #ytc .th>img,html[data-ytc-tv] #ytc .th>.pv{scale:none;transition:none;}
-html[data-ytc-tv] .sk .t i,html[data-ytc-tv] .sk .m i{height:.75rem;margin:.25rem 0;border-radius:.25rem}html[data-ytc-tv] .sk .t i+i{margin-top:.375rem}
-html[data-ytc-tv] .sk .t{height:2.25rem}
-html[data-ytc-tv] #ytc .feed>.empty{margin:6rem 0 0;text-align:center;font-size:1rem;line-height:1.5rem;color:var(--mu)}
+/* (Skeletons in the final geometry: each bar centred in the line box of the text it stands for.) */
+html[data-ytc-tv] .sk .t i,html[data-ytc-tv] .sk .m i{height:.75rem;margin:.21875rem 0;border-radius:.25rem}html[data-ytc-tv] .sk .t i+i{margin-top:.4375rem}html[data-ytc-tv] .sk .m i{margin:.15625rem 0}
+html[data-ytc-tv] .sk .t{height:2.375rem}
+html[data-ytc-tv] #ytc .feed>.empty{margin:6rem 0 0;text-align:center;font-size:.9375rem;line-height:1.375rem;color:var(--mu)}
 /* Topic chips: one focusable row on top (it scrolls sideways under the focus; its padding holds the ring). */
-html[data-ytc-tv] .fx-top{gap:.75rem}
-html[data-ytc-tv] .fx-tc{gap:.75rem;padding:.625rem .75rem;margin:-.625rem -.75rem;scroll-padding:0 .75rem}
-html[data-ytc-tv] #ytc .fx-ch{height:2.25rem;padding:0 1.125rem;border-radius:.375rem;font-size:.875rem;line-height:2.25rem;font-weight:500}
+html[data-ytc-tv] .fx-top{gap:.625rem}
+html[data-ytc-tv] .fx-tc{gap:.625rem;padding:.5rem .5rem;margin:-.5rem -.5rem;scroll-padding:0 .5rem}
+html[data-ytc-tv] #ytc .fx-ch{height:2rem;padding:0 1rem;border-radius:.375rem;font-size:.875rem;line-height:2rem;font-weight:500}
 html[data-ytc-tv] #ytc .fx-ch:focus:not([aria-pressed=true]){background:var(--hv)}
-html[data-ytc-tv] #ytc .fx-note{font-size:.75rem}
+html[data-ytc-tv] #ytc .fx-note{font-size:.8125rem}
 /* Channel and playlist headers. */
-html[data-ytc-tv] #ytc .ch{gap:1.25rem;min-height:4rem;margin:0 0 1.5rem;position:relative;z-index:7}
-html[data-ytc-tv] .ch .av.lg{width:4rem;height:4rem}
-html[data-ytc-tv] #ytc .ch h1{font-size:1.75rem;line-height:2.25rem;margin:0}
-html[data-ytc-tv] #ytc .ch .m{font-size:.875rem;line-height:1.25rem}
+html[data-ytc-tv] #ytc .ch{gap:1rem;min-height:3rem;margin:0 0 1.25rem;position:relative;z-index:7}
+html[data-ytc-tv] .ch .av.lg{width:3rem;height:3rem}
+html[data-ytc-tv] #ytc .ch h1{font-size:1.375rem;line-height:2rem;margin:0}
+html[data-ytc-tv] #ytc .ch .m{font-size:.8125rem;line-height:1.125rem}
 html[data-ytc-tv] #ytc .ch .about{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;white-space:normal;max-width:40rem}
 html[data-ytc-tv] #ytc .feed>h2{display:none}
 /* "New videos" and "Load more". */
 html[data-ytc-tv] #ytc-pill{display:none}
-html[data-ytc-tv] #ytc .pill{height:2.25rem;padding:0 1.25rem;border-radius:.375rem;font-size:.875rem}
+html[data-ytc-tv] #ytc .pill{height:2rem;padding:0 1rem;border-radius:.375rem;font-size:.875rem}
 
 /* ---- calm cards (signed-out Home, sign-in needed, a failed page) */
 html[data-ytc-tv] .tvpc{display:grid;place-items:center;min-height:calc(100vh - 2 * var(--sy) - 4rem)}
-html[data-ytc-tv] .tvcd{width:30rem;box-sizing:border-box;padding:2.25rem 2.5rem;border-radius:1.25rem;background:var(--pn);display:grid;gap:1rem;justify-items:start}
-html[data-ytc-tv] .tvcd .lmk{width:2.5rem;height:1.8rem}
-html[data-ytc-tv] #ytc .tvcd h2{margin:0;font-size:1.75rem;line-height:2.125rem;font-weight:500;letter-spacing:-.015em}
-html[data-ytc-tv] .tvcd p{margin:0;font-size:.875rem;line-height:1.3125rem;color:var(--mu)}
-html[data-ytc-tv] .tvbs{display:flex;gap:1rem;margin-top:.5rem}
-html[data-ytc-tv] #ytc .tvb{display:inline-flex;align-items:center;gap:.625rem;height:2.75rem;padding:0 1.5rem;border:0;border-radius:.5rem;background:var(--tx);color:var(--bg);font:500 .9375rem/1 var(--tvf);white-space:nowrap;text-decoration:none}
-html[data-ytc-tv] #ytc .tvb svg{width:1.125rem;height:1.125rem;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+html[data-ytc-tv] .tvcd{width:28rem;box-sizing:border-box;padding:2rem 2.25rem;border-radius:1rem;background:var(--pn);display:grid;gap:1rem;justify-items:start}
+html[data-ytc-tv] .tvcd .lmk{width:2.25rem;height:1.625rem}
+html[data-ytc-tv] #ytc .tvcd h2{margin:0;font-size:1.5rem;line-height:1.875rem;font-weight:500;letter-spacing:-.015em}
+html[data-ytc-tv] .tvcd p{margin:0;font-size:.9375rem;line-height:1.375rem;color:var(--mu)}
+html[data-ytc-tv] .tvbs{display:flex;gap:.75rem;margin-top:.5rem}
+html[data-ytc-tv] #ytc .tvb{display:inline-flex;align-items:center;gap:.5rem;height:2.5rem;padding:0 1.25rem;border:0;border-radius:.5rem;background:var(--tx);color:var(--bg);font:500 .9375rem/1 var(--tvf);white-space:nowrap;text-decoration:none}
+html[data-ytc-tv] #ytc .tvb svg{display:block;width:1.0625rem;height:1.0625rem;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
 html[data-ytc-tv] #ytc .tvb.tvx{background:var(--cb);color:var(--tx)}
 html[data-ytc-tv] #ytc .tvb.tvx:focus{background:var(--hv)}
 
 /* ---- search: the query above a six-column remote keyboard and a separate suggestion list.
    The real input stays in the form for the shared Rust search pipeline. The visible button and keys are TV only. */
-html[data-ytc-tv] #ytc-top{display:none;position:absolute;z-index:7;top:0;left:0;right:0;height:auto;padding:calc(var(--sy) + .5rem) 3.75rem 0 7.75rem;background:none}
+html[data-ytc-tv] #ytc-top{display:none;position:absolute;z-index:7;top:0;left:0;right:0;height:auto;padding:calc(var(--sy) + .25rem) 2.5rem 0 5.75rem;background:none}
 html[data-ytc-tv] #ytc[data-nav=search] #ytc-top{display:block}
 html[data-ytc-tv] #ytc[data-tvq="1"] #ytc-top{display:block;position:fixed;bottom:0;z-index:25;background:var(--bg)}
-html[data-ytc-tv] #ytc[data-nav=search] #ytc-main{padding-top:calc(var(--sy) + 4.625rem)}
+html[data-ytc-tv] #ytc[data-nav=search] #ytc-main{padding-top:calc(var(--sy) + 4rem)}
 html[data-ytc-tv] #ytc[data-nav=search] .fh{min-height:0;margin:0}
 html[data-ytc-tv] #ytc .tr{display:none}
-html[data-ytc-tv] #ytc-search{height:auto;display:grid;grid-template-columns:22rem minmax(0,1fr);column-gap:2rem;row-gap:1.5rem;align-items:start;--qw:0px}
+html[data-ytc-tv] #ytc-search{height:auto;display:grid;grid-template-columns:21rem minmax(0,1fr);column-gap:2.5rem;row-gap:1.25rem;align-items:start;--qw:0px}
 html[data-ytc-tv] #ytc-search :is(.qf,.qs),html[data-ytc-tv] #ytc #ytc-q{display:none}
-html[data-ytc-tv] #ytc #ytc-tvquery{grid-column:1/-1;display:flex;align-items:center;gap:.875rem;width:100%;height:3rem;box-sizing:border-box;margin:0;padding:0 1.25rem;border:.0625rem solid var(--bd);border-radius:.5rem;background:var(--rs);color:var(--tx);font:400 1.125rem/1.25 var(--tvf);text-align:left;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-html[data-ytc-tv] #ytc #ytc-tvquery:focus{background:var(--cb);outline:var(--ring) solid var(--ac);outline-offset:.1875rem}
-html[data-ytc-tv] #ytc-tvquery svg{width:1.25rem;height:1.25rem;flex:none;fill:none;stroke:var(--mu);stroke-width:1.9;stroke-linecap:round}
+html[data-ytc-tv] #ytc #ytc-tvquery{grid-column:1/-1;display:flex;align-items:center;gap:.75rem;width:100%;height:2.5rem;box-sizing:border-box;margin:0;padding:0 1rem;border:.0625rem solid var(--bd);border-radius:.5rem;background:var(--rs);color:var(--tx);font:400 1rem/1.25 var(--tvf);text-align:left;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+html[data-ytc-tv] #ytc #ytc-tvquery:focus{background:var(--cb);outline:var(--ring) solid var(--ac);outline-offset:-.0625rem}
+html[data-ytc-tv] #ytc-tvquery svg{display:block;width:1.0625rem;height:1.0625rem;flex:none;fill:none;stroke:var(--mu);stroke-width:1.9;stroke-linecap:round}
 html[data-ytc-tv] #ytc-tvquery span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-html[data-ytc-tv] #ytc-tvquery .tvquery-edit{flex:none;margin-left:auto;font-size:.75rem;line-height:1;color:var(--mu)}
+html[data-ytc-tv] #ytc-tvquery .tvquery-edit{flex:none;margin-left:auto;font-size:.8125rem;line-height:1;color:var(--mu)}
 html[data-ytc-tv] #ytc-tvk{display:none;grid-column:1;grid-row:2;min-width:0}
 html[data-ytc-tv] #ytc[data-tvq="1"] #ytc-tvk.on{display:block}
 html[data-ytc-tv] .tvk-keys{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.375rem}
-html[data-ytc-tv] #ytc .tvk-key{display:flex;align-items:center;justify-content:center;min-width:0;height:2.5rem;padding:0 .5rem;border:.0625rem solid var(--ln);border-radius:.375rem;background:var(--rs);color:var(--tx);font:500 1rem/1 var(--tvf);font-variant-numeric:tabular-nums;transform:none;transition:none;cursor:default}
+html[data-ytc-tv] #ytc .tvk-key{display:flex;align-items:center;justify-content:center;min-width:0;height:2.25rem;padding:0 .375rem;border:.0625rem solid var(--ln);border-radius:.375rem;background:var(--rs);color:var(--tx);font:500 1rem/1 var(--tvf);font-variant-numeric:tabular-nums;transform:none;transition:none;cursor:default}
 html[data-ytc-tv] #ytc .tvk-key:focus{outline:var(--ring) solid var(--ac);outline-offset:.0625rem;background:var(--cb);color:var(--tx)}
 html[data-ytc-tv] #ytc .tvk-key:active{background:var(--on);color:var(--ac)}
-html[data-ytc-tv] .tvk-tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.375rem;margin-top:.75rem}
+html[data-ytc-tv] .tvk-tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.375rem;margin-top:.625rem}
 html[data-ytc-tv] #ytc .tvk-tools .tvk-key{font-size:.875rem}
 html[data-ytc-tv] #ytc .tvk-tools .tvk-search{grid-column:span 2;background:var(--tx);color:var(--bg)}
 html[data-ytc-tv] #ytc .tvk-tools .tvk-search:focus{background:var(--ac)}
-html[data-ytc-tv] #ytc .tvk-tools .tvk-layout{font-size:.75rem}
-html[data-ytc-tv] .tvk-hint{margin:1rem 0 0;font-size:.75rem;line-height:1.125rem;color:var(--mu)}
+html[data-ytc-tv] #ytc .tvk-tools .tvk-layout{font-size:.8125rem}
+html[data-ytc-tv] .tvk-hint{margin:.875rem 0 0;font-size:.8125rem;line-height:1.125rem;color:var(--mu)}
 html[data-ytc-tv] #ytc #ytc-sug{display:none;grid-column:2;grid-row:2;position:static;width:auto;min-width:0;margin:0;padding:.125rem .25rem;visibility:visible;opacity:1;pointer-events:auto}
 html[data-ytc-tv] #ytc[data-tvq="1"] #ytc-sug.on:not(:empty){display:grid;gap:.25rem}
 html[data-ytc-tv] #ytc:not([data-tvk="1"]) #ytc-sug{grid-column:1/-1;width:30rem;max-width:100%}
-html[data-ytc-tv] #ytc #ytc-sug::before{content:"Recent and suggested";position:static;clip-path:none;background:none;margin:0 0 .75rem .75rem;font-size:.75rem;line-height:1.125rem;font-weight:400;color:var(--mu);letter-spacing:0;text-transform:none}
+html[data-ytc-tv] #ytc #ytc-sug::before{content:"Recent and suggested";position:static;clip-path:none;background:none;margin:0 0 .5rem .625rem;font-size:.8125rem;line-height:1.125rem;font-weight:400;color:var(--mu);letter-spacing:0;text-transform:none}
 html[data-ytc-tv] #ytc #ytc-sug::after{display:none}
 html[data-ytc-tv] #ytc .sg:nth-child(n+8){display:none}
 html[data-ytc-tv] #ytc .sg{display:flex;min-width:0;border-radius:.375rem;background:none;opacity:1;translate:none;transition:none}
-html[data-ytc-tv] #ytc .sg a{height:2.5rem;min-width:0;gap:.75rem;padding:0 .75rem;border-radius:.375rem;font-size:.875rem;color:var(--tx);transition:none}
+html[data-ytc-tv] #ytc .sg a{height:2.25rem;min-width:0;gap:.625rem;padding:0 .625rem;border-radius:.375rem;font-size:.9375rem;color:var(--tx);transition:none}
 html[data-ytc-tv] #ytc .sg a:focus{background:var(--cb);outline:var(--ring) solid var(--ac);outline-offset:-.0625rem;scale:none}
-html[data-ytc-tv] #ytc .sg svg{width:1.125rem;height:1.125rem;stroke:var(--mu)}
-html[data-ytc-tv] #ytc .sgx{opacity:1;flex:none;width:2.5rem;height:2.5rem;border-radius:.375rem;margin-left:.25rem;background:none;color:var(--mu)}
-html[data-ytc-tv] #ytc .sgx svg{width:1rem;height:1rem;margin:auto}
+html[data-ytc-tv] #ytc .sg svg{display:block;width:1.0625rem;height:1.0625rem;stroke:var(--mu)}
+html[data-ytc-tv] #ytc .sgx{opacity:1;flex:none;width:2.25rem;height:2.25rem;border-radius:.375rem;margin-left:.25rem;background:none;color:var(--mu)}
+html[data-ytc-tv] #ytc .sgx svg{width:.9375rem;height:.9375rem;margin:auto}
 html[data-ytc-tv] #ytc .sgx:focus{background:var(--cb);color:var(--tx);outline:var(--ring) solid var(--ac);outline-offset:-.0625rem;scale:none}
 
 /* ---- the player: full screen at once; the overlay (title and channel, time, seek bar, buttons) shows on any key
@@ -1269,47 +1271,48 @@ html[data-ytc-tv] #ytc .watch .player{position:fixed;inset:0;z-index:10;width:au
 html[data-ytc-tv] .player video{object-fit:contain}
 html[data-ytc-tv] .player .pov{cursor:default}
 /* The top: title and channel over a scrim. */
-html[data-ytc-tv] #ytc-info{position:fixed;z-index:11;left:var(--sx);top:var(--sy);width:42rem;padding:0;pointer-events:none;transition:none;}
-html[data-ytc-tv] .watch .wp::before{content:"";position:fixed;z-index:11;left:0;right:0;top:0;height:10rem;background:linear-gradient(rgba(15,15,15,.82),rgba(15,15,15,0));pointer-events:none;transition:none;}
+html[data-ytc-tv] #ytc-info{position:fixed;z-index:11;left:2.5rem;top:var(--sy);width:46rem;padding:0;pointer-events:none;transition:none;}
+html[data-ytc-tv] .watch .wp::before{content:"";position:fixed;z-index:11;left:0;right:0;top:0;height:10rem;background:linear-gradient(rgba(15,15,15,.85),rgba(15,15,15,.6) 50%,rgba(15,15,15,0));pointer-events:none;transition:none;}
 html[data-ytc-tv] .wp:has(#ytc-player.idle)::before,html[data-ytc-tv] .wp:has(#ytc-player.menu)::before,html[data-ytc-tv] #ytc-player.idle~#ytc-info,html[data-ytc-tv] #ytc-player.menu~#ytc-info,html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on) #ytc-info,html[data-ytc-tv] .wp:has(.pfail)::before,html[data-ytc-tv] #ytc-player:has(.pfail)~#ytc-info{opacity:0;transition:none;}
-html[data-ytc-tv] #ytc .wt{margin:0;font-size:1.5rem;line-height:1.875rem;font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-html[data-ytc-tv] #ytc-info .wo{display:flex;align-items:center;gap:.625rem;margin-top:.5rem;min-height:1.5rem}
-html[data-ytc-tv] #ytc-info .wo .av{width:1.5rem;height:1.5rem;border-radius:50%}
-html[data-ytc-tv] #ytc-info .wc{font-size:.9375rem;color:var(--mu)}
+html[data-ytc-tv] #ytc .wt{margin:0;font-size:1.375rem;line-height:1.75rem;font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+html[data-ytc-tv] #ytc-info .wo{display:flex;flex-wrap:nowrap;align-items:center;gap:.5rem;margin-top:.5rem;min-height:1.25rem}
+html[data-ytc-tv] #ytc-info .wo .av{width:1.25rem;height:1.25rem;border-radius:50%}
+html[data-ytc-tv] #ytc-info .wn{flex:1 1 auto;min-width:0;max-width:none}
+html[data-ytc-tv] #ytc-info .wc{font-size:.9375rem;line-height:1.25rem;font-weight:500;color:var(--mu)}
 html[data-ytc-tv] #ytc-info :is(.wn .m,.wsub,.wa,.desc,.ych){display:none}
 /* The bottom: time row, the thick seek bar, the round buttons. */
-html[data-ytc-tv] .pctl{z-index:12;padding:6rem 3.625rem 3.5rem;background:linear-gradient(rgba(15,15,15,0),rgba(15,15,15,.9) 70%);transition:none;}
+html[data-ytc-tv] .pctl{z-index:12;padding:4.5rem 2.5rem 3.25rem;background:linear-gradient(rgba(15,15,15,0),rgba(15,15,15,.9) 70%);transition:none;}
 html[data-ytc-tv] .player.idle .pctl{transition:none;}
 /* (A pointer's cursor stays while the controls have the focus; only with a pointer: on a remote this :has() restyled
    every element of the player on each button move, ~280 elements three times, ~200 ms per press at a TV's CPU.) */
 @media (any-pointer:fine){html[data-ytc-tv] .player:has(.pctl :focus),html[data-ytc-tv] .player:has(.pctl :focus) *{cursor:default!important}}
-html[data-ytc-tv] .ptr{display:flex;align-items:baseline;gap:.75rem;margin:0 0 .625rem;font-size:.875rem;line-height:1.25rem;font-variant-numeric:tabular-nums}
-html[data-ytc-tv] .ptr .ptime{margin:0;font-size:.875rem;color:var(--tx)}
-html[data-ytc-tv] .ptr .pchap{display:block;max-width:30rem;height:auto;margin:0;padding:0;font-size:.875rem;line-height:1.25rem;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+html[data-ytc-tv] .ptr{display:flex;align-items:baseline;gap:.625rem;margin:0 0 .375rem;font-size:.8125rem;line-height:1.125rem;font-variant-numeric:tabular-nums}
+html[data-ytc-tv] .ptr .ptime{margin:0;font-size:.8125rem;color:var(--tx)}
+html[data-ytc-tv] .ptr .pchap{display:block;max-width:36rem;height:auto;margin:0;padding:0;font-size:.8125rem;line-height:1.125rem;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 html[data-ytc-tv] .ptr .pchap[data-n="0"]{display:none}
-html[data-ytc-tv] .ptr .pchap::before{content:"·";margin-right:.75rem}html[data-ytc-tv] .ptr .pchap::after{content:none}
+html[data-ytc-tv] .ptr .pchap::before{content:"·";margin-right:.625rem}html[data-ytc-tv] .ptr .pchap::after{content:none}
 html[data-ytc-tv] .ptr .prem{margin-left:auto;color:var(--tx)}
 html[data-ytc-tv] .player.live .prem{display:none}
-html[data-ytc-tv] .ptr .plive{margin-left:auto;height:1.5rem;padding:0 .625rem;font-size:.75rem;border-radius:.375rem}
-html[data-ytc-tv] .pseek{height:1.25rem;outline:none!important}
-html[data-ytc-tv] .psegs{height:.25rem;transform-origin:50% 50%;transition:none;}
+html[data-ytc-tv] .ptr .plive{margin-left:auto;height:1.25rem;padding:0 .5rem;font-size:.75rem;border-radius:.3125rem}
+html[data-ytc-tv] .pseek{height:.875rem;outline:none!important}
+html[data-ytc-tv] .psegs{height:.1667rem;transform-origin:50% 50%;transition:none;}
 html[data-ytc-tv] .pseek:focus .psegs{transform:scaleY(1.5)}
-html[data-ytc-tv] .pbar{border-radius:.125rem}html[data-ytc-tv] .pbar:not(:last-child){--g:.1875rem}
+html[data-ytc-tv] .pbar{border-radius:.125rem}html[data-ytc-tv] .pbar:not(:last-child){--g:.125rem}
 html[data-ytc-tv] .pbuf{background:rgba(241,241,241,.4)}
-html[data-ytc-tv] .pknob::before{left:-.5rem;top:-.5rem;width:1rem;height:1rem;box-shadow:none}
+html[data-ytc-tv] .pknob::before{left:-.375rem;top:-.375rem;width:.75rem;height:.75rem;box-shadow:none}
 html[data-ytc-tv] .pseek:focus .pknob::before{opacity:1;transform:none;transition:none;}
 /* Scrubbing (←/→ on the bar): the storyboard frame and the target time ride above the bar. */
-html[data-ytc-tv] .ptip{bottom:calc(100% + 2.75rem);max-width:min(12rem,100cqw);font:500 .875rem/1.25rem var(--tvf)}
-html[data-ytc-tv] .pti{max-width:min(12rem,100cqw);padding:.25rem .5rem .375rem;border-radius:.625rem}
-html[data-ytc-tv] .ptip::before{border-radius:.625rem}
-html[data-ytc-tv] .ptip .ptf{width:10rem;margin:.25rem 0 .375rem;border-radius:.375rem}
+html[data-ytc-tv] .ptip{bottom:calc(100% + 2rem);max-width:min(13rem,100cqw);font:500 .8125rem/1.125rem var(--tvf)}
+html[data-ytc-tv] .pti{max-width:min(13rem,100cqw);padding:.25rem .375rem .3125rem;border-radius:.5rem}
+html[data-ytc-tv] .ptip::before{border-radius:.5rem}
+html[data-ytc-tv] .ptip .ptf{width:11rem;margin:.1875rem 0 .3125rem;border-radius:.3125rem}
 html[data-ytc-tv] .ptip b{font-size:.75rem}
 html[data-ytc-tv] .ptip .ptk{font:500 .75rem/1rem var(--tvf)}
-html[data-ytc-tv] .ptk::before{width:.375rem;height:.375rem;margin-right:.3125rem;vertical-align:.0625rem}
-html[data-ytc-tv] .prow{gap:1rem;height:3rem;margin-top:1.5rem}
-html[data-ytc-tv] #ytc .prow .pb,html[data-ytc-tv] #ytc-player .pslot .wl{display:grid;place-items:center;width:3rem;height:3rem;margin:0;padding:0;border:0;border-radius:1.5rem;background:rgba(39,39,39,.85);color:var(--tx);opacity:1;transition:none;}
-html[data-ytc-tv] #ytc .prow .pb.pw{width:auto;min-width:3rem;padding:0 1.125rem;box-sizing:border-box}
-html[data-ytc-tv] #ytc .prow .pb svg,html[data-ytc-tv] #ytc-player .pslot .wl svg{width:1.375rem;height:1.375rem}
+html[data-ytc-tv] .ptk::before{width:.3125rem;height:.3125rem;margin-right:.25rem;vertical-align:.0625rem}
+html[data-ytc-tv] .prow{gap:.75rem;height:2.5rem;margin-top:1rem}
+html[data-ytc-tv] #ytc .prow .pb,html[data-ytc-tv] #ytc-player .pslot .wl{display:grid;place-items:center;width:2.5rem;height:2.5rem;margin:0;padding:0;border:0;border-radius:1.25rem;background:rgba(39,39,39,.85);color:var(--tx);opacity:1;transition:none;}
+html[data-ytc-tv] #ytc .prow .pb.pw{width:auto;min-width:2.5rem;padding:0 .875rem;box-sizing:border-box}
+html[data-ytc-tv] #ytc .prow .pb svg,html[data-ytc-tv] #ytc-player .pslot .wl svg{display:block;width:1.1875rem;height:1.1875rem}
 html[data-ytc-tv] #ytc .prow .plbl{font:600 .875rem/1 var(--tvf)}
 html[data-ytc-tv] #ytc .prow .plbl.pq{padding:0;border:0;font-size:.875rem;letter-spacing:0}
 html[data-ytc-tv] #ytc .prow :is(.pb,.wl):focus{background:var(--cb);color:var(--tx);outline:var(--ring) solid var(--ac);outline-offset:.1875rem;scale:none}
@@ -1320,138 +1323,141 @@ html[data-ytc-tv] .watch:has(#ytc-like[aria-pressed=true]) .tvlk:not(:focus){col
 html[data-ytc-tv] .watch:has(#ytc-like[aria-pressed=true]) .tvlk svg{fill:currentColor;fill-opacity:.2}
 html[data-ytc-tv] #ytc-player .pslot .wl.saved:not(:focus),html[data-ytc-tv] #ytc-player .pslot .wl.on:not(:focus){color:var(--ac)}
 html[data-ytc-tv] .player.big:not(.wait) .pbig{opacity:0}
-html[data-ytc-tv] .pbig{width:5rem;height:5rem;margin:-2.5rem}html[data-ytc-tv] .pbig svg{width:2.5rem;height:2.5rem}
-html[data-ytc-tv] .pfx{width:4rem;height:4rem;margin:-2rem}html[data-ytc-tv] .pfx svg{width:2rem;height:2rem}
-html[data-ytc-tv] .ptoast{top:var(--sy);left:auto;right:var(--sx);transform:none;animation:none!important;padding:.375rem 1.25rem;border-radius:1.125rem;font-size:.875rem;line-height:1.5rem;background:color-mix(in srgb,var(--pn) 94%,transparent)}
-html[data-ytc-tv] .pstuck{top:calc(var(--sy) + 6.25rem);right:var(--sx);padding:.375rem .375rem .375rem 1rem;border-radius:1.5rem;gap:.5rem;font-size:.75rem}
-html[data-ytc-tv] .pstuck .pfbt{height:2rem;padding:0 .875rem;font-size:.75rem}
+html[data-ytc-tv] .pbig{width:4.5rem;height:4.5rem;margin:-2.25rem}html[data-ytc-tv] .pbig svg{width:2rem;height:2rem}
+html[data-ytc-tv] .pfx{width:3.5rem;height:3.5rem;margin:-1.75rem}html[data-ytc-tv] .pfx svg{width:1.5rem;height:1.5rem}
+html[data-ytc-tv] .ptoast{top:var(--sy);left:auto;right:2.5rem;transform:none;animation:none!important;padding:.375rem 1rem;border-radius:1rem;font-size:.875rem;line-height:1.25rem;background:color-mix(in srgb,var(--pn) 94%,transparent)}
+html[data-ytc-tv] .pstuck{top:calc(var(--sy) + 5rem);right:2.5rem;padding:.375rem .375rem .375rem 1rem;border-radius:1.375rem;gap:.5rem;font-size:.8125rem}
+html[data-ytc-tv] .pstuck .pfbt{height:1.75rem;padding:0 .75rem;font-size:.8125rem}
 /* Up next: ↓ from the buttons (the focus inside .wr). The countdown after the video sits bottom-right. */
 html[data-ytc-tv] .wr{position:fixed;z-index:13;left:0;right:0;bottom:0;width:auto;max-width:none;margin:0;padding:0;pointer-events:none}
-html[data-ytc-tv] .wr #ytc-list.rel{display:flex;background:linear-gradient(rgba(15,15,15,0),rgba(15,15,15,.92) 2.5rem);gap:1.25rem;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;margin:0;padding:2.75rem 3.75rem calc(var(--sy) + .75rem);scroll-padding:0 3.75rem;opacity:0;transform:none;transition:none;}
-html[data-ytc-tv] .wr #ytc-list.rel::before{content:"Up next";position:absolute;left:3.75rem;top:1rem;font-size:.75rem;font-weight:500;letter-spacing:0;text-transform:none;color:var(--mu)}
+html[data-ytc-tv] .wr #ytc-list.rel{display:flex;background:linear-gradient(rgba(15,15,15,0),rgba(15,15,15,.92) 2.5rem);gap:1rem;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;margin:0;padding:2.25rem 2.5rem calc(var(--sy) + .5rem);scroll-padding:0 2.5rem;opacity:0;transform:none;transition:none;}
+html[data-ytc-tv] .wr #ytc-list.rel::before{content:"Up next";position:absolute;left:2.5rem;top:.75rem;font-size:.8125rem;font-weight:500;letter-spacing:0;text-transform:none;color:var(--mu)}
 html[data-ytc-tv] .watch:has(.wr #ytc-list :focus) .wr #ytc-list.rel{opacity:1;transform:none;pointer-events:auto;}
 html[data-ytc-tv] .watch:has(.wr #ytc-list :focus) .pctl{transform:translateY(-10rem)}
 html[data-ytc-tv] .watch:has(.wr #ytc-list :focus) .pcw{opacity:0}
-html[data-ytc-tv] .rel .c{display:block;flex:none;width:8.5rem;margin:0;contain-intrinsic-size:auto 7.5rem}
+html[data-ytc-tv] .rel .c{display:block;flex:none;width:11rem;margin:0;contain-intrinsic-size:auto 9rem}
 html[data-ytc-tv] .rel .th{border-radius:.5rem}
-html[data-ytc-tv] #ytc .rel .t{font-size:.75rem;line-height:1rem;max-height:2rem;margin-top:.5rem}
+html[data-ytc-tv] #ytc .rel .t{font-size:.8125rem;line-height:1.0625rem;max-height:2.125rem;margin-top:.375rem}
 html[data-ytc-tv] #ytc .rel .m{display:none}
 html[data-ytc-tv] .rel .d{padding:0}
 html[data-ytc-tv] .rel .more{display:none}
 html[data-ytc-tv] .wr .more{display:none}
-html[data-ytc-tv] #ytc-up .upc{position:fixed;z-index:14;right:3.375rem;bottom:9.25rem;max-width:30rem;box-sizing:border-box;margin:0;padding:1rem 1.25rem;line-height:1.25rem;gap:.75rem;border-radius:1rem;font-size:.875rem;background:var(--pn);pointer-events:auto}
+html[data-ytc-tv] #ytc-up .upc{position:fixed;z-index:14;right:2.5rem;bottom:9.75rem;max-width:30rem;box-sizing:border-box;margin:0;padding:1rem 1.25rem;line-height:1.25rem;gap:.75rem;border-radius:.75rem;font-size:.875rem;background:var(--pn);pointer-events:auto}
 html[data-ytc-tv] #ytc-up .upc b{flex-basis:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-html[data-ytc-tv] #ytc-up .upc .pill{height:2.5rem;padding:0 1.25rem;font-size:.875rem}
-html[data-ytc-tv] #ytc-up .upc .lnk2{height:2.5rem;padding:0 1rem;border-radius:1.25rem;font-size:.875rem}
+html[data-ytc-tv] #ytc-up .upc .pill{height:2.25rem;padding:0 1rem;font-size:.875rem}
+html[data-ytc-tv] #ytc-up .upc .lnk2{height:2.25rem;padding:0 1rem;border-radius:.375rem;font-size:.875rem}
+html[data-ytc-tv] #ytc-up .upbar{height:.125rem}
 /* Menus (Speed, Quality, Captions): a panel from the right edge, the current value focused; Back closes it. */
-html[data-ytc-tv] #ytc .pmenu{position:fixed;z-index:15;top:0;right:0;bottom:0;left:auto;width:19.5rem;filter:none;font-size:.9375rem;transform:none;transform-origin:100% 50%}
+html[data-ytc-tv] #ytc .pmenu{position:fixed;z-index:15;top:0;right:0;bottom:0;left:auto;width:18.5rem;filter:none;font-size:.9375rem;transform:none;transform-origin:100% 50%}
 html[data-ytc-tv] #ytc .player.menu .pmenu{transform:none}
 html[data-ytc-tv] #ytc .pmenu::before{inset:0!important;border:0;border-radius:0;background:var(--pn);box-shadow:none;border-left:.0625rem solid var(--ln)}
-html[data-ytc-tv] #ytc .pmi{max-height:none;height:100%;box-sizing:border-box;padding:var(--sy) var(--sx) var(--sy) 1.5rem;gap:.25rem;overflow:auto;border-radius:0;clip-path:none!important}
-html[data-ytc-tv] #ytc .pmi::before{display:block;margin:0 0 .75rem;font-size:1.125rem;line-height:1.5rem;font-weight:600;color:var(--tx);opacity:1}
+html[data-ytc-tv] #ytc .pmi{max-height:none;height:100%;box-sizing:border-box;padding:var(--sy) var(--sx) var(--sy) 1.25rem;gap:.25rem;overflow:auto;border-radius:0;clip-path:none!important}
+html[data-ytc-tv] #ytc .pmi::before{display:block;margin:0 0 .75rem;padding:0 .75rem;font-size:1.0625rem;line-height:1.5rem;font-weight:600;color:var(--tx);opacity:1}
 /* (The codec choice stays a desktop setting: the TV plays what the set decodes best.) */
 html[data-ytc-tv] #ytc .pmenu .mco{display:none}
 html[data-ytc-tv] #ytc .pmenu[data-m=speed] .pmi::before{content:"Playback speed"}
 html[data-ytc-tv] #ytc .pmenu[data-m=quality] .pmi::before{content:"Quality"}
 html[data-ytc-tv] #ytc .pmenu[data-m=cc] .pmi::before{content:"Captions and audio"}
 html[data-ytc-tv] #ytc .pmenu[data-m=sb] .pmi::before{content:"Segment skipping"}
-html[data-ytc-tv] #ytc .pmenu button{min-height:2.5rem;padding:0 1rem;border-radius:.75rem;font-size:.9375rem;transform:none;text-align:left}
+html[data-ytc-tv] #ytc .pmenu button{min-height:2.375rem;padding:0 .75rem;border-radius:.5rem;font-size:.9375rem;transform:none;text-align:left}
 html[data-ytc-tv] #ytc .pmenu :is(.mpre,.mql,.mls) button{display:flex;align-items:center;justify-content:space-between}
-html[data-ytc-tv] #ytc .pmenu :is(.mpre,.mql,.mls) button.on::after{content:"";width:1rem;height:.5rem;margin:-.25rem .125rem 0 0;border:solid currentColor;border-width:0 0 .1875rem .1875rem;rotate:-45deg;background:none;border-radius:0}
+/* (The playing rung's dot sits on the check mark's column.) */
+html[data-ytc-tv] #ytc .pmenu :is(.mpre,.mql,.mls) button.cur::after{flex:none;width:.3125rem;height:.3125rem;margin:0 .71875rem 0 0}
+html[data-ytc-tv] #ytc .pmenu :is(.mpre,.mql,.mls) button.on::after{content:"";width:.875rem;height:.4375rem;margin:-.25rem .125rem 0 0;border:solid currentColor;border-width:0 0 .1458rem .1458rem;rotate:-45deg;background:none;border-radius:0}
 html[data-ytc-tv] #ytc .pmenu button.on{background:none;color:var(--ac);font-weight:600}
 html[data-ytc-tv] #ytc .pmenu button:focus{background:var(--cb);outline:var(--ring) solid var(--ac);outline-offset:calc(-1 * var(--ring))}
 html[data-ytc-tv] #ytc .pmenu .pmk{display:none}
 html[data-ytc-tv] #ytc .pmenu :is(.mpre,.mql,.mls,.mco,.mvl){max-height:none;overflow:visible;gap:.25rem}
 html[data-ytc-tv] #ytc .pmenu .mrt{gap:.5rem;margin-bottom:.5rem}
-html[data-ytc-tv] #ytc .pmenu .mrt button{min-width:3rem;padding:0;justify-content:center;text-align:center;text-overflow:clip;overflow:visible}
+html[data-ytc-tv] #ytc .pmenu .mrt button{min-width:2.375rem;padding:0;justify-content:center;text-align:center;text-overflow:clip;overflow:visible}
 html[data-ytc-tv] #ytc .pmenu .mrt b{font-size:1rem}
-html[data-ytc-tv] .pmenu .msw i{flex:none;width:1.875rem;height:1rem;border-radius:.5rem;transition:none}
+html[data-ytc-tv] .pmenu .msw i{flex:none;width:1.75rem;height:1rem;border-radius:.5rem;transition:none}
 html[data-ytc-tv] .pmenu .msw i::after{left:.125rem;top:.125rem;width:.75rem;height:.75rem;transition:none}
-html[data-ytc-tv] .pmenu .msw[aria-checked=true] i::after{transform:translateX(.875rem)}
+html[data-ytc-tv] .pmenu .msw[aria-checked=true] i::after{transform:translateX(.75rem)}
 html[data-ytc-tv] #ytc .pmenu [data-hov=dw]::before{display:none}
 /* Captions: bottom centre, large, inside the safe area; above the controls while the overlay shows. */
-html[data-ytc-tv] .pcw{left:50%;top:auto;bottom:2.25rem;max-width:46rem;justify-content:center;transform:translateX(-50%);transition:none;}
-html[data-ytc-tv] .player:not(.idle) .pcw{transform:translateX(-50%) translateY(-9.5rem)}
-html[data-ytc-tv] .player.menu .pcw{left:20.25rem;max-width:34.5rem}
-html[data-ytc-tv] .player.idle:has(.psbt.on) .pcw{transform:translateX(-50%) translateY(-4rem)}
+html[data-ytc-tv] .pcw{left:50%;top:auto;bottom:2rem;max-width:60rem;justify-content:center;transform:translateX(-50%);transition:none;}
+html[data-ytc-tv] .player:not(.idle) .pcw{transform:translateX(-50%) translateY(-8rem)}
+html[data-ytc-tv] .player.menu .pcw{left:30.75rem;max-width:55rem}
+html[data-ytc-tv] .player.idle:has(.psbt.on) .pcw{transform:translateX(-50%) translateY(-3rem)}
 html[data-ytc-tv] .player.drag .pcw{opacity:0}
 html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on) .pcw{opacity:0}
-html[data-ytc-tv] .pcc{font-size:calc(1.625rem * var(--cs,1));line-height:1.3;text-align:center;cursor:default}
+html[data-ytc-tv] .pcc{font-size:calc(1.8125rem * var(--cs,1));line-height:1.3;text-align:center;cursor:default}
 /* The skip notice (SponsorBlock): to the right of the action row, clear of time and captions.
    Its text can wrap once; its button remains a focus stop (↑ or → from the last action). */
-html[data-ytc-tv] .psbt{z-index:13;left:auto;right:3.375rem;bottom:2.25rem;max-width:18rem;height:2.75rem;gap:.75rem;padding:0 .5rem 0 1.25rem;border-radius:.5rem;font-size:.9375rem;background:color-mix(in srgb,var(--pn) 94%,transparent);transition:none;}
-html[data-ytc-tv] .player:not(.idle) .psbt{bottom:4.5rem;transform:none}
-html[data-ytc-tv] .watch:has(.wr #ytc-list :focus) .psbt{bottom:4.5rem;transform:translateY(-10rem)}
+html[data-ytc-tv] .psbt{z-index:13;left:auto;right:2.5rem;bottom:2rem;max-width:17rem;height:2.5rem;gap:.625rem;padding:0 .375rem 0 1rem;border-radius:.5rem;font-size:.875rem;background:color-mix(in srgb,var(--pn) 94%,transparent);transition:none;}
+html[data-ytc-tv] .player:not(.idle) .psbt{bottom:3.25rem;transform:none}
+html[data-ytc-tv] .watch:has(.wr #ytc-list :focus) .psbt{bottom:3.25rem;transform:translateY(-10rem)}
 html[data-ytc-tv] .player.menu .psbt{opacity:0;visibility:hidden}
-html[data-ytc-tv] .psbt::before{width:.5rem;height:.5rem}
-html[data-ytc-tv] .psbt span{min-width:0;white-space:normal;line-height:1.125rem}
-html[data-ytc-tv] #ytc .psbt button{flex:none;height:2rem;padding:0 1rem;border-radius:1rem;background:var(--ac);color:var(--bg);font-size:.875rem;font-weight:600}
+html[data-ytc-tv] .psbt::before{width:.4375rem;height:.4375rem}
+html[data-ytc-tv] .psbt span{min-width:0;white-space:normal;line-height:1.0625rem}
+html[data-ytc-tv] #ytc .psbt button{flex:none;height:1.75rem;padding:0 .875rem;border-radius:.375rem;background:var(--ac);color:var(--bg);font-size:.875rem;font-weight:600}
 /* Failure and offline: the panel in the middle, large, its first action focused. */
-html[data-ytc-tv] .pfail{max-width:32rem;height:auto;padding:2.25rem 2.5rem;border-radius:1.25rem;gap:0;background:var(--pn)}
+html[data-ytc-tv] .pfail{max-width:30rem;height:auto;padding:2rem 2.25rem;border-radius:1rem;gap:0;background:var(--pn)}
 html[data-ytc-tv] .wp:has(.pfail)::before,html[data-ytc-tv] #ytc-player:has(.pfail)~#ytc-info{transition:none;}
-html[data-ytc-tv] .pfm{font:600 1.375rem/1.75rem var(--tvf)}
-html[data-ytc-tv] .pfr{margin-top:.625rem;font:.6875rem/1rem ui-monospace,Menlo,monospace;max-height:4rem;overflow:hidden}
-html[data-ytc-tv] .pfb{gap:1rem;margin-top:1.5rem}
-html[data-ytc-tv] #ytc .pfbt{height:2.75rem;padding:0 1.5rem;border-radius:.5rem;font-size:.9375rem}
+html[data-ytc-tv] .pfm{font:600 1.25rem/1.625rem var(--tvf)}
+html[data-ytc-tv] .pfr{margin-top:.5rem;font:.75rem/1.0625rem ui-monospace,Menlo,monospace;max-height:4.25rem;overflow:hidden}
+html[data-ytc-tv] .pfb{gap:.75rem;margin-top:1.25rem}
+html[data-ytc-tv] #ytc .pfbt{height:2.5rem;padding:0 1.25rem;border-radius:.5rem;font-size:.9375rem}
 /* More info: the description as a panel from the right (↑/↓ scroll it). */
-html[data-ytc-tv] .tvi{position:fixed;z-index:16;top:0;right:0;bottom:0;width:26rem;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;background:var(--pn);box-shadow:none;border-left:.0625rem solid var(--ln);opacity:0;visibility:hidden;transform:none;transition:none;}
+html[data-ytc-tv] .tvi{position:fixed;z-index:16;top:0;right:0;bottom:0;width:25rem;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;background:var(--pn);box-shadow:none;border-left:.0625rem solid var(--ln);opacity:0;visibility:hidden;transform:none;transition:none;}
 html[data-ytc-tv] .tvi.on{opacity:1;visibility:visible;transform:none;transition:none;}
-html[data-ytc-tv] #ytc .tvi h2{margin:0 0 .5rem;font-size:1.125rem;line-height:1.5rem;font-weight:600}
-html[data-ytc-tv] .tvi>.m{margin:0 0 1rem;font-size:.75rem;color:var(--mu);white-space:normal}
-html[data-ytc-tv] .tvd{font-size:.875rem;line-height:1.3125rem;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:.5rem}
+html[data-ytc-tv] #ytc .tvi h2{margin:0 0 .5rem;font-size:1.0625rem;line-height:1.4375rem;font-weight:600}
+html[data-ytc-tv] .tvi>.m{margin:0 0 1rem;font-size:.8125rem;color:var(--mu);white-space:normal}
+html[data-ytc-tv] .tvd{font-size:.9375rem;line-height:1.375rem;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:.5rem}
 html[data-ytc-tv] #ytc .tvd:focus{outline:var(--ring) solid var(--ac);outline-offset:.25rem}
 html[data-ytc-tv] #ytc .tvd a{color:var(--ac);text-decoration:underline;text-underline-offset:.125rem}
 html[data-ytc-tv] #ytc .tvd a:focus{outline:var(--ring) solid var(--ac);outline-offset:.0625rem}
-html[data-ytc-tv] .tvih{flex:none;z-index:2;padding:calc(var(--sy) + .25rem) var(--sx) 1rem 1.5rem;background:var(--pn)}
-html[data-ytc-tv] .tvib{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--bd) transparent;scroll-padding:1rem 0;margin-bottom:var(--sy);padding:.5rem calc(var(--sx) + .5rem) 1rem 1.5rem}
-html[data-ytc-tv] #ytc .tvih .tvb{height:2.25rem;padding:0 1rem;font-size:.875rem;background:var(--cb);color:var(--tx)}
-html[data-ytc-tv] .tvi .tvim{margin:.5rem 0 1.25rem;font-size:.75rem;line-height:1.125rem;color:var(--mu);white-space:normal}
-html[data-ytc-tv] .tvia{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;margin:0 0 1.5rem}
-html[data-ytc-tv] #ytc .tvia :is(.tvb,.ya-sub){min-height:2.5rem;height:auto;box-sizing:border-box;max-width:100%;padding:.625rem 1rem;border:0;border-radius:.5rem;background:var(--cb);color:var(--tx);font:500 .875rem/1.25 var(--tvf);white-space:normal;transform:none;transition:none}
+html[data-ytc-tv] .tvih{flex:none;z-index:2;padding:calc(var(--sy) + .25rem) var(--sx) 1rem 1.25rem;background:var(--pn)}
+html[data-ytc-tv] .tvib{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--bd) transparent;scroll-padding:1rem 0;margin-bottom:var(--sy);padding:.5rem calc(var(--sx) + .5rem) 1rem 1.25rem}
+html[data-ytc-tv] #ytc .tvih .tvb{height:2.125rem;padding:0 1rem;font-size:.875rem;background:var(--cb);color:var(--tx)}
+html[data-ytc-tv] .tvi .tvim{margin:.5rem 0 1.25rem;font-size:.8125rem;line-height:1.125rem;color:var(--mu);white-space:normal}
+html[data-ytc-tv] .tvia{display:flex;flex-wrap:wrap;align-items:center;gap:.625rem;margin:0 0 1.25rem}
+html[data-ytc-tv] #ytc .tvia :is(.tvb,.ya-sub){min-height:2.25rem;height:auto;box-sizing:border-box;max-width:100%;padding:.5rem .875rem;border:0;border-radius:.5rem;background:var(--cb);color:var(--tx);font:500 .875rem/1.25 var(--tvf);white-space:normal;transform:none;transition:none}
 html[data-ytc-tv] #ytc .tvia :is(a,button):focus{outline:var(--ring) solid var(--ac);outline-offset:.125rem}
 html[data-ytc-tv] .tvam:empty{display:none}
-html[data-ytc-tv] .tvam{margin:0 0 1.25rem;font-size:.75rem;line-height:1.125rem;color:var(--er)}
-html[data-ytc-tv] .tvchap{margin-top:1.75rem;padding-top:1.25rem;border-top:.0625rem solid var(--ln)}
-html[data-ytc-tv] #ytc .tvchap h3{margin:0 0 .75rem;font-size:.875rem;line-height:1.25rem;font-weight:500}
-html[data-ytc-tv] .tvchap ol{list-style:none;display:grid;gap:.375rem;margin:0;padding:0}
-html[data-ytc-tv] #ytc .tvchap button{display:flex;align-items:baseline;gap:.75rem;box-sizing:border-box;width:100%;min-height:2.5rem;padding:.625rem .75rem;border:0;border-radius:.375rem;background:transparent;color:var(--tx);font:.875rem/1.25 var(--tvf);text-align:left;transform:none;transition:none}
+html[data-ytc-tv] .tvam{margin:0 0 1.25rem;font-size:.8125rem;line-height:1.125rem;color:var(--er)}
+html[data-ytc-tv] .tvchap{margin-top:1.5rem;padding-top:1.25rem;border-top:.0625rem solid var(--ln)}
+html[data-ytc-tv] #ytc .tvchap h3{margin:0 0 .75rem;font-size:.9375rem;line-height:1.25rem;font-weight:500}
+html[data-ytc-tv] .tvchap ol{list-style:none;display:grid;gap:.25rem;margin:0 -.75rem;padding:0}
+html[data-ytc-tv] #ytc .tvchap button{display:flex;align-items:baseline;gap:.75rem;box-sizing:border-box;width:100%;min-height:2.375rem;padding:.5rem .75rem;border:0;border-radius:.375rem;background:transparent;color:var(--tx);font:.9375rem/1.25 var(--tvf);text-align:left;transform:none;transition:none}
 html[data-ytc-tv] #ytc .tvchap button:focus{outline:var(--ring) solid var(--ac);outline-offset:0;background:var(--cb)}
-html[data-ytc-tv] .tvchap button>span:first-child{flex:none;min-width:2.75rem;color:var(--mu);font-size:.75rem;font-weight:400;font-variant-numeric:tabular-nums}
+html[data-ytc-tv] .tvchap button>span:first-child{flex:none;min-width:2.75rem;color:var(--mu);font-size:.8125rem;font-weight:400;font-variant-numeric:tabular-nums}
 html[data-ytc-tv] .tvchap button>span:last-child{min-width:0;overflow-wrap:anywhere}
 
 /* ---- comments: a readable, remote-operated sheet beside the video. Its header stays put while the list scrolls. */
-html[data-ytc-tv] #ytc-comments.tvcm{display:none;position:fixed;z-index:17;inset:0 0 0 auto;width:30rem;max-width:none;box-sizing:border-box;margin:0;padding:0;overflow:hidden;background:var(--pn);border-left:.0625rem solid var(--ln);color:var(--tx)}
+html[data-ytc-tv] #ytc-comments.tvcm{display:none;position:fixed;z-index:17;inset:0 0 0 auto;width:28.5rem;max-width:none;box-sizing:border-box;margin:0;padding:0;overflow:hidden;background:var(--pn);border-left:.0625rem solid var(--ln);color:var(--tx)}
 html[data-ytc-tv] #ytc-comments.tvcm.on{display:flex;flex-direction:column}
-html[data-ytc-tv] .tvcm-head{flex:none;padding:calc(var(--sy) + .25rem) var(--sx) 1rem 1.5rem;border-bottom:.0625rem solid var(--ln);background:var(--pn)}
-html[data-ytc-tv] #ytc .tvcm-head .tvb{height:2.25rem;padding:0 1rem;font-size:.875rem;background:var(--cb);color:var(--tx)}
-html[data-ytc-tv] #ytc .tvcm-head h2{margin:1.25rem 0 0;font-size:1.5rem;line-height:1.875rem;font-weight:500}
-html[data-ytc-tv] .tvcm-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--bd) transparent;scroll-padding:1rem 0;box-sizing:border-box;margin-bottom:var(--sy);padding:1.25rem calc(var(--sx) + .5rem) 1rem 1.5rem}
+html[data-ytc-tv] .tvcm-head{flex:none;padding:calc(var(--sy) + .25rem) var(--sx) 1rem 1.25rem;border-bottom:.0625rem solid var(--ln);background:var(--pn)}
+html[data-ytc-tv] #ytc .tvcm-head .tvb{height:2.125rem;padding:0 1rem;font-size:.875rem;background:var(--cb);color:var(--tx)}
+html[data-ytc-tv] #ytc .tvcm-head h2{margin:1rem 0 0;font-size:1.25rem;line-height:1.625rem;font-weight:500}
+html[data-ytc-tv] .tvcm-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--bd) transparent;scroll-padding:1rem 0;box-sizing:border-box;margin-bottom:var(--sy);padding:1rem calc(var(--sx) + .5rem) 1rem 1.25rem}
 html[data-ytc-tv] #ytc .tvcm .yc{max-width:none;margin:0}
-html[data-ytc-tv] #ytc .tvcm .yc-h{display:flex;align-items:flex-start;flex-direction:column;gap:.75rem;margin:0 0 1.5rem}
+html[data-ytc-tv] #ytc .tvcm .yc-h{display:flex;align-items:flex-start;flex-direction:column;gap:.625rem;margin:0 0 1.25rem}
 html[data-ytc-tv] #ytc .tvcm .yc-h h2{font-size:.875rem;line-height:1.25rem;font-weight:400;color:var(--mu)}
 html[data-ytc-tv] #ytc .tvcm .yc-sort{gap:.5rem}
-html[data-ytc-tv] #ytc .tvcm .yc-sort button{height:2.25rem;padding:0 1rem;border-radius:.375rem;font-size:.875rem;font-weight:500;transform:none;transition:none}
+html[data-ytc-tv] #ytc .tvcm .yc-sort button{height:2rem;padding:0 .875rem;border-radius:.375rem;font-size:.875rem;font-weight:500;transform:none;transition:none}
 html[data-ytc-tv] #ytc .tvcm .yc-sort button.on{background:var(--on);color:var(--ac)}
-html[data-ytc-tv] #ytc .tvcm .ycm{gap:.75rem;margin:0 0 1.25rem;padding:.5rem;border-radius:.375rem;opacity:1;transform:none;transition:none}
+html[data-ytc-tv] #ytc .tvcm .ycm{gap:.75rem;margin:0 -.5rem 1rem;padding:.5rem;border-radius:.375rem;opacity:1;transform:none;transition:none}
 html[data-ytc-tv] #ytc .tvcm .yct:focus{outline:var(--ring) solid var(--ac);outline-offset:.25rem;border-radius:.125rem;background:var(--rs)}
 html[data-ytc-tv] #ytc .tvcm .yc-av,html[data-ytc-tv] #ytc .tvcm .yc-av .av{width:1.5rem;height:1.5rem}
 html[data-ytc-tv] #ytc .tvcm .ycr .yc-av,html[data-ytc-tv] #ytc .tvcm .ycr .yc-av .av{width:1.125rem;height:1.125rem}
-html[data-ytc-tv] #ytc .tvcm .ych-h{display:flex;flex-wrap:wrap;gap:.25rem .5rem;font-size:.75rem;line-height:1.125rem;overflow-wrap:anywhere}
+html[data-ytc-tv] #ytc .tvcm .ych-h{display:flex;flex-wrap:wrap;gap:.25rem .5rem;font-size:.8125rem;line-height:1.125rem;overflow-wrap:anywhere}
 html[data-ytc-tv] #ytc .tvcm .yca{font-weight:500}
 html[data-ytc-tv] #ytc .tvcm .yca.own{padding:0 .25rem;border-radius:.125rem;background:var(--cb)}
-html[data-ytc-tv] #ytc .tvcm :is(.yctm,.ycv,.ycp){font-size:.75rem;line-height:1.125rem;color:var(--mu)}
+html[data-ytc-tv] #ytc .tvcm :is(.yctm,.ycv,.ycp){font-size:.8125rem;line-height:1.125rem;color:var(--mu)}
 html[data-ytc-tv] #ytc .tvcm .ycp{margin-bottom:.25rem}
-html[data-ytc-tv] #ytc .tvcm .yct{margin-top:.5rem;font-size:.875rem;line-height:1.375rem}
+html[data-ytc-tv] #ytc .tvcm .yct{margin-top:.375rem;font-size:.9375rem;line-height:1.375rem}
 html[data-ytc-tv] #ytc .tvcm .yct a{color:var(--ac);text-decoration:underline;text-underline-offset:.125rem}
-html[data-ytc-tv] #ytc .tvcm .ycf{flex-wrap:wrap;gap:.75rem;min-height:2rem;margin-top:.5rem;font-size:.75rem;line-height:1.125rem;font-variant-numeric:tabular-nums}
+html[data-ytc-tv] #ytc .tvcm .ycf{flex-wrap:wrap;gap:.75rem;min-height:1.875rem;margin-top:.375rem;font-size:.8125rem;line-height:1.125rem;font-variant-numeric:tabular-nums}
 html[data-ytc-tv] #ytc .tvcm .ycl{gap:.25rem}
-html[data-ytc-tv] #ytc .tvcm .ycl svg{width:1rem;height:1rem}
-html[data-ytc-tv] #ytc .tvcm .ycrb{min-height:2rem;padding:.375rem .5rem;border-radius:.375rem;color:var(--tx);font-size:.75rem;font-weight:500;background:var(--cb);transform:none;transition:none}
+html[data-ytc-tv] #ytc .tvcm .ycl svg{width:.9375rem;height:.9375rem}
+html[data-ytc-tv] #ytc .tvcm .ycrb{min-height:1.875rem;padding:.3125rem .625rem;border-radius:.375rem;color:var(--tx);font-size:.8125rem;font-weight:500;background:var(--cb);transform:none;transition:none}
 html[data-ytc-tv] #ytc .tvcm .ycr{margin-top:.75rem;clip-path:none;opacity:1;transition:none}
-html[data-ytc-tv] #ytc .tvcm .ycr .ycm{padding:.5rem 0;margin-bottom:1rem}
+html[data-ytc-tv] #ytc .tvcm .ycr .ycm{padding:.5rem 0;margin:0 0 1rem}
 html[data-ytc-tv] #ytc .tvcm .ycsk{display:none}
-html[data-ytc-tv] #ytc .tvcm :is(.yc-note,.yc-end){margin:.75rem 0 1.5rem;font-size:.875rem;line-height:1.375rem;color:var(--mu);font-weight:400}
-html[data-ytc-tv] #ytc .tvcm .yc-note .lnk2{display:inline-flex;align-items:center;min-height:2rem;margin-left:.5rem;padding:0 .5rem;border-radius:.375rem;font-size:.875rem;color:var(--tx);background:var(--cb)}
+html[data-ytc-tv] #ytc .tvcm :is(.yc-note,.yc-end){margin:.75rem 0 1.25rem;font-size:.9375rem;line-height:1.375rem;color:var(--mu);font-weight:400}
+html[data-ytc-tv] #ytc .tvcm .yc-note .lnk2{display:inline-flex;align-items:center;min-height:1.875rem;margin-left:.5rem;padding:0 .625rem;border-radius:.375rem;font-size:.875rem;color:var(--tx);background:var(--cb)}
 html[data-ytc-tv] #ytc .tvcm :is(button,a):focus{outline:var(--ring) solid var(--ac);outline-offset:.0625rem;border-radius:.25rem}
 html[data-ytc-tv] #ytc .tvcm :is(.ycm,.ycr,.ycm *,.yc-sort *){animation:none}
 html[data-ytc-tv] #ytc:has(#ytc-comments.tvcm.on) :is(#ytc-info,.pcw,.pctl,.wr),html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on) :is(.pctl,.wr){opacity:0;pointer-events:none}
@@ -1459,7 +1465,7 @@ html[data-ytc-tv] #ytc:has(#ytc-comments.tvcm.on) :is(#ytc-info,.pcw,.pctl,.wr),
 /* Read the focused player action without a mouse tooltip. Keep one label visible, below the steady button row. */
 html[data-ytc-tv] #ytc .prow :is(.pb,.wl){position:relative;overflow:visible}
 html[data-ytc-tv] #ytc .prow .pb.pw{border-radius:.5rem}
-html[data-ytc-tv] #ytc .prow .tvpl{display:none;position:absolute;left:50%;top:calc(100% + .5rem);translate:-50% 0;max-width:9rem;white-space:nowrap;color:var(--tx);font:400 .75rem/1rem var(--tvf);pointer-events:none}
+html[data-ytc-tv] #ytc .prow .tvpl{display:none;position:absolute;left:50%;top:calc(100% + .5rem);translate:-50% 0;max-width:10rem;white-space:nowrap;color:var(--tx);font:400 .8125rem/1.0625rem var(--tvf);pointer-events:none}
 html[data-ytc-tv] #ytc .prow :is(.pb,.wl):focus>.tvpl{display:block}
 html[data-ytc-tv] #ytc .prow>.pb:first-child .tvpl{left:0;translate:none}
 /* The idle overlay may fade away over the picture; waking and every remote action are instant. */
@@ -1474,41 +1480,42 @@ html[data-ytc-tv] .tvs.on{opacity:1;visibility:visible;transition:none;}
 html[data-ytc-tv] .tvs .tvp{position:absolute;inset:0;transform:none;transition:none;}
 html[data-ytc-tv] .tvs.on .tvp{transform:none}
 html[data-ytc-tv] .tvs .rmk b{opacity:1;translate:0}
-html[data-ytc-tv] .tvs .tvl{position:absolute;left:7.75rem;top:6.5rem;width:27rem}
-html[data-ytc-tv] #ytc .tvs h2{margin:0;font-size:1.75rem;line-height:2.25rem;font-weight:500;letter-spacing:-.015em}
+html[data-ytc-tv] .tvs .tvl{position:absolute;left:5.75rem;top:6rem;width:32rem}
+html[data-ytc-tv] #ytc .tvs h2{margin:0;font-size:1.5rem;line-height:2rem;font-weight:500;letter-spacing:-.015em}
 html[data-ytc-tv] .tvs ol{margin:1.25rem 0 0;padding:0;list-style:none;counter-reset:s;display:grid;gap:.375rem;font-size:.9375rem;line-height:1.375rem;color:var(--mu)}
 html[data-ytc-tv] .tvs ol li{counter-increment:s}html[data-ytc-tv] .tvs ol li::before{content:counter(s) " · "}
 html[data-ytc-tv] .tvs .tvu{display:block;margin:.125rem 0 .625rem;font-size:1.25rem;line-height:1.75rem;font-weight:600;color:var(--tx);overflow-wrap:anywhere}
-html[data-ytc-tv] .tvs .tvc{margin:.375rem 0 0;font:600 3.25rem/1.1 ui-monospace,"SF Mono",Menlo,"Roboto Mono",monospace;letter-spacing:.08em;color:var(--ac);white-space:nowrap}
-html[data-ytc-tv] .tvs .tvst{margin:1rem 0 0;font-size:.75rem;line-height:1.125rem;color:var(--mu);overflow-wrap:anywhere}
-html[data-ytc-tv] .tvs .tva{display:grid;place-items:center;width:4.5rem;height:4.5rem;margin-bottom:1.25rem;border-radius:50%;background:var(--on);color:var(--ac)}
-html[data-ytc-tv] .tvs .tva svg{width:2.25rem;height:2.25rem;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
-html[data-ytc-tv] .tvs .tvqr{position:absolute;right:7rem;top:7.25rem;width:13rem;margin:0}
-html[data-ytc-tv] .tvs .tvq{display:block;width:13rem;height:13rem;box-sizing:border-box;padding:.75rem;border-radius:1rem;background:#f1f1f1}
+html[data-ytc-tv] .tvs .tvc{margin:.375rem 0 0;font:600 3.5rem/1.1 ui-monospace,"SF Mono",Menlo,"Roboto Mono",monospace;letter-spacing:.08em;color:var(--ac);white-space:nowrap}
+html[data-ytc-tv] .tvs .tvst{margin:1rem 0 0;font-size:.8125rem;line-height:1.125rem;color:var(--mu);overflow-wrap:anywhere}
+html[data-ytc-tv] .tvs .tva{display:grid;place-items:center;width:3.5rem;height:3.5rem;margin-bottom:1rem;border-radius:50%;background:var(--on);color:var(--ac)}
+html[data-ytc-tv] .tvs .tva svg{display:block;width:1.75rem;height:1.75rem;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+html[data-ytc-tv] .tvs .tvqr{position:absolute;right:5.75rem;top:6.5rem;width:15rem;margin:0}
+html[data-ytc-tv] .tvs .tvq{display:block;width:15rem;height:15rem;box-sizing:border-box;padding:.875rem;border-radius:.875rem;background:#f1f1f1}
 html[data-ytc-tv] .tvs .tvq path{fill:#0f0f0f}
-html[data-ytc-tv] .tvs figcaption{margin:.75rem 0 0;text-align:center;font-size:.75rem;color:var(--mu)}
-html[data-ytc-tv] .tvs .tvbs{position:absolute;left:7.75rem;bottom:3.5rem;margin:0}
+html[data-ytc-tv] .tvs figcaption{margin:.75rem 0 0;text-align:center;font-size:.8125rem;color:var(--mu)}
+html[data-ytc-tv] .tvs .tvbs{position:absolute;left:5.75rem;bottom:calc(var(--sy) + 1.5rem);margin:0}
 /* ---- About & updates: the versions, the last check, one action (focused). */
 html[data-ytc-tv] .tvs .tvab{width:30rem}
-html[data-ytc-tv] .tvs .tvv{display:grid;grid-template-columns:auto 1fr;gap:.5rem 1.5rem;margin:1.25rem 0 0;font-size:.875rem;line-height:1.25rem}
+html[data-ytc-tv] .tvs .tvv{display:grid;grid-template-columns:auto 1fr;gap:.5rem 1.5rem;margin:1.25rem 0 0;font-size:.9375rem;line-height:1.375rem}
 html[data-ytc-tv] .tvs .tvv dt{color:var(--mu)}html[data-ytc-tv] .tvs .tvv dd{margin:0;color:var(--tx);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-html[data-ytc-tv] .tvs .tvus{margin-top:1.75rem;padding:1.25rem 1.5rem;border-radius:1rem;background:var(--pn);display:grid;gap:.625rem}
-html[data-ytc-tv] .tvs .tvus b{font-size:1.25rem;line-height:1.625rem;font-weight:600}
+html[data-ytc-tv] .tvs .tvus{margin-top:1.5rem;padding:1.25rem 1.5rem;border-radius:.75rem;background:var(--pn);display:grid;gap:.625rem}
+html[data-ytc-tv] .tvs .tvus b{font-size:1.125rem;line-height:1.5rem;font-weight:600}
 html[data-ytc-tv] .tvs .tvus.ok b,html[data-ytc-tv] .tvs .tvus.new b{color:var(--ac)}html[data-ytc-tv] .tvs .tvus.err b{color:var(--er)}
-html[data-ytc-tv] .tvs .tvus p{margin:0;font-size:.875rem;line-height:1.3125rem;color:var(--mu);overflow-wrap:anywhere}
+html[data-ytc-tv] .tvs .tvus p{margin:0;font-size:.9375rem;line-height:1.375rem;color:var(--mu);overflow-wrap:anywhere}
 html[data-ytc-tv] .tvs .tvus .tvun{color:var(--er)}
-html[data-ytc-tv] .tvs .tvpg{display:block;height:.375rem;border-radius:.1875rem;background:rgba(241,241,241,.18);overflow:hidden}
+html[data-ytc-tv] .tvs .tvpg{display:block;height:.25rem;border-radius:.125rem;background:rgba(241,241,241,.18);overflow:hidden}
 html[data-ytc-tv] .tvs .tvpg i{display:block;height:100%;background:var(--ac);transform-origin:0 50%;transform:scaleX(var(--pg,0));transition:none;}
 /* Developer (hidden until revealed: → five times on the last button; or while telemetry is on): a card on the right. */
-html[data-ytc-tv] .tvs .tvdv{position:absolute;right:3.5rem;top:6.5rem;width:15rem;margin:0}
+html[data-ytc-tv] .tvs .tvdv{position:absolute;right:5.75rem;top:6rem;width:18rem;margin:0}
 html[data-ytc-tv] .tvs .tvdv b{font-size:1rem;line-height:1.375rem}
-html[data-ytc-tv] .tvs .tvdc input{display:block;width:100%;height:2.5rem;box-sizing:border-box;margin:0;padding:0 1rem;border:.0625rem solid var(--bd);border-radius:.375rem;background:var(--rs);color:var(--tx);font:400 .875rem/1 var(--tvf);outline:none}
+html[data-ytc-tv] .tvs .tvdc input{display:block;width:100%;height:2.25rem;box-sizing:border-box;margin:0;padding:0 .875rem;border:.0625rem solid var(--bd);border-radius:.375rem;background:var(--rs);color:var(--tx);font:400 .875rem/1 var(--tvf);outline:none}
 html[data-ytc-tv] #ytc .tvs .tvdc input:focus{border-color:var(--ac);outline:var(--ring) solid var(--ac);outline-offset:.1875rem}
 html[data-ytc-tv] .tvs .tvdb{display:flex;flex-wrap:wrap;gap:.75rem}
-html[data-ytc-tv] #ytc .tvs .tvdb .tvb{height:2.25rem;padding:0 1rem;font-size:.8125rem}
+html[data-ytc-tv] #ytc .tvs .tvdb .tvb{height:2.125rem;padding:0 1rem;font-size:.8125rem}
 /* The notice: top right on the pages (never over a video); the remote reaches its button. */
-html[data-ytc-tv] .tvup{position:fixed;z-index:24;top:calc(var(--sy) + .5rem);right:3.75rem;display:flex;align-items:center;gap:.875rem;height:2.75rem;box-sizing:border-box;padding:0 .375rem 0 1.25rem;border-radius:.5rem;background:var(--pn);box-shadow:none;border:.0625rem solid var(--ln);font-size:.875rem;font-weight:500;opacity:0;visibility:hidden;transform:none;transition:none;}
-html[data-ytc-tv] .tvup::before{content:"";width:.5rem;height:.5rem;border-radius:50%;background:var(--ac)}
+html[data-ytc-tv] .tvup{position:fixed;z-index:24;top:calc(var(--sy) + .25rem);right:2.5rem;display:flex;align-items:center;gap:.75rem;height:2.5rem;box-sizing:border-box;padding:0 .375rem 0 1rem;border-radius:.5rem;background:var(--pn);box-shadow:none;border:.0625rem solid var(--ln);font-size:.875rem;font-weight:500;opacity:0;visibility:hidden;transform:none;transition:none;}
+html[data-ytc-tv] .tvup::before{content:"";width:.4375rem;height:.4375rem;border-radius:50%;background:var(--ac)}
 html[data-ytc-tv] .tvup.on{opacity:1;visibility:visible;transform:none;transition:none;}
-html[data-ytc-tv] #ytc .tvup .tvb{height:2rem;padding:0 1rem;font-size:.875rem}
+html[data-ytc-tv] #ytc .tvup .tvb{height:1.75rem;padding:0 .875rem;font-size:.8125rem}
+html[data-ytc-tv] #ytc .tvup .tvb:focus{outline-offset:.0625rem}
 html[data-ytc-tv] #ytc[data-nav=watch] .tvup,html[data-ytc-tv] #ytc[data-tvq="1"] .tvup{display:none}

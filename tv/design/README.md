@@ -10,47 +10,53 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
 
 | Token | Value | Notes |
 |---|---|---|
-| Root size | `font-size: 100vw / 60` | 1 rem = 16 CSS px on a 960×540 WebView (DPR 2), 32 px at 1920×1080, 64 px at 3840×2160: one layout at every resolution |
-| Safe area | `--sx: 3rem`, `--sy: 1.6875rem` | 5 % per side (overscan). Content and focus rings stay inside; backgrounds and pictures may bleed |
-| Ring | `--ring: .1875rem` (6 px at 1080p), offset `.1875rem` | white `#f1f1f1` (the accent `--ac`), the only focus ring |
+| Root size | `font-size: 100vw / 80` | 1 rem = 12 CSS px on a 960×540 WebView (DPR 2), 24 px at 1920×1080, 48 px at 3840×2160: one layout at every resolution |
+| Safe area | `--sx: 2rem`, `--sy: 1.575rem` | 2.5 % left and right (48 px at 1080p), 3.5 % top and bottom (38 px): current Google TV sets do not overscan. Content and focus rings stay inside; backgrounds and pictures may bleed |
+| Ring | `--ring: .1875rem` (4.5 px at 1080p), offset `.1875rem` | white `#f1f1f1` (the accent `--ac`), the only focus ring; inside the box where the box itself sits on the safe edge (rail tiles, menu rows, the search query) |
 | Focus | Steady white frame, no scale | Focus, rail expansion, panels and key feedback are immediate; the focused surface steps to `#272727` (chips: `#3f3f3f`) |
 | Colours | bg `#0f0f0f`, panels `#181818` / `#212121`, surface `#272727`, raised `#3f3f3f`, selected `#303030`, accent white `#f1f1f1`, brand and progress red `#ff0033`, text `#f1f1f1`, secondary `#aaa` | the one palette, the same as the desktop's |
-| Type (1080p px) | titles 48–56 (`1.5–1.75rem`), body 28 (`.875rem`), secondary 24 (`.75rem`), never below 22 (`.6875rem`: duration badges, the failure reason) | card titles 2 lines, ellipsis |
+| Type (1080p px) | page headings 33 (`1.375rem`), player title 33, card titles and panel text 22.5 (`.9375rem`), rail labels and buttons 21–22.5 (`.875–.9375rem`), secondary 19.5 (`.8125rem`), never below 18 (`.75rem`: duration badges, the failure reason); captions 43.5 (`1.8125rem`) | card titles 2 lines, ellipsis; the e2e audit fails any text under 17 px at 1080p |
 
 ## Layout
 
-- **Rail**: icons at x = 3.375 rem (2.5 rem tiles, pitch `--tvrow` 2.875 rem from 5.25 rem: Search, Home,
-  Subscriptions, History, Watch later, Playlists, Liked), YouTube's logo and name on top, and at the bottom (25.875 rem)
-  the account (Sign in / Account) and About & updates (a white dot while an update is ready).
+- **Rail**: tiles from the safe edge x = 2 rem (48 px; 2.5 rem = 60 px tiles with 1.25 rem = 30 px icons, pitch
+  `--tvrow` 2.875 rem from 5 rem: Search, Home, Subscriptions, History, Watch later, Playlists, Liked), YouTube's logo
+  (1.75 rem) centred over the icons and on the pages' first row, and below a gap (25.875 rem) the account (Sign in /
+  Account) and About & updates (a white dot while an update is ready). Labels open to 10.5 rem.
   The focus entering it reveals labels over the content immediately; the selected row has a quiet neutral
   surface and white text. The content never moves. Back from the content focuses the rail on the page's own item; →
   returns to where the focus was.
-- **Pages**: content from x = 7.75 rem to 56.25 rem, starting 2.1875 rem from the top (the chips row or the
-  heading, 2.25 rem tall), the grid 1.25 rem below. **4 cards per row**, 11 rem wide (16:9 thumbnail 6.19 rem),
-  1.5 rem gaps: a focused card and its ring stay inside the safe area without growing. The focused row keeps the
+- **Pages**: content from x = 5.75 rem (138 px) to 77.5 rem (60 px from the right), starting 2.075 rem from the top
+  (the chips row or the heading, 2 rem tall), the grid 1 rem below. **5 cards per row**, 13.35 rem wide (320 px; 16:9
+  thumbnail 180 px), 1.25 rem gaps: a focused card and its ring stay inside the safe area without growing. Card
+  title 22.5 px (2 lines), channel and views 19.5 px, duration 18 px; about three rows per screen. The focused row keeps the
   first row's place while the remote walks the grid (instant scroll, so a held key never waits); a fixed scrim
   fades what scrolled under the top edge.
-- **Search**: a full-screen remote keyboard, independent of the installed Android input method. The 3 rem query
-  button stays above a 22 rem-wide six-column alphabet/symbol grid on the left and recent searches / YouTube's
-  suggestions on the right. Keys are 2.5 rem tall with .375 rem gaps; Space, Delete, Clear, alphabet/symbol switch
+- **Search**: a full-screen remote keyboard, independent of the installed Android input method. The 2.5 rem query
+  button (centred on the logo's row) stays above a 21 rem-wide six-column alphabet/symbol grid on the left and recent
+  searches / YouTube's suggestions on the right. Keys are 2.25 rem tall with .375 rem gaps; Space, Delete, Clear, alphabet/symbol switch
   and Search use the same focus frame. Back first collapses the keyboard, then closes Search. Results keep the
   query on top (↑ reaches it). Edit opens the keyboard again; a physical keyboard can also type. Search opens
   above the playing video and its drawers too, then returns to the originating focus when closed.
 - **Player**: full screen at once. The overlay (any key; hidden 4 s after the last one while playing): title
-  1.5 rem and channel top-left over a scrim; at the bottom the time row (elapsed · chapter · remaining), the bar
-  (.25 rem, .375 rem focused, chapter gaps, a 1 rem knob), and the 3 rem round buttons (play/pause, captions,
-  speed, quality, like, Watch later, comments, more info). The focused action has a visible label below it. ←/→ on the bar scrub 10 s per press (30, 60, 120 s while held)
+  1.375 rem (33 px) and channel (22.5 px, the name across the row's width, never cut while it fits) top-left over a
+  scrim, on the same left edge (2.5 rem) as the time row (elapsed · chapter · remaining, 19.5 px), the bar (4 px, 6 px
+  focused, chapter gaps, an 18 px knob) and the 2.5 rem (60 px) round buttons with 28.5 px icons (play/pause,
+  captions, speed, quality, like, Watch later, comments, more info; the speed and quality pills as tall). The focused
+  action has a visible 19.5 px label below it. ←/→ on the bar scrub 10 s per press (30, 60, 120 s while held)
   with the storyboard frame above the target; the seek goes out once, when the remote rests. ↓ from the buttons
-  moves the overlay up 10 rem immediately for the Up next row (8.5 rem cards). Menus, More info and Comments are panels from the right
-  edge (19.5 / 26 / 30 rem, content inside the safe area), visible immediately. More info has Back to video,
+  moves the overlay up 10 rem immediately for the Up next row (11 rem cards, about six on screen). Menus, More info
+  and Comments are panels from the right edge (18.5 / 25 / 28.5 rem: 444 / 600 / 684 px; 22.5 px text, 57 px menu
+  rows; content inside the safe area), visible immediately. More info has Back to video,
   channel/subscription actions, a readable linked description and chapter buttons. Comments keeps a fixed
   header above a scrolling list with Top/Newest, replies, loading/error notices and focusable comment text. Captions bottom-centre at
-  1.625 rem, 9.5 rem higher while the overlay shows, clear of the time and chapter row; an open settings menu keeps captions in the visible picture
+  1.8125 rem (43.5 px), 8 rem higher while the overlay shows, clear of the time and chapter row; an open settings menu keeps captions in the visible picture
   to its left. The skip notice sits to the right of the action row (↑ or → from the last button), below the time
   row and captions. It follows the controls above Up next, and idle captions make room for a visible notice.
   Menu switches and seek-category labels use the same rem scale as the rest of the TV interface.
-- **Sign in / Account**: full screen: the steps on the left (the URL the device flow returned, the code at
-  3.25 rem), the QR code of that URL on a light 13 rem tile on the right (`src/qr.rs`), Back first and focused.
+- **Sign in / Account**: full screen: the steps on the left from the content edge (the URL the device flow
+  returned, the code at 3.5 rem = 84 px), the QR code of that URL on a light 15 rem tile on the right, as far from the
+  right edge as the steps are from the left (`src/qr.rs`), Back first and focused.
 
 - **About & updates**: full screen like Sign in: App and Interface versions, the last check and its result,
   one status card (up to date / update ready / app available with its download progress / the reason it failed)
@@ -76,15 +82,18 @@ generated imagery is needed.
 
 ## Applied polish passes
 
-1. **Spacing:** keep the existing four-card rhythm and 5% safe area. Reserve room for focus frames,
-   keyboard keys and the player's action labels; scrolling readers stop above the bottom safe margin.
+1. **Spacing:** a five-card rhythm and a 2.5 % / 3.5 % safe area (0.14.2: the owner on a Google TV, "the left
+   toolbar is too far right, and the UI is too big": four cards, 96 px player buttons and a 5 % overscan margin
+   before). Reserve room for focus frames, keyboard keys and the player's action labels; scrolling readers stop above
+   the bottom safe margin.
 2. **Color:** graphite, white and red (0.14.0; charcoal and mint before), with quieter neutral selected surfaces. Remove the seek knob's
    decorative halo and panel shadows; video remains the main source of color.
 3. **Icons:** retain the existing outline family and consistent TV-sized icon boxes. Comments uses the
    same stroke treatment; focused player actions also have readable text labels.
 4. **Copy:** use sentence case for Up next and Recent and suggested. Keyboard instructions describe the
    actual remote controls, and every reader has an explicit Back to video action.
-5. **Type:** keep Roboto/system, the existing readable TV scale and three text roles. Supporting labels
+5. **Type:** keep Roboto/system and three text roles, on the 0.14.2 scale (about 3/4 of the old one, never below
+   18 px at 1080p). Supporting labels
    lose uppercase tracking; numbers keep tabular alignment.
 6. **Layout:** preserve the rail, feed order and full-screen picture. Search pairs a six-column keyboard
    with suggestions; Comments and More info use bounded scrolling panels with persistent exit controls.

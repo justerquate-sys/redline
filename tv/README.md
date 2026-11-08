@@ -320,7 +320,7 @@ remote keys, token and device-code parsing, TVHTML5 request rewriting; unit-test
 screen, the player overlay keys and scrubbing, More info, Back, the sign-in screen, the token from the shell,
 focus that is never lost), `qr.rs` (the sign-in QR code), plus small hooks listed in `PORTING.md`; the TV styles
 are the block `/* ===== TV app` at the end of `extension/client.css` (everything under `html[data-ytc-tv]`; one
-layout at every resolution, rem = 1/60 of the width). Design reference: `tv/design/` (look sheet + tokens).
+layout at every resolution, rem = 1/80 of the width). Design reference: `tv/design/` (look sheet + tokens).
 
 **What replaces the extension's parts on TV**
 

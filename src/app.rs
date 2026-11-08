@@ -543,7 +543,7 @@ pub fn boot() {
         preloaded_marked: false,
         swr: false,
         held: None,
-        cols: render::grid_cols(bridge::width()),
+        cols: render::page_cols(bridge::width(), crate::tv::on()),
         stats: Stats::default(),
         marks: vec![("boot", t0)],
         timers: HashMap::new(),
@@ -2801,7 +2801,7 @@ impl App {
         self.generation += 1;
         self.cont_busy = false;
         self.want = false;
-        self.cols = render::grid_cols(bridge::width());
+        self.cols = render::page_cols(bridge::width(), crate::tv::on());
         self.stats.merge(&feed.stats);
         self.remember(&feed.items);
         self.remember(&extra);

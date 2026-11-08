@@ -368,6 +368,14 @@ pub fn grid_cols(w: f64) -> usize {
     }
 }
 
+/// Cards per row on the TV app at every resolution (client.css `html[data-ytc-tv] .grid`).
+pub const TV_COLS: usize = 5;
+
+/// Grid columns of a browsing page: the TV app's fixed grid, or the desktop's at width `w`.
+pub fn page_cols(w: f64, tv: bool) -> usize {
+    if tv { TV_COLS } else { grid_cols(w) }
+}
+
 fn img_tail(out: &mut String, eager: bool, high: bool) {
     out.push_str(" alt=\"\"");
     if !eager {
@@ -1263,5 +1271,8 @@ mod tests {
         assert_eq!(grid_cols(2560.0), 5);
         assert_eq!(grid_cols(1400.0), 4);
         assert_eq!(grid_cols(700.0), 2);
+        // TV: five cards per row on a 960 CSS px WebView as on a 1920 one (the desktop would give 3 and 5).
+        assert_eq!((page_cols(960.0, true), page_cols(1920.0, true), page_cols(960.0, false)), (5, 5, 3));
+        assert_eq!(ImgPlan::first(Lay::Grid, page_cols(960.0, true)).high, 5);
     }
 }

@@ -3,160 +3,161 @@
 <!--
   The design reference for the TV app's 10-foot interface (tv/design/README.md has the tokens).
   Static and self-contained: every screen is one 1920×1080 frame. Sizes are in rem on the TV grid
-  (1rem = 1/60 of the screen width: 32 px here at 1920, 16 CSS px on a 960×540 WebView), as a composition reference; fixture-driven screenshots verify the shipped app. Render: node tv/design/render.cjs
+  (1rem = 1/80 of the screen width: 24 px here at 1920, 12 CSS px on a 960×540 WebView), as a composition reference; fixture-driven screenshots verify the shipped app. Render: node tv/design/render.cjs
 -->
 <style>
 :root{--bg:#0f0f0f;--pn:#181818;--rs:#212121;--cb:#272727;--hv:#3f3f3f;--on:#303030;--bd:#3f3f3f;
   --tx:#f1f1f1;--mu:#aaa;--fa:#999;--ac:#f1f1f1;--brand:#ff0033;--er:#ff9a8f;
-  --sx:3rem;--sy:1.6875rem;--ring:.1875rem}
-html{font-size:32px;background:#000}
+  --sx:2rem;--sy:1.575rem;--ring:.1875rem}
+html{font-size:24px;background:#000}
 body{margin:0;font-family:Roboto,"SF Pro Text",system-ui,sans-serif;color:var(--tx);-webkit-font-smoothing:antialiased}
-.screen{position:relative;width:60rem;height:33.75rem;overflow:hidden;background:var(--bg);margin:0 0 40px}
+.screen{position:relative;width:80rem;height:45rem;overflow:hidden;background:var(--bg);margin:0 0 40px}
 .lab{font:600 22px system-ui;color:#888;margin:28px 0 10px}
 svg{display:block;flex:none}
 .i{width:1.25rem;height:1.25rem;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-/* the overscan-safe guide (only in the sheet) */
+/* the safe-area guide (only in the sheet): 2.5 % left and right, 3.5 % top and bottom */
 .safe{position:absolute;inset:var(--sy) var(--sx);outline:1px dashed rgba(255,120,120,.35);pointer-events:none;z-index:99}
 /* ---- rail */
-.rail{position:absolute;left:0;top:0;bottom:0;width:17rem;z-index:5}
-.rail .mk{position:absolute;left:3.75rem;top:var(--sy);display:flex;align-items:center;gap:.625rem}
-.mk svg{width:2rem;height:1.4375rem}
-.mk b{font-size:1.125rem;font-weight:600;letter-spacing:-.02em;opacity:0}
-.rail a{position:absolute;left:3.375rem;width:2.5rem;height:2.5rem;border-radius:.5rem;display:flex;align-items:center;gap:1rem;padding:0 .625rem;box-sizing:border-box;color:var(--mu);font-size:.9375rem;font-weight:500;white-space:nowrap;overflow:hidden}
+.rail{position:absolute;left:0;top:0;bottom:0;width:15.5rem;z-index:5}
+.rail .mk{position:absolute;left:2.375rem;top:calc(var(--sy) + .5rem);height:2rem;display:flex;align-items:center;gap:.5rem}
+.mk svg{width:1.75rem;height:1.25rem}
+.mk b{font-size:1rem;font-weight:600;letter-spacing:-.02em;opacity:0}
+.rail a{position:absolute;left:var(--sx);width:2.5rem;height:2.5rem;border-radius:.5rem;display:flex;align-items:center;gap:.75rem;padding:0 .625rem;box-sizing:border-box;color:var(--mu);font-size:.875rem;font-weight:500;white-space:nowrap;overflow:hidden}
 .rail a span{opacity:0}
 .rail a.cur{background:var(--on);color:var(--ac)}
-.rail a.f{background:var(--cb);color:var(--tx);outline:var(--ring) solid var(--ac);outline-offset:.125rem;scale:none}
-.rail.open{background:linear-gradient(90deg,var(--pn) 15.5rem,rgba(24,24,24,0) 17rem)}
-.rail.open a{width:12.5rem}
+.rail a.f{background:var(--cb);color:var(--tx);outline:var(--ring) solid var(--ac);outline-offset:calc(-1 * var(--ring));scale:none}
+.rail.open{background:linear-gradient(90deg,var(--pn) 13.5rem,rgba(24,24,24,0) 15.5rem)}
+.rail.open a{width:10.5rem}
 .rail.open a span,.rail.open .mk b{opacity:1}
 .rail.open a.cur{color:var(--ac)}
 .under{position:absolute;inset:0;opacity:.45}
 /* ---- content */
-.content{position:absolute;left:7.75rem;right:3.75rem;top:var(--sy)}
-.chips{display:flex;gap:.75rem;height:2.25rem}
-.chip{height:2.25rem;padding:0 1.125rem;border-radius:.375rem;background:var(--cb);display:flex;align-items:center;font-size:.875rem;font-weight:500;color:var(--tx)}
+.content{position:absolute;left:5.75rem;right:2.5rem;top:calc(var(--sy) + .5rem)}
+.chips{display:flex;gap:.625rem;height:2rem}
+.chip{height:2rem;padding:0 1rem;border-radius:.375rem;background:var(--cb);display:flex;align-items:center;font-size:.875rem;font-weight:500;color:var(--tx)}
 .chip.on{background:var(--ac);color:var(--bg);font-weight:600}
 .chip.f{outline:var(--ring) solid var(--ac);outline-offset:.1875rem;scale:none;background:var(--hv)}
 .chip.on.f{background:var(--ac)}
-h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:-.01em}
-.grid{position:absolute;left:0;right:0;top:3.5rem;display:grid;grid-template-columns:repeat(4,11rem);gap:1.5rem 1.5rem}
-.c{width:11rem}
-.th{position:relative;width:11rem;height:6.1875rem;border-radius:.625rem;background:linear-gradient(135deg,var(--a,#30474a),var(--b,#1a2427))}
-.th b{position:absolute;right:.375rem;bottom:.375rem;padding:.0625rem .3125rem;border-radius:.25rem;background:rgba(15,15,15,.82);font-size:.6875rem;font-weight:600}
-.th .pg{position:absolute;left:0;right:0;bottom:0;height:.1875rem;border-radius:0 0 .625rem .625rem;background:rgba(255,255,255,.18)}
+h1{margin:0;font-size:1.375rem;line-height:2rem;font-weight:600;letter-spacing:-.01em}
+.grid{position:absolute;left:0;right:0;top:3rem;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1.25rem}
+.c{min-width:0}
+.th{position:relative;width:100%;height:7.5rem;border-radius:.5rem;background:linear-gradient(135deg,var(--a,#30474a),var(--b,#1a2427))}
+.th b{position:absolute;right:.3125rem;bottom:.3125rem;padding:.0625rem .25rem;border-radius:.25rem;background:rgba(15,15,15,.82);font-size:.75rem;font-weight:600}
+.th .pg{position:absolute;left:0;right:0;bottom:0;height:.1875rem;border-radius:0 0 .5rem .5rem;background:rgba(255,255,255,.18)}
 .th .pg i{display:block;height:100%;width:40%;background:var(--ac)}
-.c .t{margin:.625rem 0 .25rem;font-size:.875rem;line-height:1.125rem;font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;height:2.25rem}
-.c .m{font-size:.75rem;line-height:1rem;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.c.f{scale:1.06;z-index:2;position:relative}
+.c .t{margin:.5rem 0 .1875rem;font-size:.9375rem;line-height:1.1875rem;font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;height:2.375rem}
+.c .m{font-size:.8125rem;line-height:1.0625rem;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c.f{scale:none;z-index:2;position:relative}
 .c.f .th{outline:var(--ring) solid var(--ac);outline-offset:.1875rem}
 .c.f .t{color:var(--ac)}
-.scrim{position:absolute;left:0;right:0;top:0;height:4.5rem;background:linear-gradient(var(--bg) 83%,rgba(15,15,15,0));z-index:3}
+.scrim{position:absolute;left:0;right:0;top:0;height:4.625rem;background:linear-gradient(var(--bg) 83%,rgba(15,15,15,0));z-index:3}
 .sk .th,.sk .t,.sk .m{background:var(--rs);color:transparent;border-radius:.375rem}
-.sk .t{height:1.75rem}.sk .m{height:.75rem;margin:.25rem 0;width:70%}
+.sk .t{height:2.375rem}.sk .m{height:.75rem;margin:.25rem 0;width:70%}
 /* ---- prompt / empty */
-.prompt{position:absolute;left:7.75rem;right:3.75rem;top:0;bottom:0;display:grid;place-items:center}
-.card{width:30rem;padding:2.25rem 2.5rem;border-radius:1.25rem;background:var(--pn);display:grid;gap:1rem;justify-items:start}
-.card h2{margin:0;font-size:1.75rem;line-height:2.125rem;font-weight:600;letter-spacing:-.015em}
-.card p{margin:0;font-size:.875rem;line-height:1.3125rem;color:var(--mu)}
-.btns{display:flex;gap:1rem;margin-top:.5rem}
-.bt{height:2.75rem;padding:0 1.5rem;border-radius:.5rem;background:var(--cb);display:flex;align-items:center;gap:.625rem;font-size:.9375rem;font-weight:600;color:var(--tx)}
+.prompt{position:absolute;left:5.75rem;right:2.5rem;top:0;bottom:0;display:grid;place-items:center}
+.card{width:28rem;padding:2rem 2.25rem;border-radius:1rem;background:var(--pn);display:grid;gap:1rem;justify-items:start}
+.card h2{margin:0;font-size:1.5rem;line-height:1.875rem;font-weight:600;letter-spacing:-.015em}
+.card p{margin:0;font-size:.9375rem;line-height:1.375rem;color:var(--mu)}
+.btns{display:flex;gap:.75rem;margin-top:.5rem}
+.bt{height:2.5rem;padding:0 1.25rem;border-radius:.5rem;background:var(--cb);display:flex;align-items:center;gap:.5rem;font-size:.9375rem;font-weight:600;color:var(--tx)}
 .bt.p{background:var(--tx);color:var(--bg)}
 .bt.f{outline:var(--ring) solid var(--ac);outline-offset:.1875rem;scale:none}
 .bt.f:not(.p){background:var(--hv)}
 .empty{position:absolute;left:0;right:0;top:9rem;text-align:center}
-.empty h2{margin:0;font-size:1.375rem;font-weight:600}.empty p{margin:.5rem 0 0;font-size:.875rem;color:var(--mu)}
+.empty h2{margin:0;font-size:1.125rem;font-weight:600}.empty p{margin:.5rem 0 0;font-size:.9375rem;color:var(--mu)}
 /* ---- search */
-.q{height:3rem;border-radius:.5rem;background:var(--rs);display:flex;align-items:center;gap:.875rem;padding:0 1.25rem;font-size:1.125rem;color:var(--fa);box-sizing:border-box;border:.0625rem solid var(--bd)}
-.q.f{outline:var(--ring) solid var(--ac);outline-offset:.1875rem;background:var(--cb);color:var(--tx)}
-.q .i{width:1.25rem;height:1.25rem;color:var(--mu)}
-.hint{margin:.75rem 0 0 1.25rem;font-size:.75rem;color:var(--mu)}
+.q{height:2.5rem;margin-top:-.25rem;border-radius:.5rem;background:var(--rs);display:flex;align-items:center;gap:.75rem;padding:0 1rem;font-size:1rem;color:var(--fa);box-sizing:border-box;border:.0625rem solid var(--bd)}
+.q.f{outline:var(--ring) solid var(--ac);outline-offset:-.0625rem;background:var(--cb);color:var(--tx)}
+.q .i{width:1.0625rem;height:1.0625rem;color:var(--mu)}
+.hint{margin:.75rem 0 0 1rem;font-size:.8125rem;color:var(--mu)}
 .sl{margin-top:1.5rem;width:30rem;display:grid;gap:.25rem}
-.sl h3{margin:0 0 .375rem 1rem;font-size:.75rem;font-weight:600;color:var(--mu);letter-spacing:0;text-transform:none}
-.sl a{height:2.5rem;border-radius:.75rem;display:flex;align-items:center;gap:.875rem;padding:0 1rem;font-size:.9375rem}
-.sl a .i{width:1.125rem;height:1.125rem;color:var(--mu)}
-.sl a.f{background:var(--cb);outline:var(--ring) solid var(--ac);outline-offset:.125rem;scale:none}
+.sl h3{margin:0 0 .5rem .625rem;font-size:.8125rem;font-weight:600;color:var(--mu);letter-spacing:0;text-transform:none}
+.sl a{height:2.25rem;border-radius:.375rem;display:flex;align-items:center;gap:.625rem;padding:0 .625rem;font-size:.9375rem}
+.sl a .i{width:1.0625rem;height:1.0625rem;color:var(--mu)}
+.sl a.f{background:var(--cb);outline:var(--ring) solid var(--ac);outline-offset:-.0625rem;scale:none}
 .sl a.f .i{color:var(--ac)}
 /* ---- channel / playlist head */
-.ch{display:flex;align-items:center;gap:1.25rem;height:4rem}
-.av{width:4rem;height:4rem;border-radius:50%;background:linear-gradient(135deg,#5b8f7a,#27403a)}
-.ch h1{font-size:1.75rem}.meta{font-size:.875rem;color:var(--mu);margin-top:.125rem}
+.ch{display:flex;align-items:center;gap:1rem;height:3rem}
+.av{width:3rem;height:3rem;border-radius:50%;background:linear-gradient(135deg,#5b8f7a,#27403a)}
+.ch h1{font-size:1.375rem}.meta{font-size:.8125rem;color:var(--mu);margin-top:.125rem}
 /* ---- player */
 .vid{position:absolute;inset:0;background:radial-gradient(circle at 70% 40%,#5d6b4c,#20291f 55%,#0d100c)}
-.top{position:absolute;left:0;right:0;top:0;height:10rem;background:linear-gradient(rgba(15,15,15,.82),rgba(15,15,15,0))}
-.bot{position:absolute;left:0;right:0;bottom:0;height:15rem;background:linear-gradient(rgba(15,15,15,0),rgba(15,15,15,.9))}
-.ttl{position:absolute;left:var(--sx);top:var(--sy);width:42rem}
-.ttl h1{font-size:1.5rem;line-height:1.875rem}
-.own{display:flex;align-items:center;gap:.625rem;margin-top:.5rem;font-size:.9375rem;color:var(--mu)}
-.own i{width:1.5rem;height:1.5rem;border-radius:50%;background:#5b8f7a}
-.ctl{position:absolute;left:3.625rem;right:3.625rem;bottom:3.5rem}
-.times{display:flex;justify-content:space-between;font-size:.875rem;font-variant-numeric:tabular-nums;color:var(--tx);margin-bottom:.625rem}
-.times em{font-style:normal;color:var(--mu);margin-left:.75rem}
-.bar{position:relative;height:.25rem;border-radius:.125rem;background:rgba(241,241,241,.25);display:flex;gap:.1875rem}
-.bar.f{height:.375rem}
+.top{position:absolute;left:0;right:0;top:0;height:9rem;background:linear-gradient(rgba(15,15,15,.82),rgba(15,15,15,0))}
+.bot{position:absolute;left:0;right:0;bottom:0;height:13rem;background:linear-gradient(rgba(15,15,15,0),rgba(15,15,15,.9))}
+.ttl{position:absolute;left:2.5rem;top:var(--sy);width:46rem}
+.ttl h1{font-size:1.375rem;line-height:1.75rem}
+.own{display:flex;align-items:center;gap:.5rem;margin-top:.5rem;font-size:.9375rem;color:var(--mu)}
+.own i{width:1.25rem;height:1.25rem;border-radius:50%;background:#5b8f7a}
+.ctl{position:absolute;left:2.5rem;right:2.5rem;bottom:3.25rem}
+.times{display:flex;justify-content:space-between;font-size:.8125rem;font-variant-numeric:tabular-nums;color:var(--tx);margin-bottom:.75rem}
+.times em{font-style:normal;color:var(--mu);margin-left:.625rem}
+.bar{position:relative;height:.1667rem;border-radius:.125rem;background:rgba(241,241,241,.25);display:flex;gap:.125rem}
+.bar.f{height:.25rem}
 .bar .seg{flex:1;background:rgba(241,241,241,.25);border-radius:.125rem;position:relative}
 .bar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:.125rem;background:var(--ac)}
 .bar .buf{position:absolute;left:0;top:0;bottom:0;background:rgba(241,241,241,.35);border-radius:.125rem}
-.knob{position:absolute;top:50%;width:1rem;height:1rem;margin:-.5rem 0 0 -.5rem;border-radius:50%;background:var(--ac);box-shadow:none}
-.row{display:flex;gap:1rem;margin-top:1.5rem;align-items:center}
-.rb{width:3rem;height:3rem;border-radius:1.5rem;background:rgba(39,39,39,.85);display:grid;place-items:center;color:var(--tx);font-size:.875rem;font-weight:600}
-.rb.w{width:auto;padding:0 1.125rem;min-width:3rem;box-sizing:border-box}
-.rb .i{width:1.375rem;height:1.375rem}
+.knob{position:absolute;top:50%;width:.75rem;height:.75rem;margin:-.375rem 0 0 -.375rem;border-radius:50%;background:var(--ac);box-shadow:none}
+.row{display:flex;gap:.75rem;margin-top:1.375rem;align-items:center}
+.rb{width:2.5rem;height:2.5rem;border-radius:1.25rem;background:rgba(39,39,39,.85);display:grid;place-items:center;color:var(--tx);font-size:.875rem;font-weight:600}
+.rb.w{width:auto;padding:0 .875rem;min-width:2.5rem;box-sizing:border-box;border-radius:.5rem}
+.rb .i{width:1.1875rem;height:1.1875rem}
 .rb.on{color:var(--ac)}
 .rb.f{background:var(--cb);color:var(--tx);outline:var(--ring) solid var(--ac);outline-offset:.1875rem;scale:none}
 .rb.sp{margin-left:auto}
-.prev{position:absolute;bottom:.875rem;width:10rem;margin-left:-5rem}
-.prev .fr{height:5.625rem;border-radius:.5rem;background:linear-gradient(135deg,#7d8f63,#2a3424);outline:.125rem solid var(--tx)}
-.prev b{display:block;width:max-content;margin:.5rem auto 0;padding:.125rem .625rem;border-radius:.5rem;background:rgba(15,15,15,.85);font-size:.875rem;font-variant-numeric:tabular-nums}
-.up{position:absolute;left:3.75rem;right:0;bottom:3.5rem}
-.up h3{margin:0 0 .75rem;font-size:.75rem;font-weight:600;color:var(--mu);letter-spacing:0;text-transform:none}
-.up .r{display:flex;gap:1.25rem}
-.up .c{width:8.5rem}.up .th{width:8.5rem;height:4.78rem}
-.panel{position:absolute;top:0;right:0;bottom:0;width:19.5rem;background:var(--pn);padding:var(--sy) var(--sx) var(--sy) 1.5rem;box-sizing:border-box;box-shadow:none;border-left:.0625rem solid var(--bd)}
-.panel h2{margin:0 0 1rem;font-size:1.125rem;font-weight:600}
-.panel .o{height:2.5rem;border-radius:.75rem;display:flex;align-items:center;justify-content:space-between;padding:0 1rem;font-size:.9375rem;margin-bottom:.25rem}
+.prev{position:absolute;bottom:.875rem;width:11rem;margin-left:-5.5rem}
+.prev .fr{height:6.1875rem;border-radius:.5rem;background:linear-gradient(135deg,#7d8f63,#2a3424);outline:.125rem solid var(--tx)}
+.prev b{display:block;width:max-content;margin:.5rem auto 0;padding:.125rem .625rem;border-radius:.5rem;background:rgba(15,15,15,.85);font-size:.8125rem;font-variant-numeric:tabular-nums}
+.up{position:absolute;left:2.5rem;right:0;bottom:calc(var(--sy) + .5rem)}
+.up h3{margin:0 0 .75rem;font-size:.8125rem;font-weight:600;color:var(--mu);letter-spacing:0;text-transform:none}
+.up .r{display:flex;gap:1rem}
+.up .c{width:11rem;flex:none}.up .th{width:11rem;height:6.1875rem}
+.panel{position:absolute;top:0;right:0;bottom:0;width:18.5rem;background:var(--pn);padding:var(--sy) var(--sx) var(--sy) 1.25rem;box-sizing:border-box;box-shadow:none;border-left:.0625rem solid var(--bd)}
+.panel h2{margin:0 0 .75rem;padding:0 .75rem;font-size:1.0625rem;font-weight:600}
+.panel .o{height:2.375rem;border-radius:.5rem;display:flex;align-items:center;justify-content:space-between;padding:0 .75rem;font-size:.9375rem;margin-bottom:.25rem}
 .panel .o.cur{color:var(--ac);font-weight:600}
 .panel .o.f{background:var(--cb);outline:var(--ring) solid var(--ac);outline-offset:-.1875rem}
 .panel .o .i{width:1.125rem;height:1.125rem;stroke-width:2.4}
-.panel.wide{width:26rem}
-.panel .ds{font-size:.875rem;line-height:1.3125rem;color:var(--tx);white-space:pre-line}
+.panel.wide{width:25rem}
+.panel.wide h2{padding:0}
+.panel .ds{font-size:.9375rem;line-height:1.375rem;color:var(--tx);white-space:pre-line}
 .panel .ds.f{outline:var(--ring) solid var(--ac);outline-offset:.25rem;border-radius:.5rem}
-.cap{position:absolute;left:50%;translate:-50% 0;max-width:46rem;text-align:center;font:1.375rem/1.3 Arial,sans-serif;color:#2fd6e6;text-shadow:0 0 .1rem #000,0 0 .1rem #000,.06rem .06rem .08rem #000}
-.skip{position:absolute;right:3.375rem;height:2.75rem;border-radius:1.375rem;display:flex;align-items:center;gap:.75rem;padding:0 .5rem 0 1.25rem;background:rgba(24,24,24,.92);font-size:.9375rem}
+.cap{position:absolute;left:50%;translate:-50% 0;max-width:60rem;text-align:center;font:1.8125rem/1.3 Arial,sans-serif;color:#2fd6e6;text-shadow:0 0 .1rem #000,0 0 .1rem #000,.06rem .06rem .08rem #000}
+.skip{position:absolute;right:2.5rem;height:2.5rem;border-radius:.5rem;display:flex;align-items:center;gap:.625rem;padding:0 .375rem 0 1rem;background:rgba(24,24,24,.92);font-size:.875rem}
 .skip span{color:var(--mu)}
-.skip .bt{height:2rem;padding:0 1rem;font-size:.875rem;background:var(--ac);color:var(--bg);border-radius:1rem}
+.skip .bt{height:1.75rem;padding:0 .875rem;font-size:.875rem;background:var(--ac);color:var(--bg);border-radius:.375rem}
 .skip .bt.f{outline-offset:.125rem}
-.toast{position:absolute;left:50%;top:var(--sy);translate:-50% 0;height:2.25rem;padding:0 1.25rem;border-radius:1.125rem;background:rgba(24,24,24,.94);display:flex;align-items:center;gap:.625rem;font-size:.875rem;font-weight:500}
+.toast{position:absolute;left:50%;top:var(--sy);translate:-50% 0;height:2rem;padding:0 1rem;border-radius:1rem;background:rgba(24,24,24,.94);display:flex;align-items:center;gap:.625rem;font-size:.875rem;font-weight:500}
 .toast.e{color:var(--er)}
 .fail{position:absolute;inset:0;display:grid;place-items:center;background:rgba(15,15,15,.72)}
-.fail .card{width:32rem;justify-items:center;text-align:center}
+.fail .card{width:30rem;justify-items:center;text-align:center}
 .fail .card .btns{justify-content:center}
 /* ---- sign in */
 .sign{position:absolute;inset:0;background:var(--bg)}
-.sign .mk{position:absolute;left:var(--sx);top:var(--sy);display:flex;align-items:center;gap:.625rem}
+.sign .mk{position:absolute;left:2.375rem;top:calc(var(--sy) + .5rem);height:2rem;display:flex;align-items:center;gap:.5rem}
 .sign .mk b{opacity:1}
-.sign .l{position:absolute;left:7.75rem;top:6.5rem;width:27rem}
-.sign h2{margin:0;font-size:1.75rem;line-height:2.25rem;font-weight:600;letter-spacing:-.015em}
+.sign .l{position:absolute;left:5.75rem;top:6rem;width:32rem}
+.sign h2{margin:0;font-size:1.5rem;line-height:2rem;font-weight:600;letter-spacing:-.015em}
 .sign ol{margin:1.25rem 0 0;padding:0;list-style:none;display:grid;gap:.375rem;font-size:.9375rem;color:var(--mu)}
 .sign .u{display:block;font-size:1.25rem;font-weight:600;color:var(--tx);margin:.125rem 0 .625rem}
-.sign .code{margin:.375rem 0 0;font:600 3.25rem/1.1 "SF Mono",ui-monospace,Menlo,monospace;letter-spacing:.08em;color:var(--ac)}
-.sign .st{margin-top:1rem;font-size:.75rem;color:var(--mu)}
-.sign .btns{position:absolute;left:7.75rem;bottom:3.5rem}
-.qr{position:absolute;right:7rem;top:7.25rem;width:13rem}
-.qr .tile{width:13rem;height:13rem;border-radius:1rem;background:var(--tx);display:grid;place-items:center}
-.qr p{margin:.75rem 0 0;text-align:center;font-size:.75rem;color:var(--mu)}
+.sign .code{margin:.375rem 0 0;font:600 3.5rem/1.1 "SF Mono",ui-monospace,Menlo,monospace;letter-spacing:.08em;color:var(--ac)}
+.sign .st{margin-top:1rem;font-size:.8125rem;color:var(--mu)}
+.sign .btns{position:absolute;left:5.75rem;bottom:calc(var(--sy) + 1.5rem)}
+.qr{position:absolute;right:5.75rem;top:6.5rem;width:15rem}
+.qr .tile{width:15rem;height:15rem;border-radius:.875rem;background:var(--tx);display:grid;place-items:center}
+.qr p{margin:.75rem 0 0;text-align:center;font-size:.8125rem;color:var(--mu)}
 
 /* TV polish: the remote keyboard is visible beside suggestions, with a steady frame. */
-#search .sl{position:absolute;left:24rem;right:0;top:4.5rem;width:auto;margin:0}
-#search .sl a{font-size:.875rem;padding:0 .75rem;overflow:hidden;white-space:nowrap}
-#search .q em{margin-left:auto;font-style:normal;font-size:.75rem;color:var(--mu)}
-.keyboard{position:absolute;left:0;top:4.5rem;width:22rem}
+#search .sl{position:absolute;left:23.5rem;right:0;top:3.5rem;width:auto;margin:0}
+#search .sl a{font-size:.9375rem;padding:0 .625rem;overflow:hidden;white-space:nowrap}
+#search .q em{margin-left:auto;font-style:normal;font-size:.8125rem;color:var(--mu)}
+.keyboard{position:absolute;left:0;top:3.5rem;width:21rem}
 .keyboard .letters{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.375rem}
-.keyboard button{display:flex;align-items:center;justify-content:center;height:2.5rem;min-width:0;padding:0 .5rem;border:.0625rem solid var(--bd);border-radius:.375rem;background:var(--rs);color:var(--tx);font:500 1rem/1 Roboto,system-ui,sans-serif}
+.keyboard button{display:flex;align-items:center;justify-content:center;height:2.25rem;min-width:0;padding:0 .375rem;border:.0625rem solid var(--bd);border-radius:.375rem;background:var(--rs);color:var(--tx);font:500 1rem/1 Roboto,system-ui,sans-serif}
 .keyboard button.f{outline:var(--ring) solid var(--ac);outline-offset:.0625rem;background:var(--cb)}
-.keyboard .tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.375rem;margin-top:.75rem}
+.keyboard .tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.375rem;margin-top:.625rem}
 .keyboard .tools button{font-size:.875rem}
-.keyboard .tools .mode{font-size:.75rem}.keyboard .tools .submit{grid-column:span 2;background:var(--tx);color:var(--bg)}
-.keyboard p{margin:1rem 0 0;font-size:.75rem;line-height:1.125rem;color:var(--mu)}
+.keyboard .tools .mode{font-size:.8125rem}.keyboard .tools .submit{grid-column:span 2;background:var(--tx);color:var(--bg)}
+.keyboard p{margin:.875rem 0 0;font-size:.8125rem;line-height:1.125rem;color:var(--mu)}
 </style></head><body>
 <svg width="0" height="0" style="position:absolute"><defs>
 <symbol id="mark" viewBox="0 0 28 20"><rect width="28" height="20" rx="5" fill="#ff0033"/><path d="M11 5.5v9l8-4.5z" fill="#fff"/></symbol>
@@ -178,17 +179,17 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
 <!-- a reusable rail: classes on the <nav> pick open/closed; cur/f on the links -->
 <template id="t"></template>
 
-<div class="lab">01 · Home, signed in: rail collapsed (icons), topic chips, 4 cards per row, the focused card marked by the white focus frame</div>
+<div class="lab">01 · Home, signed in: rail collapsed (icons), topic chips, 5 cards per row, the focused card marked by the white focus frame</div>
 <section class="screen" id="home">
  <div class="safe"></div>
  <nav class="rail"><div class="mk"><svg><use href="#mark"/></svg><b>YouTube</b></div>
-  <a style="top:5.25rem"><svg class="i"><use href="#search"/></svg><span>Search</span></a>
-  <a class="cur" style="top:8.125rem"><svg class="i"><use href="#home"/></svg><span>Home</span></a>
-  <a style="top:11rem"><svg class="i"><use href="#subs"/></svg><span>Subscriptions</span></a>
-  <a style="top:13.875rem"><svg class="i"><use href="#hist"/></svg><span>History</span></a>
-  <a style="top:16.75rem"><svg class="i"><use href="#wl"/></svg><span>Watch later</span></a>
-  <a style="top:19.625rem"><svg class="i"><use href="#pl"/></svg><span>Playlists</span></a>
-  <a style="top:22.5rem"><svg class="i"><use href="#like"/></svg><span>Liked videos</span></a>
+  <a style="top:5rem"><svg class="i"><use href="#search"/></svg><span>Search</span></a>
+  <a class="cur" style="top:7.875rem"><svg class="i"><use href="#home"/></svg><span>Home</span></a>
+  <a style="top:10.75rem"><svg class="i"><use href="#subs"/></svg><span>Subscriptions</span></a>
+  <a style="top:13.625rem"><svg class="i"><use href="#hist"/></svg><span>History</span></a>
+  <a style="top:16.5rem"><svg class="i"><use href="#wl"/></svg><span>Watch later</span></a>
+  <a style="top:19.375rem"><svg class="i"><use href="#pl"/></svg><span>Playlists</span></a>
+  <a style="top:22.25rem"><svg class="i"><use href="#like"/></svg><span>Liked videos</span></a>
   <a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg><span>Account</span></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg><span>About &amp; updates</span></a>
  </nav>
  <div class="content">
@@ -220,13 +221,13 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
   <div class="c"><div class="th" style="--a:#5f3e6b"></div><div class="t">Live from the RDC keynote</div><div class="m">Roblox</div></div>
  </div></div></div>
  <nav class="rail open"><div class="mk"><svg><use href="#mark"/></svg><b>YouTube</b></div>
-  <a style="top:5.25rem"><svg class="i"><use href="#search"/></svg><span>Search</span></a>
-  <a class="cur" style="top:8.125rem"><svg class="i"><use href="#home"/></svg><span>Home</span></a>
-  <a class="f" style="top:11rem"><svg class="i"><use href="#subs"/></svg><span>Subscriptions</span></a>
-  <a style="top:13.875rem"><svg class="i"><use href="#hist"/></svg><span>History</span></a>
-  <a style="top:16.75rem"><svg class="i"><use href="#wl"/></svg><span>Watch later</span></a>
-  <a style="top:19.625rem"><svg class="i"><use href="#pl"/></svg><span>Playlists</span></a>
-  <a style="top:22.5rem"><svg class="i"><use href="#like"/></svg><span>Liked videos</span></a>
+  <a style="top:5rem"><svg class="i"><use href="#search"/></svg><span>Search</span></a>
+  <a class="cur" style="top:7.875rem"><svg class="i"><use href="#home"/></svg><span>Home</span></a>
+  <a class="f" style="top:10.75rem"><svg class="i"><use href="#subs"/></svg><span>Subscriptions</span></a>
+  <a style="top:13.625rem"><svg class="i"><use href="#hist"/></svg><span>History</span></a>
+  <a style="top:16.5rem"><svg class="i"><use href="#wl"/></svg><span>Watch later</span></a>
+  <a style="top:19.375rem"><svg class="i"><use href="#pl"/></svg><span>Playlists</span></a>
+  <a style="top:22.25rem"><svg class="i"><use href="#like"/></svg><span>Liked videos</span></a>
   <a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg><span>Account</span></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg><span>About &amp; updates</span></a>
  </nav>
 </section>
@@ -235,24 +236,24 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
 <section class="screen" id="home-out">
  <div class="safe"></div>
  <nav class="rail"><div class="mk"><svg><use href="#mark"/></svg></div>
-  <a style="top:5.25rem"><svg class="i"><use href="#search"/></svg></a>
-  <a class="cur" style="top:8.125rem"><svg class="i"><use href="#home"/></svg></a>
-  <a style="top:11rem"><svg class="i"><use href="#subs"/></svg></a>
-  <a style="top:13.875rem"><svg class="i"><use href="#hist"/></svg></a>
-  <a style="top:16.75rem"><svg class="i"><use href="#wl"/></svg></a>
-  <a style="top:19.625rem"><svg class="i"><use href="#pl"/></svg></a>
-  <a style="top:22.5rem"><svg class="i"><use href="#like"/></svg></a>
+  <a style="top:5rem"><svg class="i"><use href="#search"/></svg></a>
+  <a class="cur" style="top:7.875rem"><svg class="i"><use href="#home"/></svg></a>
+  <a style="top:10.75rem"><svg class="i"><use href="#subs"/></svg></a>
+  <a style="top:13.625rem"><svg class="i"><use href="#hist"/></svg></a>
+  <a style="top:16.5rem"><svg class="i"><use href="#wl"/></svg></a>
+  <a style="top:19.375rem"><svg class="i"><use href="#pl"/></svg></a>
+  <a style="top:22.25rem"><svg class="i"><use href="#like"/></svg></a>
   <a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a>
  </nav>
- <div class="prompt"><div class="card"><svg style="width:2.5rem;height:1.8rem"><use href="#mark"/></svg><h2>Make YouTube yours</h2><p>Sign in with your phone to see your recommendations, subscriptions, history and Watch later here. Search works without an account.</p><div class="btns"><span class="bt p f">Sign in with your phone</span><span class="bt"><svg class="i"><use href="#search"/></svg>Search</span></div></div></div>
+ <div class="prompt"><div class="card"><svg style="width:2.25rem;height:1.625rem"><use href="#mark"/></svg><h2>Make YouTube yours</h2><p>Sign in with your phone to see your recommendations, subscriptions, history and Watch later here. Search works without an account.</p><div class="btns"><span class="bt p f">Sign in with your phone</span><span class="bt"><svg class="i"><use href="#search"/></svg>Search</span></div></div></div>
 </section>
 
 <div class="lab">04 · Search: its own screen, a large field (OK opens the TV keyboard; its mic dictates), recent searches and suggestions as a list</div>
 <section class="screen" id="search">
  <div class="safe"></div>
  <nav class="rail"><div class="mk"><svg><use href="#mark"/></svg></div>
-  <a class="cur" style="top:5.25rem"><svg class="i"><use href="#search"/></svg></a>
-  <a style="top:8.125rem"><svg class="i"><use href="#home"/></svg></a><a style="top:11rem"><svg class="i"><use href="#subs"/></svg></a><a style="top:13.875rem"><svg class="i"><use href="#hist"/></svg></a><a style="top:16.75rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.625rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.5rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a>
+  <a class="cur" style="top:5rem"><svg class="i"><use href="#search"/></svg></a>
+  <a style="top:7.875rem"><svg class="i"><use href="#home"/></svg></a><a style="top:10.75rem"><svg class="i"><use href="#subs"/></svg></a><a style="top:13.625rem"><svg class="i"><use href="#hist"/></svg></a><a style="top:16.5rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.375rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.25rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a>
  </nav>
  <div class="content">
   <div class="q"><span style="color:var(--tx)">roblox tyc</span><em>Edit</em></div>
@@ -272,12 +273,12 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
 <section class="screen" id="results">
  <div class="safe"></div>
  <nav class="rail"><div class="mk"><svg><use href="#mark"/></svg></div>
-  <a class="cur" style="top:5.25rem"><svg class="i"><use href="#search"/></svg></a>
-  <a style="top:8.125rem"><svg class="i"><use href="#home"/></svg></a><a style="top:11rem"><svg class="i"><use href="#subs"/></svg></a><a style="top:13.875rem"><svg class="i"><use href="#hist"/></svg></a><a style="top:16.75rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.625rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.5rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a>
+  <a class="cur" style="top:5rem"><svg class="i"><use href="#search"/></svg></a>
+  <a style="top:7.875rem"><svg class="i"><use href="#home"/></svg></a><a style="top:10.75rem"><svg class="i"><use href="#subs"/></svg></a><a style="top:13.625rem"><svg class="i"><use href="#hist"/></svg></a><a style="top:16.5rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.375rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.25rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a>
  </nav>
  <div class="content">
   <div class="q"><svg class="i"><use href="#search"/></svg><span style="color:var(--tx)">lofi</span></div>
-  <div class="grid" style="top:4.375rem">
+  <div class="grid" style="top:3.5rem">
    <div class="c f"><div class="th" style="--a:#3e6b5c"><b>3:12:04</b></div><div class="t">lofi hip hop radio — beats to relax to</div><div class="m">Lofi Girl</div><div class="m">54M views · 2 years ago</div></div>
    <div class="c"><div class="th" style="--a:#6b5a3e"><b>1:00:00</b></div><div class="t">1 hour of cozy lofi for studying</div><div class="m">Chill Corner</div><div class="m">3.1M views · 1 year ago</div></div>
    <div class="c"><div class="th" style="--a:#3e4f6b"><b>2:41:10</b></div><div class="t">Rainy night in Tokyo · lofi mix</div><div class="m">Tokyo Tapes</div><div class="m">812K views · 4 months ago</div></div>
@@ -291,11 +292,11 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
 <section class="screen" id="scrolled">
  <div class="safe"></div>
  <nav class="rail" style="z-index:6"><div class="mk"><svg><use href="#mark"/></svg></div>
-  <a style="top:5.25rem"><svg class="i"><use href="#search"/></svg></a><a style="top:8.125rem"><svg class="i"><use href="#home"/></svg></a><a class="cur" style="top:11rem"><svg class="i"><use href="#subs"/></svg></a><a style="top:13.875rem"><svg class="i"><use href="#hist"/></svg></a><a style="top:16.75rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.625rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.5rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a>
+  <a style="top:5rem"><svg class="i"><use href="#search"/></svg></a><a style="top:7.875rem"><svg class="i"><use href="#home"/></svg></a><a class="cur" style="top:10.75rem"><svg class="i"><use href="#subs"/></svg></a><a style="top:13.625rem"><svg class="i"><use href="#hist"/></svg></a><a style="top:16.5rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.375rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.25rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a>
  </nav>
  <div class="scrim"></div>
- <div class="content" style="top:-10.3125rem">
-  <div class="grid" style="top:3.5625rem">
+ <div class="content" style="top:-12.05rem">
+  <div class="grid">
    <div class="c"><div class="th" style="--a:#3e6b5c"></div><div class="t">Previous row (scrolled away)</div><div class="m">Channel</div><div class="m">meta</div></div><div class="c"><div class="th"></div><div class="t">…</div><div class="m">x</div><div class="m">x</div></div><div class="c"><div class="th"></div><div class="t">…</div><div class="m">x</div><div class="m">x</div></div><div class="c"><div class="th"></div><div class="t">…</div><div class="m">x</div><div class="m">x</div></div>
    <div class="c"><div class="th" style="--a:#6b3e45"><b>15:02</b></div><div class="t">A short history of the font on every TV menu</div><div class="m">Type Talk</div><div class="m">51K views · 5 days ago</div></div>
    <div class="c"><div class="th" style="--a:#3e6b6a"><b>1:02:13</b></div><div class="t">Podcast #212 — making things people keep</div><div class="m">The Long Game</div><div class="m">96K views · 6 days ago</div></div>
@@ -310,10 +311,10 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
 <div class="lab">07 · Channel: avatar, name and subscribers on top, its videos as the grid</div>
 <section class="screen" id="channel">
  <div class="safe"></div>
- <nav class="rail"><div class="mk"><svg><use href="#mark"/></svg></div><a style="top:5.25rem"><svg class="i"><use href="#search"/></svg></a><a style="top:8.125rem"><svg class="i"><use href="#home"/></svg></a><a style="top:11rem"><svg class="i"><use href="#subs"/></svg></a><a style="top:13.875rem"><svg class="i"><use href="#hist"/></svg></a><a style="top:16.75rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.625rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.5rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a></nav>
+ <nav class="rail"><div class="mk"><svg><use href="#mark"/></svg></div><a style="top:5rem"><svg class="i"><use href="#search"/></svg></a><a style="top:7.875rem"><svg class="i"><use href="#home"/></svg></a><a style="top:10.75rem"><svg class="i"><use href="#subs"/></svg></a><a style="top:13.625rem"><svg class="i"><use href="#hist"/></svg></a><a style="top:16.5rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.375rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.25rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a></nav>
  <div class="content">
   <div class="ch"><div class="av"></div><div><h1>Monkey Developer</h1><div class="meta">@monkeydeveloper · 412K subscribers · 380 videos</div></div></div>
-  <div class="grid" style="top:5.75rem">
+  <div class="grid" style="top:4.25rem">
    <div class="c f"><div class="th" style="--a:#3e6b5c"><b>12:04</b></div><div class="t">How we built a tiny game engine in a weekend</div><div class="m">214K views · 3 days ago</div></div>
    <div class="c"><div class="th" style="--a:#6b5a3e"><b>18:40</b></div><div class="t">Physics in 200 lines</div><div class="m">98K views · 2 weeks ago</div></div>
    <div class="c"><div class="th" style="--a:#3e4f6b"><b>9:31</b></div><div class="t">Why our first tycoon failed</div><div class="m">301K views · 1 month ago</div></div>
@@ -326,10 +327,10 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
 <div class="lab">08 · Playlist / Watch later: title and count on top; empty and loading states keep the same geometry</div>
 <section class="screen" id="playlist">
  <div class="safe"></div>
- <nav class="rail"><div class="mk"><svg><use href="#mark"/></svg></div><a style="top:5.25rem"><svg class="i"><use href="#search"/></svg></a><a style="top:8.125rem"><svg class="i"><use href="#home"/></svg></a><a style="top:11rem"><svg class="i"><use href="#subs"/></svg></a><a style="top:13.875rem"><svg class="i"><use href="#hist"/></svg></a><a class="cur" style="top:16.75rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.625rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.5rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a></nav>
+ <nav class="rail"><div class="mk"><svg><use href="#mark"/></svg></div><a style="top:5rem"><svg class="i"><use href="#search"/></svg></a><a style="top:7.875rem"><svg class="i"><use href="#home"/></svg></a><a style="top:10.75rem"><svg class="i"><use href="#subs"/></svg></a><a style="top:13.625rem"><svg class="i"><use href="#hist"/></svg></a><a class="cur" style="top:16.5rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.375rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.25rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a></nav>
  <div class="content">
   <h1>Watch later</h1><div class="meta">24 videos · updated today</div>
-  <div class="grid" style="top:4.75rem">
+  <div class="grid" style="top:4.25rem">
    <div class="c f"><div class="th" style="--a:#3e6b5c"><b>12:04</b><div class="pg"><i></i></div></div><div class="t">How we built a tiny game engine in a weekend</div><div class="m">Monkey Developer</div><div class="m">214K views</div></div>
    <div class="c sk"><div class="th"></div><div class="t">.</div><div class="m">.</div><div class="m">.</div></div><div class="c sk"><div class="th"></div><div class="t">.</div><div class="m">.</div><div class="m">.</div></div><div class="c sk"><div class="th"></div><div class="t">.</div><div class="m">.</div><div class="m">.</div></div>
   </div>
@@ -339,11 +340,11 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
 <div class="lab">09 · Empty page (History off / nothing saved): one calm line, the rail keeps the focus</div>
 <section class="screen" id="empty">
  <div class="safe"></div>
- <nav class="rail"><div class="mk"><svg><use href="#mark"/></svg></div><a style="top:5.25rem"><svg class="i"><use href="#search"/></svg></a><a style="top:8.125rem"><svg class="i"><use href="#home"/></svg></a><a style="top:11rem"><svg class="i"><use href="#subs"/></svg></a><a class="cur f" style="top:13.875rem"><svg class="i"><use href="#hist"/></svg></a><a style="top:16.75rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.625rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.5rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a></nav>
+ <nav class="rail"><div class="mk"><svg><use href="#mark"/></svg></div><a style="top:5rem"><svg class="i"><use href="#search"/></svg></a><a style="top:7.875rem"><svg class="i"><use href="#home"/></svg></a><a style="top:10.75rem"><svg class="i"><use href="#subs"/></svg></a><a class="cur f" style="top:13.625rem"><svg class="i"><use href="#hist"/></svg></a><a style="top:16.5rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.375rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.25rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a></nav>
  <div class="content"><h1>History</h1><div class="empty"><h2>Nothing here yet</h2><p>Videos you watch appear here, on every device signed in to your account.</p></div></div>
 </section>
 
-<div class="lab">10 · Player overlay (any key while playing; hides after 4 s): title + channel, thick bar with chapter gaps, elapsed / remaining, large round buttons</div>
+<div class="lab">10 · Player overlay (any key while playing; hides after 4 s): title + channel, a 4 px bar with chapter gaps, elapsed / remaining, 60 px round buttons</div>
 <section class="screen" id="player">
  <div class="vid"></div><div class="top"></div><div class="bot"></div><div class="safe"></div>
  <div class="ttl"><h1>The quiet hour: three hours of rain on a tin roof</h1><div class="own"><i></i>Night Sounds · 1.2M views</div></div>
@@ -366,9 +367,9 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
 
 <div class="lab">12 · Up next: ↓ from the buttons slides the controls up and shows the related row</div>
 <section class="screen" id="upnext">
- <div class="vid"></div><div class="top"></div><div class="bot" style="height:24rem"></div><div class="safe"></div>
+ <div class="vid"></div><div class="top"></div><div class="bot" style="height:22rem"></div><div class="safe"></div>
  <div class="ttl"><h1>The quiet hour: three hours of rain on a tin roof</h1><div class="own"><i></i>Night Sounds · 1.2M views</div></div>
- <div class="ctl" style="bottom:12.125rem">
+ <div class="ctl" style="bottom:13.25rem">
   <div class="times"><span>12:41</span><span>−2:47:19</span></div>
   <div class="bar"><div class="seg"><div class="fill" style="width:100%"></div></div><div class="seg"><div class="fill" style="width:100%"></div></div><div class="seg" style="flex:3"><div class="fill" style="width:12%"></div></div><div class="seg" style="flex:2"></div></div>
   <div class="row"><span class="rb"><svg class="i"><use href="#pause"/></svg></span><span class="rb"><svg class="i"><use href="#cc"/></svg></span><span class="rb w">1×</span><span class="rb w">1080p</span><span class="rb"><svg class="i"><use href="#like"/></svg></span><span class="rb"><svg class="i"><use href="#save"/></svg></span><span class="rb"><svg class="i"><use href="#info"/></svg></span></div>
@@ -386,7 +387,7 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
 <div class="lab">13 · A menu (Speed, Quality, Captions): a right-side panel, focus on the current value, OK chooses, Back closes</div>
 <section class="screen" id="menu">
  <div class="vid"></div><div class="bot"></div><div class="safe"></div>
- <div class="ctl" style="right:22rem">
+ <div class="ctl" style="right:21rem">
   <div class="times"><span>12:41</span><span>−2:47:19</span></div>
   <div class="bar"><div class="seg" style="flex:1"><div class="fill" style="width:12%"></div></div></div>
   <div class="row"><span class="rb"><svg class="i"><use href="#pause"/></svg></span><span class="rb"><svg class="i"><use href="#cc"/></svg></span><span class="rb w on">1×</span><span class="rb w">1080p</span></div>
@@ -399,8 +400,8 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
 <div class="lab">14 · Watching: captions bottom-centre inside the safe area (above the bar while the overlay is open); the skip button bottom-right</div>
 <section class="screen" id="captions">
  <div class="vid"></div><div class="safe"></div>
- <div class="cap" style="bottom:2.25rem">and that's when the rain finally<br>reached the tin roof</div>
- <div class="skip" style="bottom:6.5rem"><span>Sponsor</span><span class="bt f">Skip ⏭</span></div>
+ <div class="cap" style="bottom:5rem">and that's when the rain finally<br>reached the tin roof</div>
+ <div class="skip" style="bottom:2rem"><span>Sponsor</span><span class="bt f">Skip ⏭</span></div>
 </section>
 
 <div class="lab">15 · Failure / offline: the reason, centred and large, the primary action focused (the player never leaves by itself)</div>
@@ -417,7 +418,7 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
    <ol><li>1 · Scan the code, or go to<span class="u">youtube.com/activate</span></li><li>2 · Enter this code</li></ol>
    <p class="code">WMB-QZX-TPR</p>
    <p class="st">Then pick your Google account. This screen continues by itself.</p></div>
-  <div class="qr"><div class="tile"><svg viewBox="0 0 29 29" style="width:11rem;height:11rem"><path fill="#0f0f0f" d="M0 0h7v7H0zM1 1v5h5V1zM2 2h3v3H2zM22 0h7v7h-7zm1 1v5h5V1zm1 1h3v3h-3zM0 22h7v7H0zm1 1v5h5v-5zm1 1h3v3H2zM9 0h2v2H9zm4 1h3v1h-3zm4 2h2v3h-2zM9 4h3v2H9zm5 2h2v2h-2zM8 9h3v2H8zm5 0h1v4h-1zm3 1h4v1h-4zm5 2h3v2h-3zm4 1h2v3h-2zM9 13h2v3H9zm4 3h3v2h-3zm5-1h2v4h-2zm4 3h3v2h-3zM9 19h3v1H9zm-6-9h3v2H3zm0 4h2v3H3zm6 8h2v3H9zm4 1h4v2h-4zm6 1h2v5h-2zm4 2h4v1h-4zm-9 3h3v2h-3zm9 0h2v2h-2z"/></svg></div><p>Scan with your phone's camera</p></div>
+  <div class="qr"><div class="tile"><svg viewBox="0 0 29 29" style="width:13.25rem;height:13.25rem"><path fill="#0f0f0f" d="M0 0h7v7H0zM1 1v5h5V1zM2 2h3v3H2zM22 0h7v7h-7zm1 1v5h5V1zm1 1h3v3h-3zM0 22h7v7H0zm1 1v5h5v-5zm1 1h3v3H2zM9 0h2v2H9zm4 1h3v1h-3zm4 2h2v3h-2zM9 4h3v2H9zm5 2h2v2h-2zM8 9h3v2H8zm5 0h1v4h-1zm3 1h4v1h-4zm5 2h3v2h-3zm4 1h2v3h-2zM9 13h2v3H9zm4 3h3v2h-3zm5-1h2v4h-2zm4 3h3v2h-3zM9 19h3v1H9zm-6-9h3v2H3zm0 4h2v3H3zm6 8h2v3H9zm4 1h4v2h-4zm6 1h2v5h-2zm4 2h4v1h-4zm-9 3h3v2h-3zm9 0h2v2h-2z"/></svg></div><p>Scan with your phone's camera</p></div>
   <div class="btns"><span class="bt f">Back</span><span class="bt">Get a new code</span></div>
  </div>
 </section>
@@ -427,8 +428,8 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
  <div class="safe"></div>
  <div class="sign"><div class="mk"><svg><use href="#mark"/></svg><b>YouTube</b></div>
   <div class="l" style="width:30rem"><h2>About &amp; updates</h2>
-   <dl style="display:grid;grid-template-columns:auto 1fr;gap:.5rem 1.5rem;margin:1.25rem 0 0;font-size:.875rem"><dt style="color:var(--mu)">App</dt><dd style="margin:0">Redline for TV 0.1.0</dd><dt style="color:var(--mu)">Interface</dt><dd style="margin:0">0.9.0 · build 1000</dd><dt style="color:var(--mu)">Last check</dt><dd style="margin:0">just now · update found</dd></dl>
-   <div style="margin-top:1.75rem;padding:1.25rem 1.5rem;border-radius:1rem;background:var(--pn);display:grid;gap:.625rem"><b style="font-size:1.25rem;color:var(--ac)">Update ready</b><p style="margin:0;font-size:.875rem;color:var(--mu)">A new interface (0.9.0, build 2000) is downloaded and verified. Update now restarts the screen with it; you stay signed in.</p></div></div>
+   <dl style="display:grid;grid-template-columns:auto 1fr;gap:.5rem 1.5rem;margin:1.25rem 0 0;font-size:.9375rem"><dt style="color:var(--mu)">App</dt><dd style="margin:0">Redline for TV 0.1.0</dd><dt style="color:var(--mu)">Interface</dt><dd style="margin:0">0.9.0 · build 1000</dd><dt style="color:var(--mu)">Last check</dt><dd style="margin:0">just now · update found</dd></dl>
+   <div style="margin-top:1.5rem;padding:1.25rem 1.5rem;border-radius:.75rem;background:var(--pn);display:grid;gap:.625rem"><b style="font-size:1.125rem;color:var(--ac)">Update ready</b><p style="margin:0;font-size:.9375rem;color:var(--mu)">A new interface (0.9.0, build 2000) is downloaded and verified. Update now restarts the screen with it; you stay signed in.</p></div></div>
   <div class="btns"><span class="bt p f">Update now</span><span class="bt">Install app update</span><span class="bt">Back</span></div>
  </div>
 </section>
@@ -437,9 +438,9 @@ h1{margin:0;font-size:1.5rem;line-height:2.25rem;font-weight:600;letter-spacing:
 <section class="screen" id="account">
  <div class="safe"></div>
  <div class="sign"><div class="mk"><svg><use href="#mark"/></svg><b>YouTube</b></div>
-  <div class="l"><div class="av" style="width:4.5rem;height:4.5rem;display:grid;place-items:center;background:var(--on);color:var(--ac)"><svg class="i" style="width:2.25rem;height:2.25rem"><use href="#acct"/></svg></div>
-   <h2 style="margin-top:1.25rem">Signed in</h2>
-   <p class="st" style="font-size:.875rem;line-height:1.3125rem">This TV uses your YouTube account: history, subscriptions, Watch later and playlists are the same as on your other devices.</p></div>
+  <div class="l"><div class="av" style="width:3.5rem;height:3.5rem;display:grid;place-items:center;background:var(--on);color:var(--ac)"><svg class="i" style="width:1.75rem;height:1.75rem"><use href="#acct"/></svg></div>
+   <h2 style="margin-top:1rem">Signed in</h2>
+   <p class="st" style="font-size:.9375rem;line-height:1.375rem">This TV uses your YouTube account: history, subscriptions, Watch later and playlists are the same as on your other devices.</p></div>
   <div class="btns"><span class="bt f">Back</span><span class="bt">Sign out</span></div>
  </div>
 </section>
@@ -460,13 +461,13 @@ Chapters
 <section class="screen" id="toast">
  <div class="vid"></div><div class="safe"></div>
  <div class="toast">Captions on · English</div>
- <div class="toast e" style="top:5rem">Couldn't like this video: sign in required</div>
+ <div class="toast e" style="top:4rem">Couldn't like this video: sign in required</div>
 </section>
 
 <div class="lab">20 · Loading: skeleton cards in the final geometry (no spinners)</div>
 <section class="screen" id="loading">
  <div class="safe"></div>
- <nav class="rail"><div class="mk"><svg><use href="#mark"/></svg></div><a style="top:5.25rem"><svg class="i"><use href="#search"/></svg></a><a class="cur" style="top:8.125rem"><svg class="i"><use href="#home"/></svg></a><a style="top:11rem"><svg class="i"><use href="#subs"/></svg></a><a style="top:13.875rem"><svg class="i"><use href="#hist"/></svg></a><a style="top:16.75rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.625rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.5rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a></nav>
+ <nav class="rail"><div class="mk"><svg><use href="#mark"/></svg></div><a style="top:5rem"><svg class="i"><use href="#search"/></svg></a><a class="cur" style="top:7.875rem"><svg class="i"><use href="#home"/></svg></a><a style="top:10.75rem"><svg class="i"><use href="#subs"/></svg></a><a style="top:13.625rem"><svg class="i"><use href="#hist"/></svg></a><a style="top:16.5rem"><svg class="i"><use href="#wl"/></svg></a><a style="top:19.375rem"><svg class="i"><use href="#pl"/></svg></a><a style="top:22.25rem"><svg class="i"><use href="#like"/></svg></a><a style="top:25.875rem"><svg class="i"><use href="#acct"/></svg></a><a style="top:28.75rem"><svg class="i" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5M4.5 12a7.5 7.5 0 0 1 13.1-5M17.6 3.5V7h-3.5M6.4 20.5V17h3.5"/></svg></a></nav>
  <div class="content"><h1>Subscriptions</h1><div class="grid">
   <div class="c sk"><div class="th"></div><div class="t">.</div><div class="m">.</div><div class="m">.</div></div><div class="c sk"><div class="th"></div><div class="t">.</div><div class="m">.</div><div class="m">.</div></div><div class="c sk"><div class="th"></div><div class="t">.</div><div class="m">.</div><div class="m">.</div></div><div class="c sk"><div class="th"></div><div class="t">.</div><div class="m">.</div><div class="m">.</div></div>
   <div class="c sk"><div class="th"></div><div class="t">.</div><div class="m">.</div><div class="m">.</div></div><div class="c sk"><div class="th"></div><div class="t">.</div><div class="m">.</div><div class="m">.</div></div><div class="c sk"><div class="th"></div><div class="t">.</div><div class="m">.</div><div class="m">.</div></div><div class="c sk"><div class="th"></div><div class="t">.</div><div class="m">.</div><div class="m">.</div></div>

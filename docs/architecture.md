@@ -1068,8 +1068,9 @@ the old one on purpose, because stored data, installed apps or tools depend on t
 
 ### Google TV interaction layer
 
-The TV platform flag keeps these behaviors separate from the desktop extension. The existing four-column layout,
-the one palette (graphite, white, red) and overscan-safe sizing remain; focus uses a stationary white frame (the
+The TV platform flag keeps these behaviors separate from the desktop extension. Since 0.14.2 the TV layout is the
+one in tv/design/README.md: rem = 1/80 of the width, a 2.5 % / 3.5 % safe area (no overscan margin), the rail on the
+left safe edge, five cards per row, 60 px player buttons; the one palette (graphite, white, red) remains; focus uses a stationary white frame (the
 accent `--ac`: about 13:1 against the focused `--cb` surface and 17:1 against the graphite background; red stays for
 the brand, playback and live, so a focused control never reads as an error or as progress). Remote focus, rail
 expansion, panels and late-arriving page content are immediate, without the desktop's entrance waves or card zoom.
