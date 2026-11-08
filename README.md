@@ -63,6 +63,24 @@ Measured on real youtube.com, signed out, in November 2026 (medians; methods and
 | **Redline for TV** | The same client on Google TV / Android TV: a 10-foot interface for the remote, an on-screen keyboard, sign-in with your phone, updates by itself. |
 | **Private by design** | No server, no analytics, no telemetry. Settings stay in your browser. See [Privacy](#privacy). |
 
+## Transcripts
+
+Optional, and invisible until you set it up: full, saved transcripts of YouTube videos, for reading or for feeding to an
+AI. Point at a video card and a small control appears at its top right; a video page gets a Transcript button; a channel
+page can queue a whole channel. Videos wait in a queue while you keep browsing, transcribe one at a time, and land as
+TXT, Markdown or JSON files in a folder you choose, in a library you can read, copy and export from.
+
+- **It needs your own Azure Speech resource** (MAI-Transcribe-2). Your Azure account pays for what you transcribe.
+- **It needs a small local helper**, because a browser extension cannot run FFmpeg and yt-dlp or write to folders. You
+  build it from source with cargo; automatic install is macOS only for now. See [helper/README.md](helper/README.md). A
+  prebuilt download may come later.
+- **Nothing leaves your computer except audio going to your own Azure resource.** Transcripts stay in your folder. Your
+  Azure key stays in the helper's owner-only settings file, never in the browser. There is no telemetry.
+- **If you don't set it up you pay nothing:** no controls on any page, no extra request, one quiet row in the toolbar
+  popup. It is not part of the TV app.
+
+To set it up: install the helper, then open Redline's toolbar popup and choose **Transcripts: Set up**.
+
 ## Screenshots
 
 <table>
@@ -220,12 +238,15 @@ It talks only to these services:
 | **SponsorBlock** (`sponsor.ajay.app`) | When a video starts, unless SponsorSkip is off | Only the first 4 characters of a hash of the video id: the answer covers ~150 videos and yours is picked on your computer. No cookies, nothing reported back. Switched off, nothing is sent. |
 | **Deepgram** (`api.deepgram.com`) | Only while you dictate a voice search, and only if you saved a key | Your microphone audio for that search and your key. The key never enters the YouTube page. |
 | **Google sign-in** (`oauth2.googleapis.com`), TV app only | While the sign-in code is shown, and to refresh or revoke the TV's access | YouTube's TV device sign-in. The tokens stay on the TV, sealed with the Android Keystore. |
+| **Your Azure Speech resource**, through the local helper | Only if you set up Transcripts, and only while a video you asked for is transcribing (or you press Test connection) | That video's audio. The key stays in the helper's settings on your computer. |
 | **GitHub** (`api.github.com`, release downloads), TV app only | At launch and every 6 hours, sooner after a failed check | A request for this repository's releases and, when there is a newer one, its files. Nothing about you. |
 
 The extension's permissions: `storage`, `declarativeNetRequest` (the fixed rules in
-[`extension/rules.json`](extension/rules.json)) and host access to youtube.com, googlevideo.com, SponsorBlock and
-Deepgram only. The TV app's voice search uses the TV's own speech recognizer: Redline gets the text, never the audio,
-and has no microphone permission. The full rules are in
+[`extension/rules.json`](extension/rules.json)), `nativeMessaging` and `alarms` (Transcripts: pairing with your local
+helper and keeping the toolbar honest while jobs run; neither is used until you set it up), and host access to
+youtube.com, googlevideo.com, SponsorBlock, Deepgram and the helper on `127.0.0.1:8765` only. The TV app's voice search
+uses the TV's own speech recognizer: Redline gets the text, never the audio, and has no microphone permission. The full
+rules are in
 [CONTRIBUTING.md](CONTRIBUTING.md#privacy-rules-binding).
 
 ## FAQ

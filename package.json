@@ -12,9 +12,11 @@
     "build": "./build.sh",
     "build:dev": "./build.sh --dev",
     "test": "npm run test:rust && npm run test:e2e",
-    "test:rust": "cargo test --locked",
+    "test:rust": "cargo test --locked && cargo test --locked --manifest-path transcripts/Cargo.toml",
+    "test:helper": "cd helper && cargo test --locked && cargo fmt --all --check",
     "test:e2e": "node tests/e2e.cjs",
-    "check:public": "node tests/check-public.cjs"
+    "check:public": "node tests/check-public.cjs",
+    "check:tv": "node tests/check-tv-bundle.cjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"

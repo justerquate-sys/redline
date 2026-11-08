@@ -1,0 +1,58 @@
+# The local transcript helper: a native program, its own workspace with its own lockfile (like tv/core), so the
+# extension's crate never pulls these dependencies in. Rust 1.99.1 (rust-toolchain.toml).
+[workspace]
+resolver = "3"
+members = ["crates/common", "crates/library", "crates/engine", "crates/helper"]
+default-members = ["crates/helper", "crates/common", "crates/library", "crates/engine"]
+
+[workspace.package]
+version = "2.0.1"
+edition = "2024"
+rust-version = "1.99.1"
+
+[workspace.dependencies]
+scribe-common = { path = "crates/common" }
+scribe-library = { path = "crates/library" }
+scribe-engine = { path = "crates/engine" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+parking_lot = "0.13"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+url = "2"
+regex = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "multipart", "stream"] }
+futures-util = "0.3"
+bytes = "1"
+libc = "0.2"
+sha2 = "0.11"
+hex = "0.4"
+base64 = "0.23"
+tempfile = "3"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "limit", "trace"] }
+fs2 = "0.4"
+subtle = "2"
+clap = { version = "4", features = ["derive"] }
+plist = "1"
+which = "8"
+dotenvy = "0.15"
+unicode-normalization = "0.1"
+unicode-casefold = "0.2"
+idna = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"

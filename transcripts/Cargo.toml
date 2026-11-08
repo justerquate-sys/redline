@@ -1,0 +1,30 @@
+# Transcripts: the small second Wasm of the extension. It runs in the background worker and on the extension's own
+# pages (the reader, settings, the popup's Transcripts section), so the YouTube page's Wasm carries none of this. It
+# has its own lockfile and is never part of the TV bundle.
+[package]
+name = "ytc-transcripts"
+version = "0.1.0"
+edition = "2024"
+description = "Redline's Transcripts: worker and extension pages, in Rust"
+license = "MIT"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "=0.2.130"
+wasm-bindgen-futures = "=0.4.80"
+js-sys = "=0.3.107"
+serde_json = { version = "1", default-features = false, features = ["std"] }
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "debuginfo"
+debug = false
+incremental = false

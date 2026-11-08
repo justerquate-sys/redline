@@ -1,0 +1,45 @@
+[package]
+name = "scribe-helper"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+scribe-common.workspace = true
+scribe-library.workspace = true
+scribe-engine = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+tokio.workspace = true
+axum.workspace = true
+tower.workspace = true
+clap.workspace = true
+fs2.workspace = true
+subtle.workspace = true
+base64.workspace = true
+sha2.workspace = true
+plist.workspace = true
+dotenvy.workspace = true
+libc.workspace = true
+uuid.workspace = true
+url.workspace = true
+reqwest.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+futures-util.workspace = true
+
+[features]
+default = ["engine"]
+engine = ["dep:scribe-engine"]
+# End-to-end tests only: lets `.env` name a Speech server on 127.0.0.1. Never in a release.
+loopback-speech = ["scribe-common/loopback-speech"]
+
+[[bin]]
+name = "scribe-helper"
+path = "src/main.rs"
+required-features = ["engine"]
+
+[lints]
+workspace = true

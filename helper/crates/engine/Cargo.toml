@@ -1,0 +1,26 @@
+[package]
+name = "scribe-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+[dependencies]
+scribe-common.workspace = true
+scribe-library.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+url.workspace = true
+regex.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+reqwest.workspace = true
+futures-util.workspace = true
+libc.workspace = true
+tempfile.workspace = true
+which.workspace = true
+unicode-normalization.workspace = true
+bytes.workspace = true
+[lints]
+workspace = true

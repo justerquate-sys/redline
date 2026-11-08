@@ -20,6 +20,11 @@ pub mod members;
 pub mod progress;
 pub mod search_filters;
 pub mod topics;
+#[cfg(feature = "transcribe")]
+pub mod transcribe;
+#[cfg(not(feature = "transcribe"))]
+#[path = "transcribe_off.rs"]
+pub mod transcribe;
 pub mod upnext;
 pub mod voice;
 pub mod watch_later;
@@ -66,6 +71,7 @@ pub fn card_bar(out: &mut String, v: &Video) {
         None if v.progress > 0 => out.push_str(&format!("<i class=\"pg\" style=\"width:{}%\"></i>", v.progress)),
         None => {}
     }
+    transcribe::card_chip(out, v);
 }
 
 /// The thumbnail's "Members only" label (the duration's own row, at the other end). Beside a long duration

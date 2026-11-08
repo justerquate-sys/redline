@@ -17,6 +17,7 @@ const { ensureMedia, SECONDS } = require('./make-media.cjs');
 const { chromiumOptions, extensionDir, isDevBuild } = require('./browser.cjs');
 const { ensureLive } = require('./make-live.cjs');
 const wsMock = require('./ws-mock.cjs');
+const transcripts = require('./transcripts-steps.cjs');
 
 // YTC_EXT: another client folder (e.g. an older build) for the Home timing table;
 // YTC_TIMING_ONLY=1 skips the checks and prints only that table.
@@ -858,7 +859,7 @@ const median = a => { const s = a.filter(x => !Number.isNaN(x)).sort((x, y) => x
   // The public build's worker ignores incident messages; a temporary copy gets a forwarder to the
   // test collector (named by the same storage key the development build uses), so the player and
   // action checks see their incidents in both builds. The copy is otherwise byte-identical.
-  let load = EXT;
+  let load = EXT, trMock = null;
   if (!DEV_BUILD) {
     load = fs.mkdtempSync(path.join(os.tmpdir(), 'ytc-e2e-ext-'));
     fs.cpSync(EXT, load, { recursive: true, filter: f => !f.includes('_metadata') });
@@ -869,6 +870,7 @@ chrome.runtime.onMessage.addListener(m => {
   chrome.storage.local.get('ytcCollectorV1').then(g => g.ytcCollectorV1 && fetch(g.ytcCollectorV1, { method: 'POST', headers: { 'content-type': 'application/json' }, body: m.ytcIncident || m.ytcPerf })).catch(() => {});
 });
 `);
+    trMock = await transcripts.prepare(load);
   }
   console.log(`extension: ${EXT} (${DEV_BUILD ? 'development' : 'public'} build)`);
   const ctx = await chromium.launchPersistentContext(profile, {
@@ -947,6 +949,7 @@ chrome.runtime.onMessage.addListener(m => {
   const problems = from => incidents.slice(from).filter(x => x.kind !== 'perf').map(x => x.kind + ': ' + x.reason);
   const ds = () => page.evaluate(() => ({ ...document.documentElement.dataset }));
   const apiCount = ep => log.api.filter(a => a.ep === ep && !a.body?.continuation).length;
+  if (process.env.YTC_TR_SPEED) { HOME.rich = true; await transcripts.speed({ ctx, sw, mock: trMock, EXT }); await ctx.close(); process.exit(0); }
   // Wait until the extension's content script is registered.
   for (let i = 0; i < 20; i++) {
     await page.goto('https://www.youtube.com/results?search_query=warmup', { waitUntil: 'commit' });
@@ -8913,7 +8916,7 @@ chrome.runtime.onMessage.addListener(m => {
     const st = await sw.evaluate(() => chrome.storage.local.get(null));
     assert.ok(!('ytcIncidentsV1' in st) && !('ytcPerfQueueV1' in st), 'nothing stored for a collector: ' + Object.keys(st).join(','));
     const m = await sw.evaluate(() => chrome.runtime.getManifest());
-    assert.ok(!m.host_permissions.some(p => p.includes('127.0.0.1')) && !m.version_name, 'public manifest');
+    assert.ok(!m.host_permissions.some(p => p.includes('127.0.0.1:47321')) && !m.version_name, 'public manifest');
     const files = ['content.js', 'background.js', 'manifest.json'].map(f => fs.readFileSync(path.join(EXT, f), 'utf8')).join('\n');
     for (const s of ['127.0.0.1:47321', 'ytc-dev-check', 'build-id.txt', 'ytcIncidentsV1', 'ytcPerfQueueV1']) assert.ok(!files.includes(s), 'no ' + s + ' in the public build');
   });
@@ -10402,6 +10405,9 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
     }
   });
 
+  // Transcripts: tests/transcripts-steps.cjs (the worker is restarted by the browser now and then, so it is looked up).
+  if (trMock) await transcripts.steps({ step, ctx, sw: () => ctx.serviceWorkers()[0] || sw, mock: trMock, incidents, HOME });
+
   await step('popup: Export all settings opens its own tab and saves one file of everything in chrome.storage.local, saying it holds the Deepgram key', async () => {
     const before = await sw.evaluate(() => chrome.storage.local.get(null));
     await sw.evaluate(() => chrome.storage.local.set({ ytcVoiceKeyV1: 'e2e-export-deepgram' }));
@@ -10638,6 +10644,7 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
   await ctx.close();
   collector.close();
   dg.close();
+  if (trMock) trMock.close();
   fs.rmSync(profile, { recursive: true, force: true });
   if (load !== EXT) fs.rmSync(load, { recursive: true, force: true });
   const failed = results.filter(r => r[0] === 'FAIL'), skipped = results.filter(r => r[0] === 'skip');

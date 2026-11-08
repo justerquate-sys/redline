@@ -141,6 +141,7 @@ pub fn on_fetch_chunk(id: u32, status: u32, bytes: &[u8]) {
 #[wasm_bindgen]
 pub fn on_storage(key: &str, json: &str) {
     if popup::active() { return popup::on_storage(key, json); }
+    if features::transcribe::on_storage(key, json) { return; }
     if telemetry::on_storage(key, json) {
         return;
     }
@@ -159,6 +160,7 @@ pub fn on_tel_frame(token: u32, t: f64) {
 #[wasm_bindgen]
 pub fn on_timer(id: u32) {
     if popup::active() { return popup::on_timer(id); }
+    if features::transcribe::on_timer(id) { return; }
     if native::active() {
         return native::clean::on_timer(id);
     }
@@ -176,6 +178,7 @@ pub fn on_timer(id: u32) {
 #[wasm_bindgen]
 pub fn on_storage_change(key: &str, json: &str) {
     if popup::active() { return popup::on_storage_change(key, json); }
+    if features::transcribe::on_storage_change(key, json) { return; }
     if native::active() { return; }
     app::with(|a| a.on_storage_change(key, json));
 }
@@ -187,7 +190,18 @@ pub fn on_store_result(id: u32, ok: bool) { if popup::active() { popup::on_store
 pub fn on_message_result(id: u32, json: &str) { if popup::active() { popup::on_message_result(id, json); } }
 
 #[wasm_bindgen]
-pub fn on_extension_message(message: &str) -> String { app::with_ret(|a| a.toolbar_message(message)) }
+pub fn on_extension_message(message: &str) -> String {
+    if let Some(live) = message.strip_prefix(features::transcribe::PREFIX) {
+        features::transcribe::on_live(live);
+        return String::new();
+    }
+    app::with_ret(|a| a.toolbar_message(message))
+}
+
+/// The background worker answered `bridge::worker_send` (`""`: it could not be reached).
+#[cfg(feature = "transcribe")]
+#[wasm_bindgen]
+pub fn on_worker_reply(id: u32, json: &str) { features::transcribe::on_reply(id, json); }
 
 /// Returns true when the click was handled (the bridge then prevents default).
 #[wasm_bindgen]

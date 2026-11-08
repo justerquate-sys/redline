@@ -346,6 +346,34 @@ extern "C" {
     /// Appends `html` inside every element matching `sel`.
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn append_all(sel: &str, html: &str);
+    /// Sets (`None`: removes) an attribute on every element matching `sel`.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn attr_all(sel: &str, name: &str, value: Option<String>);
+    /// `textContent` of every element matching `sel`.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn text_all(sel: &str, s: &str);
+    /// The attribute `name` of every `sel` match, newline separated.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn attr_list(sel: &str, name: &str) -> String;
+    /// For every `sel` match without a `skip` element inside: appends `html` to its `inner` element; `{}` in the html
+    /// becomes the match's attribute `attr` (word characters and `-` only).
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn decorate(sel: &str, inner: &str, skip: &str, attr: &str, html: &str);
+    /// Removes element `id`.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn remove(id: &str);
+    /// Removes attribute `name` of element `id`.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn attr_remove(id: &str, name: &str);
+    /// A JSON message to the background worker; `on_worker_reply(id, json)` answers.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn worker_send(id: u32, json: &str);
+    /// Opens the extension's options page.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn open_options();
+    /// Loads one more extension script into this extension page.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn load_script(src: &str);
     /// Adds (`on`) or removes a class on every element matching `sel`.
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn class_all(sel: &str, cls: &str, on: bool);

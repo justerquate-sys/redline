@@ -1,0 +1,67 @@
+/* Transcripts on YouTube's pages (the extension's second stylesheet; never in the TV bundle). Only for someone who set
+   the feature up: until then none of these elements exist. The chip wears the duration badge's clothes: same surface,
+   radius, type and inset. Nothing here delays anything: hover is instant in and eased out, keyboard stays instant. */
+.tsc{position:absolute;z-index:2;top:6px;right:6px;display:flex;align-items:center;justify-content:center;gap:4px;box-sizing:border-box;min-width:22px;height:22px;padding:0 4px;overflow:hidden;border:0;border-radius:6px;background:var(--sc);color:var(--tx);font-size:13px;font-weight:600;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap;cursor:pointer;opacity:0;pointer-events:none;transition:opacity var(--d-hover) var(--e-out),background-color var(--d-hover) var(--e-out),transform var(--d-press) var(--e-out)}
+.tsc svg{display:block;flex:none;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.tsc svg path,.tsc-w svg path{display:none}
+.tsc svg .tsc-l,.tsc-w svg .tsc-l{display:block}
+:is(.tsc,.tsc-w)[data-s=ok] svg .tsc-l,:is(.tsc,.tsc-w)[data-s=rm] svg .tsc-l,:is(.tsc,.tsc-w)[data-s=er] svg .tsc-l{display:none}
+:is(.tsc,.tsc-w)[data-s=ok] svg .tsc-c,:is(.tsc,.tsc-w)[data-s=rm] svg .tsc-x,:is(.tsc,.tsc-w)[data-s=er] svg .tsc-r{display:block}
+.tsc[data-s=on] svg,.tsc[data-s=wait] svg,.tsc[data-s=un] svg{display:none}
+.tsc-t:empty{display:none}
+/* Shown on hover and keyboard focus only, unless it has a state to report. A hidden chip takes no clicks, so it can never
+   get between a pointer and the video. */
+@media (hover:hover){.c:hover .tsc,.pli:hover .tsc{opacity:1;pointer-events:auto;transition-duration:0s,var(--d-hover),var(--d-press)}}
+.tsc:focus-visible,.tsc[data-s]{opacity:1;pointer-events:auto}
+.tsc:focus-visible{transition:none}
+@media (hover:hover) and (pointer:fine){.tsc:hover{background:var(--hv);transition-duration:0s,0s,var(--d-press)}}
+.tsc:active{transform:scale(calc(1 - var(--pd-icon) * var(--mv)))}
+/* The signature: a job's real progress as a line along the chip's foot. */
+.tsc[data-s=on]::after,.tsc-w[data-s=on]::after{content:"";position:absolute;left:0;bottom:0;width:var(--p,0%);height:2px;background:var(--progress)}
+.tsc[data-s=ok],.tsc[data-s=rm],.tsc[data-s=un]{color:var(--mu)}
+.tsc[data-s=er]{color:var(--er)}
+.tsc[data-s=wait]{color:var(--mu);cursor:default}
+.tsc[data-s=rm]{cursor:default}
+.rel .tsc{top:4px;right:4px;font-size:11.5px;height:20px;min-width:20px;padding:0 3px}
+.rel .tsc svg{width:12px;height:12px}
+/* A playlist row's small thumbnail. */
+.plth .tsc{top:2px;right:2px;height:18px;min-width:18px;padding:0 2px;border-radius:4px;font-size:11px}
+.plth .tsc svg{width:12px;height:12px}
+/* The watch page's Transcript button: the row's own style (.ya-b), no special border. */
+#ytc .tsc-w{position:relative;overflow:hidden;font-variant-numeric:tabular-nums}
+#ytc .tsc-w svg{fill:none}
+.tsc-w[data-s=er]{color:var(--er)}
+#ytc .tsc-w[data-s=ok],#ytc .tsc-w[data-s=rm],#ytc .tsc-w[data-s=un],#ytc .tsc-w[data-s=wait]{color:var(--mu)}
+/* The channel page's import controls, under its header. */
+.ch:has(.tsc-ch){flex-wrap:wrap}
+.tsc-ch{flex:1 0 100%;min-width:0}
+.tsc-chr{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.tsc-chr .m{margin-right:4px}
+#ytc .tsc-b{height:32px;padding:0 12px;font-size:13px}
+#ytc .tsc-sw{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 4px;border:0;background:none;color:var(--mu);font-size:13px;cursor:pointer}
+.tsc-sw i{display:block;box-sizing:border-box;width:28px;height:16px;padding:2px;border-radius:8px;background:var(--tk);transition:background-color var(--d-hover) var(--e-out)}
+.tsc-sw i::after{content:"";display:block;width:12px;height:12px;border-radius:6px;background:var(--tx);transition:transform var(--d-press) var(--e-out)}
+.tsc-sw[aria-checked=true] i{background:var(--ac)}
+.tsc-sw[aria-checked=true] i::after{background:var(--bg);transform:translateX(calc(12px * var(--mv)))}
+#ytc .tsc-sw[aria-checked=true]{color:var(--tx)}
+.tsc-chp{box-sizing:border-box;max-width:560px;margin-top:12px;padding:16px;border-radius:var(--r-ctl);background:var(--pn);font-size:13px;line-height:20px;transition:opacity var(--d-panel) var(--e-out),transform var(--d-panel) var(--e-out)}
+@starting-style{.tsc-chp{opacity:0;transform:translateY(calc(4px * var(--mv)))}}
+.tsc-chp[hidden]{display:none}
+.tsc-chh{display:flex;align-items:baseline;gap:8px}
+.tsc-chh b{font-size:14px;font-weight:600}
+#ytc .tsc-chx{align-self:flex-start;display:block;width:24px;height:24px;margin:-4px -4px 0 auto;padding:4px;border:0;border-radius:6px;background:none;color:var(--mu);cursor:pointer}
+#ytc .tsc-chx:hover{background:var(--hv);color:var(--tx)}
+.tsc-chx svg{display:block;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
+.tsc-cht{margin:8px 0;color:var(--tx)}
+.tsc-bar{height:4px;margin-bottom:8px;overflow:hidden;border-radius:2px;background:var(--cb)}
+.tsc-bar i{display:block;height:100%;background:var(--progress);transform-origin:0 50%;transform:scaleX(0);transition:transform var(--d-panel) var(--e-out)}
+.tsc-chp .m{margin:0}
+.tsc-che{margin:8px 0 0;color:var(--er)}
+#ytc .tsc-che[hidden],#ytc .tsc-chp button[hidden]{display:none}
+.tsc-cha{display:flex;gap:8px;margin-top:8px}.tsc-cha:not(:has(button:not([hidden]))){display:none}
+.tsc-chd{margin-top:8px;color:var(--mu)}
+.tsc-chd summary{cursor:pointer}
+.tsc-chd p{margin:8px 0 0!important;white-space:pre-line}
+/* One message at a time, bottom left. */
+.tsc-toast{position:fixed;z-index:60;left:24px;bottom:24px;box-sizing:border-box;max-width:min(400px,calc(100vw - 48px));padding:12px 16px;border-radius:var(--r-ctl);background:var(--rs);box-shadow:var(--sh);color:var(--tx);font-size:14px;line-height:20px;transition:opacity var(--d-pop) var(--e-out),transform var(--d-pop) var(--e-out)}
+@starting-style{.tsc-toast{opacity:0;transform:translateY(calc(4px * var(--mv)))}}

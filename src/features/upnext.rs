@@ -234,6 +234,7 @@ pub fn panel(pl: Option<&Playlist>, cur: &str) -> String {
             esc_into(&mut out, &it.len);
             out.push_str("</b>");
         }
+        crate::features::transcribe::playlist_chip(&mut out, &it.v);
         out.push_str("</span><span class=\"pld\"><span class=\"pltt\">");
         esc_into(&mut out, &it.title);
         out.push_str("</span><span class=\"plb\">");

@@ -27,6 +27,11 @@ if [ "$("$BINDGEN" --version 2>/dev/null)" != 'wasm-bindgen 0.2.130' ]; then
   echo 'This build requires wasm-bindgen-cli 0.2.130 (cargo install wasm-bindgen-cli --version 0.2.130 --locked).' >&2
   exit 1
 fi
-"$CARGO" build --release --locked --target wasm32-unknown-unknown ${DEV:+--features dev}
+# The TV bundle compiles Transcripts out (the Cargo feature `transcribe`); the extension also builds its second Wasm.
+"$CARGO" build --release --locked --target wasm32-unknown-unknown ${TARGET:+--no-default-features} ${DEV:+--features dev}
 "$BINDGEN" target/wasm32-unknown-unknown/release/ytc_client.wasm --target no-modules --remove-name-section --remove-producers-section --out-dir target/pkg --out-name ytc_client
+if [ -z "$TARGET" ]; then
+  "$CARGO" build --release --locked --target wasm32-unknown-unknown --manifest-path transcripts/Cargo.toml --target-dir target/transcripts
+  "$BINDGEN" target/transcripts/wasm32-unknown-unknown/release/ytc_transcripts.wasm --target no-modules --remove-name-section --remove-producers-section --out-dir target/pkg-tr --out-name transcripts
+fi
 node browser/build.cjs ${DEV:+--dev} $TARGET

@@ -762,6 +762,7 @@ pub fn page(head: &Head, items: &[Item], more_items: bool, empty: &str, plan: Im
                 out.push_str("</div>");
             }
             out.push_str("</div>");
+            crate::features::transcribe::channel_slot(&mut out);
             // TV: the Subscribe button's place, at the header's right end (`Actions::tv_channel`).
             if crate::tv::on() {
                 out.push_str("<div id=\"ytc-chsub\" class=\"chsub\"></div>");

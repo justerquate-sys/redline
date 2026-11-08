@@ -1,0 +1,155 @@
+/* The extension's own Transcripts pages: the library and reader (reader.html) and settings (settings.html). Redline's
+   palette (a test keeps these tokens equal to client.css), the 4 px grid, three text roles, one easing.
+   Character: exact, quiet, readable. The one rich thing on the page is the transcript itself. */
+:root{color-scheme:dark;--bg:#0f0f0f;--pn:#181818;--rs:#212121;--cb:#272727;--hv:#3f3f3f;--on:#303030;--fi:#121212;--bd:#3f3f3f;--tk:#717171;--ln:rgba(255,255,255,.1);
+  --tx:#f1f1f1;--mu:#aaa;--fa:#999;--ac:#f1f1f1;--er:#ff9a8f;--brand:#ff0033;--progress:#ff0033;--sh:0 8px 28px rgba(0,0,0,.55);
+  --e-out:cubic-bezier(.23,1,.32,1);--d-press:110ms;--d-hover:140ms;--d-pop:170ms;--mv:1}
+@media (prefers-reduced-motion:reduce){:root{--mv:0}}
+html{background:var(--bg)}
+#tr{margin:0;background:var(--bg);color:var(--tx);font:14px/20px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+#tr *{box-sizing:border-box}
+#tr [hidden]{display:none!important}
+#tr h1,#tr h2,#tr p{margin:0}
+#tr a{color:inherit}
+#tr :focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.tx-i{display:block;flex:none;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.tx-mark{display:block;flex:none;width:24px;height:18px;fill:var(--brand)}
+.tx-app{display:flex;flex-direction:column;min-height:100vh}
+.tx-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;height:56px;padding:0 24px;border-bottom:1px solid var(--ln);background:var(--bg)}
+#tr .tx-brand{display:flex;align-items:center;gap:8px;font-size:16px;line-height:24px;font-weight:600;text-decoration:none}
+.tx-gap{flex:1}
+.tx-state{display:inline-flex;align-items:center;gap:8px;color:var(--mu);font-size:13px;line-height:20px;white-space:nowrap}
+.tx-state::before{content:"";width:6px;height:6px;border-radius:3px;background:var(--tk)}
+.tx-state.ready::before{background:var(--tx)}
+.tx-state.error{color:var(--er)}.tx-state.error::before{background:var(--er)}
+/* Buttons: the watch row's shape. One light primary; everything else a surface step or plain. */
+.tx-b{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border:0;border-radius:18px;background:var(--cb);color:var(--tx);font:600 14px/20px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;text-decoration:none;white-space:nowrap;cursor:pointer;transition:background-color var(--d-hover) var(--e-out),transform var(--d-press) var(--e-out)}
+.tx-b:active:not(:disabled){transform:scale(calc(1 - .03 * var(--mv)))}
+.tx-b.small{height:32px;padding:0 12px;font-size:13px}
+.tx-b.primary{background:var(--ac);color:var(--bg)}
+.tx-b.quiet{background:none}
+.tx-b.icon{width:36px;padding:0}
+.tx-b.wide{width:100%}
+.tx-b:disabled{opacity:.45;cursor:default}
+@media (hover:hover) and (pointer:fine){.tx-b:not(:disabled):hover{background:var(--hv);transition-duration:0s,var(--d-press)}.tx-b.primary:not(:disabled):hover{background:#fff}}
+.tx-link{padding:0;border:0;background:none;color:var(--mu);font:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer;transition:color var(--d-hover) var(--e-out)}
+.tx-link:hover:not(:disabled){color:var(--tx);transition-duration:0s}
+.tx-link:disabled{color:var(--tk);cursor:default}
+.tx-hint{color:var(--mu);font-size:13px;line-height:20px}
+.tx-count{color:var(--mu);font-size:13px;font-weight:400;font-variant-numeric:tabular-nums}
+.tx-row{display:flex;align-items:center;gap:8px}
+.tx-row.spread{justify-content:space-between}
+.tx-row.wrap{flex-wrap:wrap}
+.tx-stack{display:grid;gap:16px}.tx-stack.tight{gap:4px}
+.tx-field label{display:block;margin-bottom:8px;color:var(--mu);font-size:13px;line-height:20px}
+.tx-field .tx-hint{margin-top:8px}
+#tr input[type=text],#tr input[type=url],#tr input[type=password],#tr select{display:block;width:100%;min-width:0;height:40px;padding:0 12px;border:1px solid var(--bd);border-radius:10px;background:var(--fi);color:var(--tx);font:inherit;transition:border-color var(--d-hover) var(--e-out)}
+#tr input::placeholder{color:var(--fa)}
+#tr input:focus-visible,#tr select:focus-visible{outline:0;border-color:var(--ac);transition:none}
+#tr input:disabled,#tr select:disabled{opacity:.5}
+input[type=checkbox]{flex:none;width:16px;height:16px;margin:0;accent-color:var(--ac);cursor:pointer}
+.tx-check{display:inline-flex;align-items:center;gap:8px;font-size:13px;line-height:20px;cursor:pointer}
+.tx-add{display:flex;gap:8px}
+.tx-add.wide{max-width:560px;margin-top:24px}
+.tx-empty{padding:16px 12px;color:var(--mu);font-size:13px;line-height:20px}
+.tx-notice{padding:12px 16px;border-radius:10px;background:var(--rs);color:var(--er);font-size:13px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere}
+.tx-notice.success{color:var(--tx)}
+.tx-notice.info,.tx-notice.removed{color:var(--mu)}
+.tx-toast{position:fixed;z-index:20;left:344px;bottom:24px;max-width:min(420px,calc(100vw - 48px));box-shadow:var(--sh);transition:opacity var(--d-pop) var(--e-out),transform var(--d-pop) var(--e-out)}
+@starting-style{.tx-toast{opacity:0;transform:translateY(calc(4px * var(--mv)))}}
+/* The signature chip: a status that tells the truth, with the job's real progress along its foot. */
+.tx-chip{position:relative;display:inline-flex;align-items:center;height:20px;padding:0 6px;overflow:hidden;border-radius:6px;background:var(--cb);color:var(--mu);font-size:12px;line-height:20px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tx-chip:empty{display:none}
+.tx-chip.active{color:var(--tx)}
+.tx-chip.active::after{content:"";position:absolute;left:0;bottom:0;width:var(--p,0%);height:2px;background:var(--progress)}
+.tx-chip.ready{color:var(--tx)}
+.tx-chip.error{color:var(--er)}
+.tx-bar{height:4px;overflow:hidden;border-radius:2px;background:var(--cb)}
+.tx-bar i{display:block;height:100%;background:var(--progress);transform-origin:0 50%;transform:scaleX(0);transition:transform 220ms var(--e-out)}
+/* The library. */
+.tx-shell{flex:1;display:grid;grid-template-columns:320px minmax(0,1fr);min-height:0}
+.tx-lib{position:sticky;top:56px;display:flex;flex-direction:column;gap:12px;height:calc(100vh - 56px);padding:16px 12px 0;border-right:1px solid var(--ln);overflow:hidden}
+.tx-lib>*{flex:none;padding-inline:4px}
+.tx-lib h2{font-size:16px;line-height:24px;font-weight:600}
+.tx-folders{display:grid;gap:8px}
+.tx-sel-tools .tx-row{gap:12px}
+.tx-jobs{flex:1 1 0;min-height:0;display:flex;flex-direction:column;gap:2px;margin-inline:-4px;padding:0 4px 12px;overflow:auto}
+.tx-job{flex:none;display:grid;grid-template-columns:16px minmax(0,1fr);gap:8px;padding:8px;border-radius:10px;content-visibility:auto;contain-intrinsic-size:auto 56px;transition:background-color var(--d-hover) var(--e-out)}
+.tx-job input{margin-top:2px}
+.tx-job input:disabled{opacity:.3;cursor:default}
+@media (hover:hover) and (pointer:fine){.tx-job:hover{background:var(--pn);transition-duration:0s}}
+.tx-job[data-selected=true]{background:var(--rs)}
+.tx-job.on{background:var(--on)}
+#tr .tx-job-t{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:14px;line-height:20px;text-decoration:none;overflow-wrap:anywhere}
+.tx-job-m{display:flex;align-items:center;gap:8px;margin-top:4px;min-width:0}
+.tx-job-meta{min-width:0;overflow:hidden;color:var(--mu);font-size:12px;line-height:16px;white-space:nowrap;text-overflow:ellipsis}
+[data-view=attention] .tx-job-meta{white-space:normal;overflow-wrap:anywhere}
+.tx-selbar{display:grid;gap:8px;margin-inline:-12px;padding:12px 16px 16px!important;border-top:1px solid var(--ln);background:var(--bg)}
+.tx-selbar select{flex:1}
+/* The reader. */
+.tx-main{min-width:0;padding:40px 48px 96px}
+.tx-blank{max-width:640px;margin:64px auto 0}
+.tx-blank h1{font-size:24px;line-height:32px;font-weight:600}
+.tx-blank p{margin-top:8px;color:var(--mu)}
+.tx-doc{max-width:720px;margin:0 auto}
+.tx-back{display:none;margin:-16px 0 16px -12px}
+.tx-doc-head{display:grid;gap:8px;margin-bottom:24px}
+.tx-doc-head h1{font-size:28px;line-height:36px;font-weight:600;letter-spacing:-.01em;overflow-wrap:anywhere}
+.tx-meta{display:flex;flex-wrap:wrap;gap:4px 16px;color:var(--mu);font-size:13px;line-height:20px}
+.tx-meta:empty{display:none}
+.tx-progress{display:grid;gap:12px;margin-bottom:24px;padding:20px;border-radius:14px;background:var(--pn)}
+.tx-progress h2{font-size:14px;line-height:20px;font-weight:600}
+.tx-progress p:empty{display:none}
+.tx-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px}
+.tx-tools .tx-count{margin-left:auto}
+#export-state{margin-bottom:8px;overflow-wrap:anywhere}
+#reader-notice{margin-bottom:16px}
+/* The moment: the transcript, set to be read. A book's measure and leading, its own serif, timestamps in the margin. */
+.tx-text{margin-top:32px;padding-top:32px;border-top:1px solid var(--ln);font:18px/30px Charter,"Bitstream Charter","Iowan Old Style",Georgia,Cambria,serif;overflow-wrap:break-word;user-select:text}
+.tx-text p{max-width:68ch;margin:0 0 20px!important}
+.tx-text p.ts{position:relative;padding-left:72px}
+.tx-t{position:absolute;left:0;top:0;width:56px;color:var(--mu);font:12px/30px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;text-align:right;text-decoration:none}
+#tr a.tx-t{color:var(--mu);text-decoration:none;transition:color var(--d-hover) var(--e-out)}
+#tr a.tx-t:hover{color:var(--tx);transition-duration:0s}
+/* Settings. */
+.settings~.tx-toast{left:248px}
+.tx-shell.settings{grid-template-columns:224px minmax(0,1fr)}
+.tx-nav{position:sticky;top:56px;display:flex;flex-direction:column;gap:2px;height:calc(100vh - 56px);padding:24px 12px;border-right:1px solid var(--ln)}
+#tr .tx-nav a{display:block;padding:8px 12px;border-radius:10px;color:var(--mu);font-size:14px;line-height:20px;text-decoration:none;transition:background-color var(--d-hover) var(--e-out),color var(--d-hover) var(--e-out)}
+#tr .tx-nav a:hover{background:var(--pn);color:var(--tx);transition-duration:0s}
+.tx-settings{display:grid;gap:16px;align-content:start;max-width:720px;padding:32px 48px 96px}
+.tx-settings h1{font-size:24px;line-height:32px;font-weight:600}
+.tx-panel{display:grid;gap:16px;scroll-margin-top:72px;padding:24px;border-radius:14px;background:var(--pn)}
+.tx-panel h2{font-size:16px;line-height:24px;font-weight:600}
+.tx-panel summary{font-size:16px;line-height:24px;font-weight:600;cursor:pointer}
+details.tx-panel{display:block}
+details.tx-panel>*+*{margin-top:16px}
+.tx-path{font:13px/20px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere}
+.tx-panel>.tx-b.primary{justify-self:start}
+.tx-facts{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;margin:0;font-size:13px;line-height:20px}
+.tx-facts:empty{display:none}
+.tx-facts dt{color:var(--mu)}
+.tx-facts dd{margin:0}
+.tx-foot{margin-top:8px}
+/* A narrow window: one column, the library or the open transcript. */
+@media (max-width:820px){
+  .tx-top{padding:0 16px}
+  .tx-top .tx-state.ready{display:none}
+  .tx-shell,.tx-shell.settings{display:block}
+  .tx-lib{position:static;height:auto;border-right:0;overflow:visible}
+  .tx-jobs{flex:none;overflow:visible}
+  .tx-selbar{position:sticky;bottom:0}
+  [data-open=true] .tx-lib{display:none}
+  [data-open=false] .tx-main{display:none}
+  [data-view=attention][data-open=false] .tx-main{display:block}
+  .tx-main{padding:24px 16px 72px}
+  .tx-back{display:inline-flex;margin-top:0}
+  .tx-doc-head h1{font-size:22px;line-height:28px}
+  .tx-text{font-size:17px;line-height:28px}
+  .tx-text p.ts{padding-left:0}
+  .tx-t{position:static;display:block;width:auto;text-align:left;line-height:20px}
+  .tx-nav{display:none}
+  .tx-settings{padding:24px 16px 72px}
+  .tx-panel{padding:16px}
+  .tx-toast{left:16px;bottom:16px;max-width:calc(100vw - 32px)}
+}

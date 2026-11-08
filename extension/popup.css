@@ -31,7 +31,7 @@
 #popup-status{margin:12px 0 0;color:var(--er);font-size:12px;line-height:16px}
 #popup-status:empty{display:none}
 /* Color feedback is immediate; only the switch thumb moves. Keyboard stays instant. */
-#ytc-popup button{transition:background-color var(--d-hover) var(--e-out),border-color var(--d-hover) var(--e-out)}
+#ytc-popup[data-ready] button{transition:background-color var(--d-hover) var(--e-out),border-color var(--d-hover) var(--e-out)}
 #ytc-popup .popup-switch::after{transition:transform calc(var(--d-press) * var(--mv)) var(--e-out)}
 #ytc-popup :focus-visible .popup-switch::after{transition:none}
 html[data-ytc-popup-input=keyboard] #ytc-popup button,html[data-ytc-popup-input=keyboard] #ytc-popup .popup-switch::after{transition:none}
@@ -49,3 +49,62 @@ html[data-ytc-popup-input=keyboard] #ytc-popup button,html[data-ytc-popup-input=
 .popup-note b{display:inline!important;color:var(--tx)}
 #ytc-popup #popup-export-save{height:36px;margin-top:8px;padding:0 16px;border-radius:18px;background:var(--ac);color:var(--bg);font-weight:600}
 .popup-file #popup-status{color:var(--mu)}
+/* Transcripts: one quiet row until it is set up; its section after that. */
+#popup-tr:empty{display:none}
+#popup-tr{margin-top:16px;padding-top:16px;border-top:1px solid var(--ln)}
+#ytc-popup #popup-tr-setup{display:flex;align-items:center;justify-content:space-between;width:100%;padding:0;background:none;color:var(--tx);text-align:left}
+#popup-tr-setup small{transition:color var(--d-hover) var(--e-out)}
+@media (hover:hover) and (pointer:fine){#popup-tr-setup:hover small{color:var(--tx);transition-duration:0s}}
+#popup-tr [hidden]{display:none!important}
+.ptr-head,.ptr-line{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ptr-tools{display:flex;flex-direction:row-reverse;align-items:center;gap:8px}
+#ytc-popup .ptr-tools #library{font-size:13px;line-height:20px;color:var(--tx)}
+#ytc-popup .ptr-i{display:flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;padding:0;border-radius:8px;background:none;color:var(--mu)}
+#ytc-popup .ptr-i:disabled{opacity:.4;cursor:default}
+#ytc-popup .ptr-link{padding:0;background:none;color:var(--mu);font-size:12px;line-height:16px}
+#ytc-popup .ptr-link:disabled{color:var(--tk);cursor:default}
+#ytc-popup .ptr-link[data-filtered=true]{color:var(--tx)}
+@media (hover:hover) and (pointer:fine){#ytc-popup .ptr-i:not(:disabled):hover{background:var(--hv);color:var(--tx);transition-duration:0s}#ytc-popup .ptr-link:not(:disabled):hover{color:var(--tx)}}
+.tx-i{display:block;flex:none;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.ptr-queue{display:grid;gap:8px;margin-top:12px;font-size:13px;line-height:20px}
+.ptr-queue>.ptr-line:empty{display:none}
+.ptr-num{color:var(--mu);font-size:12px;font-variant-numeric:tabular-nums}
+.ptr-sub{margin:0;color:var(--mu);font-size:12px;line-height:16px}
+.ptr-err{color:var(--er);font-size:12px;line-height:16px}
+.tx-bar{height:4px;overflow:hidden;border-radius:2px;background:var(--cb)}
+.tx-bar i{display:block;height:100%;background:var(--progress);transform-origin:0 50%;transform:scaleX(0);transition:transform var(--d-panel) var(--e-out)}
+.tx-bar[data-state=unavailable] i{opacity:.5}
+.tx-bar[data-state=attention] i{background:var(--mu)}
+.ptr-errors{display:grid;gap:4px;max-height:160px;overflow:auto}
+#ytc-popup .ptr-error{display:block;width:100%;padding:8px;border-radius:8px;background:var(--pn);text-align:left}
+#ytc-popup .ptr-error b{overflow:hidden;font-size:13px;line-height:20px;font-weight:600;white-space:nowrap;text-overflow:ellipsis}
+#ytc-popup .ptr-error small{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#folder-picker{margin-top:12px}
+#destination{margin-bottom:8px}
+.ptr-folders{display:grid;gap:4px;max-height:220px;overflow:auto;outline-offset:2px}
+.ptr-card{padding:8px;border-radius:8px;background:var(--pn);transition:background-color var(--d-hover) var(--e-out)}
+.ptr-card[data-selected=true]{background:var(--on)}
+#ytc-popup .ptr-choice{display:flex;align-items:center;gap:8px;width:100%;padding:0;background:none;text-align:left}
+#ytc-popup .ptr-choice b{flex:1;min-width:0;overflow:hidden;font-size:13px;line-height:20px;font-weight:600;white-space:nowrap;text-overflow:ellipsis}
+.ptr-count{flex:none;color:var(--mu);font-size:12px;line-height:20px;font-variant-numeric:tabular-nums}
+.ptr-actions{display:flex;align-items:center;gap:12px;height:24px;margin-top:4px;padding-left:24px}
+#ytc-popup .ptr-actions .ptr-i{width:24px;height:24px;margin-left:auto;border-radius:6px}
+.ptr-actions .tx-i{width:14px;height:14px}
+.ptr-note{margin:4px 0 0 24px;color:var(--mu);font-size:12px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.ptr-note[data-copy-state=error]{color:var(--er)}
+.ptr-dots{display:block;width:14px;height:2px;border-radius:1px;background:var(--mu)}
+.ptr-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.ptr-new{display:flex;align-items:center;gap:4px;margin-top:8px}
+#ytc-popup .ptr-new input{flex:1;min-width:0;height:32px;padding:0 8px;border:1px solid var(--bd);border-radius:8px;background:var(--fi);color:var(--tx);font:inherit;font-size:13px;transition:border-color var(--d-hover) var(--e-out)}
+#ytc-popup .ptr-new input:focus-visible{outline:0;border-color:var(--ac)}
+#ytc-popup .ptr-new input::placeholder{color:var(--fa)}
+#ytc-popup .ptr-new input:disabled{opacity:.5}
+#zip-view{display:grid;gap:8px;margin-top:12px;font-size:13px;line-height:20px}
+.ptr-gap{margin-bottom:4px}
+.ptr-gap>span{display:flex;gap:12px}
+#zip-choices{gap:0}
+#zip-choices .tx-check{display:flex;align-items:center;gap:8px;min-height:32px;padding:0 8px;border-radius:8px;cursor:pointer}
+#zip-choices input{flex:none;width:16px;height:16px;margin:0;accent-color:var(--ac)}
+#zip-choices span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#popup-tr .tx-notice{margin-top:8px;padding:8px 12px;border-radius:8px;background:var(--rs);color:var(--er);font-size:12px;line-height:16px;overflow-wrap:anywhere}
+#popup-tr .tx-notice.success{color:var(--tx)}#popup-tr .tx-notice.info{color:var(--mu)}

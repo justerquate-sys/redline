@@ -29,3 +29,9 @@ keystore.properties
 
 # Local screenshots (YTC_SHOTS)
 shots/
+
+# The Transcripts helper's settings and data, when it is installed from this checkout (helper/README.md).
+/.env
+/.data/
+/.tools/
+/.venv/

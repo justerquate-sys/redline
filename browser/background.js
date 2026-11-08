@@ -1,5 +1,5 @@
 // Background worker. Generic tooling only: no YouTube logic.
-// Public build: the shared tab storage switch and the voice-search socket relay below, nothing else.
+// Public build: the shared tab storage switch, the voice-search socket relay and the Transcripts service's loader below.
 // Development build (./build.sh --dev; browser/build.cjs keeps the @dev blocks): also the
 // auto-reload and the debug-center delivery.
 'use strict';
@@ -9,7 +9,41 @@
 // starts (the startup listener makes it start with the browser). The client keeps one thing there: the ready Home
 // response (src/ready.rs; CONTRIBUTING "Privacy").
 try { chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' }).catch(() => {}); } catch {}
-chrome.runtime.onStartup.addListener(() => {});
+chrome.runtime.onStartup.addListener(trStartup);
+
+// ---- Transcripts (transcripts/, docs/architecture.md "Transcripts"). Its Wasm loads on the first message or alarm: an
+// unconfigured browser never compiles it, never reaches the helper and never tries native messaging. The worker in Rust
+// keeps the pairing token (IndexedDB in this origin); content scripts only send it messages.
+// (Content scripts must keep reading chrome.storage.local: an older install under this extension id may have closed it.)
+try { chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' }).catch(() => {}); } catch {}
+const TR_HELPER = 'http://127.0.0.1:8765';
+let trCore = null;
+function tr() {
+  if (trCore) return trCore;
+  trCore = wasm_bindgen({ module_or_path: chrome.runtime.getURL('transcripts.wasm') }).then(() => { wasm_bindgen.worker_boot(TR_HELPER); return wasm_bindgen; });
+  trAdopt();
+  return trCore;
+}
+function trStartup() {
+  chrome.storage.local.get('ytcTranscriptsV1').then(o => { if (o.ytcTranscriptsV1) tr().then(c => c.on_startup()); }).catch(() => {});
+}
+chrome.runtime.onMessage.addListener((m, sender, respond) => {
+  if (!m || typeof m.action !== 'string') return false;
+  tr()
+    .then(c => c.on_message(JSON.stringify(m), JSON.stringify({ id: sender.id, url: sender.url, tab: sender.tab ? { id: sender.tab.id } : null, frameId: sender.frameId || 0 })))
+    .then(text => respond(JSON.parse(text)), () => respond({ ok: false, error: 'Transcripts could not start. Reload the extension.' }));
+  return true;
+});
+chrome.alarms.onAlarm.addListener(a => { if (a.name === 'ytc-transcripts-status') tr().then(c => c.on_alarm()).catch(() => {}); });
+// A token an older install kept in chrome.storage.local moves out of content scripts' reach.
+function trAdopt() {
+  return chrome.storage.local.get('pairingToken').then(o => {
+    if (o.pairingToken === undefined) return;
+    chrome.storage.local.remove('pairingToken').catch(() => {});
+    if (typeof o.pairingToken === 'string') return tr().then(c => c.adopt_token(o.pairingToken));
+  }).catch(() => {});
+}
+chrome.runtime.onInstalled.addListener(() => { trAdopt(); trStartup(); });
 
 /* @dev-start */
 // ---- Auto-update (development builds). Open YouTube tabs ping this worker. When the files on

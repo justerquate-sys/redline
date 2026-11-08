@@ -4,10 +4,17 @@
   "version": "0.14.4",
   "description": "A fast, ad-free client for YouTube, at youtube.com: Rust-rendered, no bloat. Not affiliated with YouTube or Google.",
   "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzpMnRkV0q26iYemAJeFtUMEziWGSZU9SvjtlCHHE8pbAZDqwl5bLlLLsHvv0XVZl93gXHn/o2zMaer5/DZ08yeK6znsVRCnY1aCoquHUG/CUrmiuUHO/1xX7yBKN35K/Rfr2EWRc0WqHHg/WnLcHNS/XIY73ehUI/wz8nFxo6NbnRKLXtv/3dMsHPljMQvxEJkPCl5N+HrZ9qMypN8/bE4vFSVXtQ33H+1wYMFjs9jmowc7J16IWuzVDwhIqG0EmTjXUh0c/hehZZyj14yNbfqqZMohI/IFZiAOFnLvEpfN+LQpikXaJljDdsWy8ISp/uBsVeA5IojjK5j0BHGrGjwIDAQAB",
   "permissions": [
     "storage",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "nativeMessaging",
+    "alarms"
   ],
+  "options_ui": {
+    "page": "settings.html",
+    "open_in_tab": true
+  },
   "action": {
     "default_title": "Redline preferences",
     "default_popup": "popup.html",
@@ -17,7 +24,8 @@
     "https://www.youtube.com/*",
     "https://*.googlevideo.com/*",
     "https://sponsor.ajay.app/*",
-    "https://api.deepgram.com/*"
+    "https://api.deepgram.com/*",
+    "http://127.0.0.1:8765/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
@@ -44,7 +52,8 @@
         "*yt-native=1*"
       ],
       "css": [
-        "client.css"
+        "client.css",
+        "transcripts.css"
       ],
       "js": [
         "content.js"

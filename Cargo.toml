@@ -7,8 +7,12 @@ license = "MIT"
 publish = false
 
 [features]
+default = ["transcribe"]
 # Development build (./build.sh --dev): speed telemetry for the local debug center.
 dev = []
+# Transcripts' card, watch and channel controls. On for the extension, off in ./build.sh --tv: nothing of the feature
+# is in the TV bundle.
+transcribe = []
 
 [lib]
 crate-type = ["cdylib", "rlib"]

@@ -7,6 +7,7 @@ const YTC = (() => {
   const byId = id => d.getElementById(id);
   const gfetch = globalThis.fetch.bind(globalThis);
   const ctl = new Map();
+  const watched = new Set(); // chrome.storage keys with a change listener
   // Media objects (video elements, MediaSources, SourceBuffers) by numeric handle.
   const mo = new Map();
   // Elements made outside the document for Rust to place later (`media_grab`), by id.
@@ -222,6 +223,23 @@ const YTC = (() => {
     hover_insert(sel, html) { const el = hoverEl && hoverEl.isConnected && hoverEl.closest(sel); if (el) insert(el, html); },
     remove_all(sel) { for (const el of d.querySelectorAll(sel)) el.remove(); },
     append_all(sel, html) { for (const el of d.querySelectorAll(sel)) el.insertAdjacentHTML('beforeend', html); },
+    remove(id) { const el = byId(id); if (el) el.remove(); },
+    attr_remove(id, name) { const el = byId(id); if (el) el.removeAttribute(name); },
+    attr_all(sel, name, value) { for (const el of d.querySelectorAll(sel)) { if (value === undefined || value === null) el.removeAttribute(name); else if (el.getAttribute(name) !== value) el.setAttribute(name, value); } },
+    text_all(sel, s) { for (const el of d.querySelectorAll(sel)) if (el.textContent !== s) el.textContent = s; },
+    attr_list(sel, name) { return Array.from(d.querySelectorAll(sel), el => el.getAttribute(name) || '').join('\n'); },
+    decorate(sel, inner, skip, attr, html) {
+      for (const el of d.querySelectorAll(sel)) {
+        const box = el.querySelector(inner);
+        if (box && !box.querySelector(skip)) insert(box, html.replaceAll('{}', (el.getAttribute(attr) || '').replace(/[^\w-]/g, '')));
+      }
+    },
+    worker_send(id, json) {
+      const done = v => call('on_worker_reply', id, v);
+      try { chrome.runtime.sendMessage(JSON.parse(json)).then(r => done(r === undefined ? '' : JSON.stringify(r)), () => done('')); } catch { queueMicrotask(() => done('')); }
+    },
+    open_options() { try { chrome.runtime.openOptionsPage().catch(() => {}); } catch {} },
+    load_script(src) { const s = d.createElement('script'); s.src = src; d.head.append(s); },
     class_all(sel, cls, on) { for (const el of d.querySelectorAll(sel)) el.classList.toggle(cls, !!on); },
     get_html: id => { const el = byId(id); return el ? el.innerHTML : ''; },
     attr(id, name, value) { const el = byId(id); if (el) el.setAttribute(name, value); },
@@ -601,8 +619,8 @@ const YTC = (() => {
     storage_set(key, json) { try { chrome.storage.local.set({ [key]: JSON.parse(json) }); } catch {} },
     extension_page() { return /^(chrome|moz)-extension:$/.test(location.protocol); },
     storage_watch(key) {
-      if (YTC._sw) return;
-      try { chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch[key]) call('on_storage_change', key, JSON.stringify(ch[key].newValue ?? null)); }); YTC._sw = true; } catch {}
+      if (watched.has(key)) return;
+      try { chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch[key]) call('on_storage_change', key, JSON.stringify(ch[key].newValue ?? null)); }); watched.add(key); } catch {}
     },
     storage_write(id, key, json) {
       try { chrome.storage.local.set({ [key]: JSON.parse(json) }).then(() => call('on_store_result', id, true), () => call('on_store_result', id, false)); }

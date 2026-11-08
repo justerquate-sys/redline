@@ -24,7 +24,12 @@ loader and a generic bridge (`browser/bridge.js`).
   `browser/manifest.json`. The public build drops every `/* @dev-start */ … /* @dev-end */` block; the development
   build keeps them and adds the debug-center host permission, a "(dev)" name and a build id (`version_name` and
   `build-id.txt`, which drive the auto-reload).
-- `client.css`, `popup.css`, `native.css` and `rules.json` are hand-written and live directly in `extension/`.
+- `client.css`, `transcripts.css`, `pages.css`, `popup.css`, `native.css` and `rules.json` are hand-written and live
+  directly in `extension/`.
+- The second Wasm: `transcripts/` is built into `target/pkg-tr/`, and `browser/build.cjs` writes `extension/transcripts.wasm`,
+  `extension/transcripts-core.js` (for `reader.html`, `settings.html` and the popup's Transcripts section), and appends the same
+  glue to `background.js` (see "Transcripts"). `./build.sh --tv` builds none of it and compiles the feature out of the
+  client (`--no-default-features`).
 - `extension/popup.html` is copied from `browser/popup.html`. The browser action loads the same public
   `content.js`/Wasm in an extension document; Rust `popup.rs` renders and handles it. The loader skips stopping
   or navigating extension documents. No duplicate Wasm or JavaScript feature logic.
@@ -1179,6 +1184,11 @@ the old one on purpose, because stored data, installed apps or tools depend on t
   and the shell's HTTP client (ureq 3, up to 10 redirects, GET kept) follows them, so those apps keep updating
   (`tv/core/tests/core.rs`, `update_through_a_renamed_repository`). This holds only while no new repository takes
   the old name `justerquate-sys/lumen`. New builds use `justerquate-sys/redline` (`LUMEN_TV_REPO` overrides it).
+- Transcripts and its helper, because installed helpers, their service and the browser's registration depend on them:
+  the binary and crates `scribe-helper` and `scribe-*`, the data folder layout (`.env`, `.data`), the native host
+  `com.fulltranscript.helper`, the HTTP routes on `127.0.0.1:8765` and the log file. The manifest's `key` keeps the extension id
+  `lamdpdfcpkihifbpmcalmjdnbfegjjjh`, the one the helper's native host allows. Worker record keys such as
+  `allZipExclusions:` keep their shape too. People never see these names: the feature is called Transcripts.
 - The debug center's LaunchAgent and data folders (`…/Application Support/Lumen`, `%APPDATA%\Lumen`,
   `~/.local/share/lumen`), so collected data stays where it is.
 
@@ -1251,6 +1261,76 @@ seen with no panel open; the Save panel uses its own line.
 never recovered. Only the buffered-ahead guard (`av`/`aa` < 1.5 s) and the last second (`t > duration - 1`) stand for the true
 end now; a media shorter than `lengthSeconds` ends with nothing ahead, so it never counts either.
 
+## Transcripts
+
+Full saved transcripts for people who feed them to AI, optional and invisible until set up. It needs the person's own
+Azure Speech resource and a local helper. Three parts, each carrying only what it must:
+
+| Part | Where | Runs |
+| --- | --- | --- |
+| Card chip, watch button, channel controls | `src/features/transcribe.rs` (Cargo feature `transcribe`; `transcribe_off.rs` when out) | In the YouTube page's Wasm: about 30 KB (2.4 %), and only shows what the worker answers |
+| Worker service, reader, settings, popup section, icon | `transcripts/` (own crate and lockfile, `extension/transcripts.wasm`), host `browser/transcripts-host.js`, glue in `background.js` and `transcripts-core.js` | Loaded on the first message or alarm: never for someone who has not set it up |
+| Helper | `helper/` (own workspace and lockfile; `helper/README.md`) | A native service on `127.0.0.1:8765`: downloads, FFmpeg, Azure, files |
+
+**The gate.** `chrome.storage.local` `ytcTranscriptsV1` `{on:true}`, written only by the worker: when a settings read or
+save returns `configured` and `has_api_key` it is set, when it returns otherwise it is removed. `enabled()` in the client
+is that flag and not TV. While it is off nothing is written into a card and nothing is sent. The popup (`src/popup.rs`)
+shows one row, `Transcripts: Set up`, which opens settings; only settings pairs and probes.
+
+**Who talks to whom.** A YouTube tab → `chrome.runtime.sendMessage` (`bridge::worker_send`) → the worker → the helper.
+The worker checks every message: `sender_trust` (this extension, an https YouTube tab or its own page), then `plan`
+(fixed routes, validated ids, a short allow-list for tabs; `transcripts/src/plan.rs`, unit tested). The pairing token
+comes from native messaging (`getConnection`) and lives in IndexedDB in the extension's own origin: a content script
+cannot open it, and an old token found in `chrome.storage.local` moves there on install. `chrome.storage.local` itself must
+stay readable by content scripts, so the worker sets its access level at every start (an older install under this id
+may have closed it).
+
+**States on a page.** One batched `getVideoStatuses` per page render (`page_changed` asks again, a continuation asks only
+for the new cards). While jobs run the worker reads `/queue/status` every 5 s (plus an alarm every 30 s to survive being
+put to sleep) and `/jobs`, and pushes `tsc:{live:{id:{s,p}},offline}` to the YouTube tabs; when a job leaves the list a tab
+asks what became of it. Idle means no timer, no alarm, no message. A stopped helper: the toolbar goes grey, active chips
+say so in their tooltip, no message appears, a page load tries the native host at most once in 5 minutes, and the alarm
+gives up after 10 minutes without an answer until the next page asks. Explicit acts are never repeated after an
+ambiguous failure: a POST can cost money.
+
+**The channel panel** is written by the worker (`transcripts/src/channel.rs`): the tab holds an opaque state, sends it back
+with each step and shows the markup it gets, so the page's Wasm carries none of that logic.
+
+**The toolbar.** `transcripts/src/icon.rs` paints RGBA pixels from the mark's path, with no canvas: a progress line of
+the batch's verified saved fraction, a dot for attention, grey offline, six seconds of check after work this worker saw
+active finished (`core::lifecycle`, shared with the popup so reopening never replays it). Idle restores the manifest's
+icons and title.
+
+**Reader timestamps.** The helper's document route adds `sections` (start time and text per recognized segment, from the
+saved `transcript.json`); the rendered documents and exports are unchanged, and a helper without it shows plain
+paragraphs.
+
+**Testing without a helper or Azure.** `tests/transcripts-mock.cjs` answers the routes; `tests/transcripts-steps.cjs`
+patches only the temporary copy of the build (the helper's address, native messaging recorded). Its real-helper step builds
+`helper/` with the feature `loopback-speech` (never in a release) and runs it on a temp root and a free port, with a
+loopback Speech server. `YTC_TR_SPEED=1` prints first-card and hover timings.
+
+### One extension id, and moving to it
+
+Redline's manifest carries the `key` Scribe used, so the extension id is fixed and an installed helper pairs with no
+reinstall. A new id means new extension storage: everything in `chrome.storage.local` belongs to the old id, and nothing
+under `youtube.com`'s own storage matters (`localStorage` holds test switches only, `sessionStorage` one tab's snapshots).
+
+| Stored in `chrome.storage.local` | What it is |
+| --- | --- |
+| `ytcConfigV1` | Player preferences (quality, volume, captions, SponsorSkip choices), client version, visitor data |
+| `ytcVoiceKeyV1` | The Deepgram key |
+| `yourTubeHistoryV1`, `yourTubeProgressV1` | Searches, resume positions |
+| `yourTubeBlockedWebsitesV1`, `yourTubeRecommendationTopicsV1`, `yourTubeNativeTopicsV1` | Blocked websites, topics, Home chips |
+| `yourTubeMinimumHomeDurationV1`, `yourTubeHomeOrderV1`, `yourTubeShowMusicV1`, `yourTubeShowLiveV1`, `yourTubeHomePlaylistsOnlyV1`, `shortsInFeeds` | Home filters |
+| `ytcPlayerLogV1` | The last ten player failures, for the debug overlay |
+| Scribe's `allZipExclusions:*` | Folders left out of the All ZIP |
+
+The app's Import dialog reads the older YourTube extension's records only, so it does not cover this. The move is a copy
+in the two workers' consoles (`chrome.storage.local.get(null, d => copy(JSON.stringify(d)))`, then
+`chrome.storage.local.set(<paste>)`). Lost with the old id only what is rebuilt by itself: the session's ready Home
+(memory) and the pairing token (paired again through native messaging).
+
 ## Moving from the old YourTube extension
 
 An earlier, private YourTube extension (a native-YouTube restyling) kept its data in its own storage. The client
@@ -1280,7 +1360,8 @@ created. Importing twice is harmless (the second run merges into the same record
 
 | Piece | What it does |
 | --- | --- |
-| `manifest.json` | MV3; `storage` + `declarativeNetRequest`; host `https://www.youtube.com/*` (plus `*.googlevideo.com` for the player and `https://sponsor.ajay.app/*` for SponsorBlock; `https://api.deepgram.com/*` for voice search's key check); two `document_start` content scripts: the client (with exclusions) and native mode (`*yt-native=1*`: `native.css` + `content.js`). |
+| `transcripts/`, `helper/`, `src/features/transcribe.rs` | The optional Transcripts feature: see "Transcripts". |
+| `manifest.json` | MV3; `key` (the fixed id, "Transcripts"); `storage` + `declarativeNetRequest` (+ `nativeMessaging`, `alarms` for Transcripts); host `https://www.youtube.com/*` (plus `*.googlevideo.com` for the player and `https://sponsor.ajay.app/*` for SponsorBlock; `https://api.deepgram.com/*` for voice search's key check); two `document_start` content scripts: the client (with exclusions) and native mode (`*yt-native=1*`: `native.css` + `content.js`). |
 | `native.css` | YouTube's own pages only: the old extension's hiding/theming rules (see "YouTube's own pages keep the client's setup"). |
 | `src/native/` | Native pages: `mod.rs` returns to the client when leaving the fallback video; `clean.rs` the cleanup logic (captions, keys, CC, promotions, Shorts switch). |
 | `content.js` (generated) | `window.stop()` first (except Home's document: `boot()` stops or holds it), then the bridge, the wasm-bindgen glue and the Wasm bytes (base64 in a block comment, read via `Function.prototype.toString`), `initSync`, `boot()`. |
@@ -1471,6 +1552,10 @@ for the hedge deadline.
   scheduler, captions, storyboards, live HLS + fMP4), features, actions, voice state machine, motion tokens (kept in
   sync with `client.css`), on recorded signed-out InnerTube responses in `tests/fixtures/` (IP and visitor data
   replaced with documentation values).
+- `cargo test --locked --manifest-path transcripts/Cargo.toml`: queue state, success window, URL rules, request plans and
+  sender checks, the toolbar's pixels, the reader's text. `(cd helper && cargo test --locked)`: the helper (persisted data,
+  filesystem races, ZIPs, cancellation, native framing, the installer; audio tests need FFmpeg, else they say so and skip).
+- `tests/check-tv-bundle.cjs` (also run by `./build.sh --tv`): nothing of Transcripts in the TV bundle.
 - `tests/e2e.cjs`: the real unpacked extension in Chromium with every request stubbed (YouTube-like CSP incl. Trusted
   Types): pages, navigation, escaping of hostile data, DNR rules, native-page cleanup, the own player on locally
   encoded media (`make-media.cjs`, `make-live.cjs`: WebM VP9/Opus and H.264/AAC fMP4 made by WebCodecs), failures and

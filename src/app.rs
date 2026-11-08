@@ -719,6 +719,7 @@ pub fn boot() {
     bridge::storage_get(config::STORAGE_KEY);
     bridge::storage_get(PLAYER_LOG_KEY);
     fxglue::Fx::boot();
+    crate::features::transcribe::boot();
     App::voice_boot();
     app.tv_boot();
     if app.tv.hold {
@@ -1106,6 +1107,7 @@ impl App {
     fn navigate(&mut self, route: Route, url: String, mode: Mode) {
         // Only the channel's tab changes: its header and tab row stay on the page.
         let tab_only = self.chan_same(&route);
+        crate::features::transcribe::page_changed();
         self.media_rest = None;
         self.imp_end();
         self.voice_leave();
@@ -1871,6 +1873,9 @@ impl App {
         if mods & 64 != 0 && crate::tv::on() && !crate::tv::repeats(act, arg) {
             return true;
         }
+        if act.starts_with("tsc") {
+            return crate::features::transcribe::on_click(act, arg);
+        }
         crate::telemetry::input(if kbd { "keyboard" } else { "pointer" });
         if act.starts_with("tv-kb-") {
             return self.tv_keyboard_click(act, arg);
@@ -2195,6 +2200,7 @@ impl App {
     }
 
     pub fn on_pop(&mut self) {
+        crate::features::transcribe::page_changed();
         let url = bridge::href();
         let url = url.split('#').next().unwrap_or("/").to_string();
         if url == self.url {

@@ -10,7 +10,8 @@ See "Build from source" in the [README](README.md). Typical loop:
 ```sh
 ./build.sh --dev      # development build: auto-reloads open YouTube tabs after every build
 # load extension/ unpacked once (README "Install"); edit; ./build.sh --dev again
-npm test              # cargo test --locked + the end-to-end test
+npm test              # cargo test --locked (client and transcripts/) + the end-to-end test
+npm run test:helper   # the native helper's own tests (the audio ones need FFmpeg, else they say so and skip)
 ./build.sh && npm run check:public   # before committing: the public build
 ```
 
@@ -23,8 +24,12 @@ steps). `tests/live-*.cjs` talk to real YouTube or Deepgram: run them by hand, r
   logic gets unit tests next to it.
 - **`browser/bridge.js` stays generic**: DOM, media, storage, timers and events as primitives, with no
   YouTube or player knowledge. New behaviour is new Rust plus, at most, a new generic primitive.
-- **`browser/background.js`** is tooling only (the voice-search socket relay; in development builds the
-  debug center and auto-reload). Development-only code sits between `/* @dev-start */` and `/* @dev-end */`
+- **Transcripts** has three homes: `src/features/transcribe.rs` (the Cargo feature `transcribe`, on for the extension,
+  off for TV: card, watch and channel controls on YouTube's pages), `transcripts/` (the extension's second Wasm: the
+  worker's service, the reader, settings and the popup section) and `helper/` (the native helper, its own workspace).
+  `browser/transcripts-host.js` is its thin host, generic like the bridge. docs/architecture.md, "Transcripts".
+- **`browser/background.js`** is tooling only (the voice-search socket relay, the loader of the Transcripts service; in
+  development builds the debug center and auto-reload). Development-only code sits between `/* @dev-start */` and `/* @dev-end */`
   lines (dropped from the public build by `browser/build.cjs`); development-only Rust sits behind the Cargo
   feature `dev`.
 - **`extension/client.css`** is the whole look; `extension/native.css` only styles YouTube's own pages
@@ -37,7 +42,8 @@ steps). `tests/live-*.cjs` talk to real YouTube or Deepgram: run them by hand, r
 ## Privacy rules (binding)
 
 - **No new outside service** without an issue discussing it first. Today there are three: YouTube itself,
-  SponsorBlock and Deepgram (README "Privacy").
+  SponsorBlock and Deepgram (README "Privacy"), plus the user's own Azure Speech resource for someone who set up
+  Transcripts, reached only by their local helper.
 - **Never persist** feed or recommendation payloads, descriptions, continuation tokens, search-filter params
   or filter/website verdicts. They live in memory, or in this tab's `sessionStorage` for snapshots.
   - Memory shared by the tabs (owner decision, 3 Nov 2026, desktop extension): the ready Home response
@@ -59,6 +65,25 @@ steps). `tests/live-*.cjs` talk to real YouTube or Deepgram: run them by hand, r
   referrer, no HTTP cache, answers in memory only, nothing reported back; switched off means no request at all.
 - **Deepgram** gets microphone audio only while a dictation runs. The key is read only by the background
   worker and never reaches the page, Wasm, logs, incidents or the debug overlay.
+- **Transcripts** (owner decisions, 8 Nov 2026):
+  - Someone who has not set it up pays nothing: on any YouTube page no control, no extra DOM on a card, no request to
+    `127.0.0.1`, no native-messaging attempt, and the worker does not even load its Wasm. Only opening settings probes.
+    The trace is one quiet row in the toolbar popup. No nag, no badge, no page opened on install.
+  - The gate is `chrome.storage.local` `ytcTranscriptsV1` (`{on:true}`): set only by the worker, after the helper said
+    Azure is configured. With it on: one batched status message per page render, nothing while idle, live stages
+    pushed by the worker only while jobs run.
+  - The Azure key stays in the helper's owner-only `.env`, never in browser storage. The pairing token lives in the
+    worker's IndexedDB in the extension's own origin (`chrome.storage.local` is readable by content scripts, so never
+    there) and is never given to a YouTube page, its Wasm, logs, incidents or the debug overlay. Requests from a page
+    are messages to the worker, checked against a short allow-list (`transcripts/src/plan.rs`), and answers carry only
+    what a card needs.
+  - `chrome.storage.local` gains `ytcTranscriptsV1` and `allZipExclusions:<root token>` (at most one list of folder names
+    per save folder, bounded by the helper's 1,000). The worker's IndexedDB holds the pairing token, the toolbar's
+    lifecycle (counts and a batch id) and up to 200 channel-preview ownership records.
+  - Never on TV: compiled out of the bundle (`tests/check-tv-bundle.cjs` fails the build otherwise) and off at runtime
+    in TV mode.
+  - `helper/` and `transcripts/` are public: `npm run check:public` scans them for personal paths, addresses, IPs and
+    keys, and refuses a tracked `.env`, `.data` or `.venv`. Test fixtures stay synthetic.
 - **Home's "shown" signals** (owner decision, 3 Nov 2026): Redline's Home sends YouTube the same "shown" events its
   own Home page sends, so YouTube rotates Home as it does for its own page (`src/impress.rs`): to YouTube only
   (`/youtubei/v1/log_event`, with the account's usual session like every other request), only on Home, only for cards

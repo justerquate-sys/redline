@@ -1,0 +1,1080 @@
+{
+  "links": [
+    {
+      "input": null,
+      "expected": []
+    },
+    {
+      "input": 42,
+      "expected": []
+    },
+    {
+      "input": true,
+      "expected": []
+    },
+    {
+      "input": {},
+      "expected": []
+    },
+    {
+      "input": [
+        "https://example.com"
+      ],
+      "expected": []
+    },
+    {
+      "input": "",
+      "expected": []
+    },
+    {
+      "input": " \\t\\n",
+      "expected": []
+    },
+    {
+      "input": "#shorts #youtube",
+      "expected": []
+    },
+    {
+      "input": "@creator.handle",
+      "expected": []
+    },
+    {
+      "input": "#topic.com",
+      "expected": []
+    },
+    {
+      "input": "00:00 Intro\n12:30 Lessons",
+      "expected": []
+    },
+    {
+      "input": "This tutorial uses Node.js and React.js to build the app.",
+      "expected": []
+    },
+    {
+      "input": "Download the project.blend file from the video.",
+      "expected": []
+    },
+    {
+      "input": "Read notes.txt and notes.md.",
+      "expected": []
+    },
+    {
+      "input": "Version 1.2.3 has shipped.",
+      "expected": []
+    },
+    {
+      "input": "Unlinked example.com.unrecognizedsuffix file.",
+      "expected": []
+    },
+    {
+      "input": "Website: www.example.com/path?a=1&b=2#part",
+      "expected": [
+        "Website: www.example.com/path?a=1&b=2#part"
+      ]
+    },
+    {
+      "input": "Offer: example.com/deal?ref=channel",
+      "expected": [
+        "Offer: example.com/deal?ref=channel"
+      ]
+    },
+    {
+      "input": "Course: bit.ly/example",
+      "expected": [
+        "Course: bit.ly/example"
+      ]
+    },
+    {
+      "input": "Support: creator+business@example.com",
+      "expected": [
+        "Support: creator+business@example.com"
+      ]
+    },
+    {
+      "input": "Contact mailto:creator@example.com?subject=Hello%20there",
+      "expected": [
+        "Contact mailto:creator@example.com?subject=Hello%20there"
+      ]
+    },
+    {
+      "input": "Übung https://例子.中国/课堂?ref=视频",
+      "expected": [
+        "Übung https://例子.中国/课堂?ref=视频"
+      ]
+    },
+    {
+      "input": "More: пример.рф/курс",
+      "expected": [
+        "More: пример.рф/курс"
+      ]
+    },
+    {
+      "input": "👉 bücher.de/kurs",
+      "expected": [
+        "👉 bücher.de/kurs"
+      ]
+    },
+    {
+      "input": "Bookmark http://example.test/test",
+      "expected": [
+        "Bookmark http://example.test/test"
+      ]
+    },
+    {
+      "input": "0:30 link https://youtu.be/abcdefghijk?t=30",
+      "expected": [
+        "0:30 link https://youtu.be/abcdefghijk?t=30"
+      ]
+    },
+    {
+      "input": "#sponsored Visit example.com",
+      "expected": [
+        "#sponsored Visit example.com"
+      ]
+    },
+    {
+      "input": "HTTPS://EXAMPLE.COM/CaseSensitive?Ref=ABC",
+      "expected": [
+        "HTTPS://EXAMPLE.COM/CaseSensitive?Ref=ABC"
+      ]
+    },
+    {
+      "input": "Visit example.com.",
+      "expected": [
+        "Visit example.com."
+      ]
+    },
+    {
+      "input": "Contact creator@example.com.",
+      "expected": [
+        "Contact creator@example.com."
+      ]
+    },
+    {
+      "input": "  Get the kit #sponsored: https://shop.example.com/p?id=1&ref=creator%2Fname#details  ",
+      "expected": [
+        "  Get the kit #sponsored: https://shop.example.com/p?id=1&ref=creator%2Fname#details  "
+      ]
+    },
+    {
+      "input": "Repeat https://x.test\nRepeat https://x.test",
+      "expected": [
+        "Repeat https://x.test",
+        "Repeat https://x.test"
+      ]
+    },
+    {
+      "input": "www.example.test\r\n  Contact x@bücher.de  ",
+      "expected": [
+        "www.example.test",
+        "  Contact x@bücher.de  "
+      ]
+    },
+    {
+      "input": "arbitrary: https://x.test normal",
+      "expected": [
+        "https://x.test"
+      ]
+    }
+  ],
+  "dates": [
+    {
+      "input": null,
+      "expected": ""
+    },
+    {
+      "input": "20260101",
+      "expected": "2026-01-01"
+    },
+    {
+      "input": "2026-01-01",
+      "expected": "2026-01-01"
+    },
+    {
+      "input": "2026-1-1",
+      "expected": ""
+    },
+    {
+      "input": "2026-10-1",
+      "expected": ""
+    },
+    {
+      "input": "20260229",
+      "expected": ""
+    },
+    {
+      "input": "2024-02-29",
+      "expected": "2024-02-29"
+    },
+    {
+      "input": "2026-10-22T00:00:00Z",
+      "expected": ""
+    }
+  ],
+  "documents": [
+    {
+      "document": {
+        "title": "Example",
+        "channel": "Creator  name",
+        "published_date": "20261022",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Example",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      }
+    },
+    {
+      "document": {
+        "title": "Example",
+        "channel": "Creator  name",
+        "published_date": "20261022",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Example",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      }
+    },
+    {
+      "document": {
+        "title": "Example",
+        "channel": "Creator  name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Example",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      }
+    },
+    {
+      "document": {
+        "title": "Example",
+        "channel": "Creator  name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Example",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      }
+    },
+    {
+      "document": {
+        "title": "Example",
+        "channel": "Creator  name",
+        "published_date": "invalid",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Example\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Example\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Example",
+        "channel": "Creator name",
+        "published_date": null,
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      }
+    },
+    {
+      "document": {
+        "title": "Example",
+        "channel": "Creator  name",
+        "published_date": "invalid",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Example\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Example\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Example",
+        "channel": "Creator name",
+        "published_date": null,
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      }
+    },
+    {
+      "document": {
+        "title": "  Multi\n line   title  ",
+        "channel": "Creator  name",
+        "published_date": "20261022",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Multi line title",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      }
+    },
+    {
+      "document": {
+        "title": "  Multi\n line   title  ",
+        "channel": "Creator  name",
+        "published_date": "20261022",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Multi line title",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      }
+    },
+    {
+      "document": {
+        "title": "  Multi\n line   title  ",
+        "channel": "Creator  name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Multi line title",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      }
+    },
+    {
+      "document": {
+        "title": "  Multi\n line   title  ",
+        "channel": "Creator  name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Multi line title",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      }
+    },
+    {
+      "document": {
+        "title": "  Multi\n line   title  ",
+        "channel": "Creator  name",
+        "published_date": "invalid",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Multi line title\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Multi line title\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Multi line title",
+        "channel": "Creator name",
+        "published_date": null,
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      }
+    },
+    {
+      "document": {
+        "title": "  Multi\n line   title  ",
+        "channel": "Creator  name",
+        "published_date": "invalid",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Multi line title\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Multi line title\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Multi line title",
+        "channel": "Creator name",
+        "published_date": null,
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      }
+    },
+    {
+      "document": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator  name",
+        "published_date": "20261022",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      }
+    },
+    {
+      "document": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator  name",
+        "published_date": "20261022",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      }
+    },
+    {
+      "document": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator  name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      }
+    },
+    {
+      "document": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator  name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      }
+    },
+    {
+      "document": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator  name",
+        "published_date": "invalid",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Мой учебник 🎮\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Мой учебник 🎮\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator name",
+        "published_date": null,
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      }
+    },
+    {
+      "document": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator  name",
+        "published_date": "invalid",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": true,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Мой учебник 🎮\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Мой учебник 🎮\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator name",
+        "published_date": null,
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      }
+    },
+    {
+      "document": {
+        "title": "Example",
+        "channel": "Creator  name",
+        "published_date": "20261022",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Example",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "Example",
+        "channel": "Creator  name",
+        "published_date": "20261022",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Example",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ],
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "Example",
+        "channel": "Creator  name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Example",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "Example",
+        "channel": "Creator  name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Example\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Example",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ],
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "Example",
+        "channel": "Creator  name",
+        "published_date": "invalid",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Example\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Example\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Example",
+        "channel": "Creator name",
+        "published_date": null,
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "Example",
+        "channel": "Creator  name",
+        "published_date": "invalid",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Example\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Example\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Example",
+        "channel": "Creator name",
+        "published_date": null,
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ],
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "  Multi\n line   title  ",
+        "channel": "Creator  name",
+        "published_date": "20261022",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Multi line title",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "  Multi\n line   title  ",
+        "channel": "Creator  name",
+        "published_date": "20261022",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Multi line title",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ],
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "  Multi\n line   title  ",
+        "channel": "Creator  name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Multi line title",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "  Multi\n line   title  ",
+        "channel": "Creator  name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Multi line title\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Multi line title",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ],
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "  Multi\n line   title  ",
+        "channel": "Creator  name",
+        "published_date": "invalid",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Multi line title\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Multi line title\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Multi line title",
+        "channel": "Creator name",
+        "published_date": null,
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "  Multi\n line   title  ",
+        "channel": "Creator  name",
+        "published_date": "invalid",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Multi line title\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Multi line title\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Multi line title",
+        "channel": "Creator name",
+        "published_date": null,
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ],
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator  name",
+        "published_date": "20261022",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator  name",
+        "published_date": "20261022",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ],
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator  name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator  name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Мой учебник 🎮\n\nChannel: Creator name\nPublished: 2026-10-22\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator name",
+        "published_date": "2026-10-22",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ],
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator  name",
+        "published_date": "invalid",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n"
+      },
+      "txt": "Мой учебник 🎮\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Мой учебник 🎮\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator name",
+        "published_date": null,
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    },
+    {
+      "document": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator  name",
+        "published_date": "invalid",
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "complete": false,
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ]
+      },
+      "txt": "Мой учебник 🎮\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "md": "# Мой учебник 🎮\n\nChannel: Creator name\nPublished: Unknown\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nPARTIAL — transcription did not finish.\n\nDescription links (creator-provided):\n  Site: https://example.com?a=1  \n  Site: https://example.com?a=1  \n\nTranscript:\n\n  Whole original words.\nFinal words.\n",
+      "json": {
+        "title": "Мой учебник 🎮",
+        "channel": "Creator name",
+        "published_date": null,
+        "source_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "full_text": "  Whole original words.\nFinal words.\t \n",
+        "description_links": [
+          "  Site: https://example.com?a=1  ",
+          "  Site: https://example.com?a=1  "
+        ],
+        "complete": false,
+        "notice": "PARTIAL — transcription did not finish."
+      }
+    }
+  ]
+}

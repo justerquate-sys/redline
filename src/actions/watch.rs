@@ -361,7 +361,9 @@ pub fn row_html(like: Option<(Like, &str)>, share: &str, save: &str) -> String {
     s.push_str(share);
     s.push_str("</div><div id=\"ytc-save\" class=\"ya-slot\">");
     s.push_str(save);
-    s.push_str("</div><span id=\"");
+    s.push_str("</div>");
+    crate::features::transcribe::watch_button(&mut s);
+    s.push_str("<span id=\"");
     s.push_str(super::MSG);
     s.push_str("\" class=\"ya-msg\" role=\"status\"></span>");
     s
