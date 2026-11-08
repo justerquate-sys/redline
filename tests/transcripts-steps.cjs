@@ -242,8 +242,11 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     await p.mouse.move(2, 2);
     // Keyboard focus shows it too.
     await p.locator(chip).first().focus();
-    await p.keyboard.press('Shift+Tab'); await p.keyboard.press('Tab');
-    assert.equal(await p.locator(chip).first().evaluate(n => getComputedStyle(n).opacity), '1');
+    await p.keyboard.press('Shift+Tab');
+    let tabs = 0;
+    while (tabs < 30 && !(await p.locator(chip).first().evaluate(n => document.activeElement === n))) { await p.keyboard.press('Tab'); tabs++; }
+    const focused = await p.locator(chip).first().evaluate(n => ({ active: document.activeElement === n, visible: n.matches(':focus-visible'), opacity: getComputedStyle(n).opacity, fading: n.getAnimations().filter(x => x instanceof CSSTransition).length }));
+    assert.deepEqual(focused, { active: true, visible: true, opacity: '1', fading: 0 }, `Tab reaches the chip and it shows at once (${tabs} tabs)`);
     await p.evaluate(() => document.activeElement.blur());
     // Exactly one batched request for the page, covering every card; then silence (no polling while idle).
     await waitFor(() => mock.log.some(l => l.path === '/videos/status'), 'the status batch');
