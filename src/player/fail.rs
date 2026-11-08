@@ -37,6 +37,39 @@ pub fn permanent(reason: &str) -> bool {
         || reason.strip_prefix("VISIONOS ").is_some_and(|r| r.starts_with(|c: char| c.is_ascii_uppercase()))
 }
 
+/// How a failure is retried.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Retries {
+    /// A verdict: the panel.
+    Never,
+    /// The usual schedule (`AUTO_DELAYS_MS`).
+    Fast,
+    /// At most one automatic retry in the window, none if others went out, after this wait (ms).
+    Once(u32),
+}
+
+/// YouTube's player service says "too many requests": one retry, a minute later.
+pub const RATE_LIMIT_WAIT_MS: u32 = 60_000;
+/// It refuses the request (403, 400): one retry only.
+pub const REFUSED_WAIT_MS: u32 = 4000;
+
+/// How a failure reason is retried. `played`: the failed player had shown a picture. YouTube's
+/// `ERROR` during a refresh of a video that was playing seconds ago may be a passing one (one retry;
+/// the new player's answer at its start is the verdict). The bot check is never retried.
+pub fn retries(reason: &str, played: bool) -> Retries {
+    if let Some(code) = reason.strip_prefix("VISIONOS player HTTP ").and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|c| c.parse::<u32>().ok()) {
+        return match code {
+            429 => Retries::Once(RATE_LIMIT_WAIT_MS),
+            400 | 403 => Retries::Once(REFUSED_WAIT_MS),
+            _ => Retries::Fast,
+        };
+    }
+    if played && reason.starts_with("VISIONOS ERROR") && !super::own::quiet(reason) {
+        return Retries::Once(AUTO_DELAYS_MS[0]);
+    }
+    if permanent(reason) { Retries::Never } else { Retries::Fast }
+}
+
 /// The automatic Try again's waits: the first after `AUTO_DELAYS_MS[0]`, and so on.
 pub const AUTO_DELAYS_MS: [u32; 3] = [1000, 4000, 10_000];
 /// As many as `AUTO_DELAYS_MS` within this sliding window, per video.
@@ -49,6 +82,8 @@ pub const RETURN_MAX: u32 = 3;
 pub const RETURN_GAP_MS: f64 = 5000.0;
 /// and a window that only lost the focus (still visible) must have been away this long.
 pub const RETURN_AWAY_MS: f64 = 60_000.0;
+/// A window focused again retries this much later: the press that focused it may be on the panel.
+pub const RETURN_FOCUS_WAIT_MS: u32 = 300;
 
 /// The automatic retries of the video that is open (a new navigation starts over).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -64,9 +99,9 @@ pub struct Auto {
 
 impl Auto {
     /// The wait before the next automatic Try again after a failure at `now`; None: the panel.
-    /// `played`: the failed player had shown a picture.
-    pub fn delay(&mut self, now: f64, played: bool) -> Option<u32> {
-        if self.returning && !played {
+    /// `played`: the failed player had shown a picture; `how`: `retries(reason, played)`.
+    pub fn delay(&mut self, now: f64, played: bool, how: Retries) -> Option<u32> {
+        if how == Retries::Never || (self.returning && !played) {
             return None;
         }
         self.returning = false;
@@ -74,7 +109,10 @@ impl Auto {
         if self.total >= AUTO_MAX {
             return None;
         }
-        AUTO_DELAYS_MS.get(self.at.len()).copied()
+        match how {
+            Retries::Once(ms) => self.at.is_empty().then_some(ms),
+            _ => AUTO_DELAYS_MS.get(self.at.len()).copied(),
+        }
     }
 
     /// The retry goes out (only now it counts: a wait ended by a dropped connection costs nothing).
@@ -199,7 +237,7 @@ pub fn panel(video_id: &str, reason: &str, made: u32) -> String {
         s.push_str(video_id);
         s.push_str("/mqdefault.webp\">");
     }
-    s.push_str("<div class=\"pfail\" role=\"alert\"><p class=\"pfm\">");
+    s.push_str("<div class=\"pfail\" data-pop=\"pfail\" role=\"alert\"><p class=\"pfm\">");
     esc_into(&mut s, &message(reason));
     s.push_str("</p><p class=\"pfr\"><span class=\"pfw\">");
     esc_into(&mut s, reason);
@@ -549,29 +587,63 @@ mod tests {
     #[test]
     fn the_automatic_try_again_backs_off_and_stops() {
         let mut a = Auto::default();
-        assert_eq!(a.delay(0.0, false), Some(1000));
+        assert_eq!(a.delay(0.0, false, Retries::Fast), Some(1000));
         a.spend(1000.0);
-        assert_eq!(a.delay(2000.0, false), Some(4000));
+        assert_eq!(a.delay(2000.0, false, Retries::Fast), Some(4000));
         a.spend(6000.0);
-        assert_eq!(a.delay(7000.0, true), Some(10_000), "mid-video or not: the same");
+        assert_eq!(a.delay(7000.0, true, Retries::Fast), Some(10_000), "mid-video or not: the same");
         a.spend(17_000.0);
-        assert_eq!(a.delay(18_000.0, false), None, "three within the window: the panel");
+        assert_eq!(a.delay(18_000.0, false, Retries::Fast), None, "three within the window: the panel");
         assert_eq!(a.made(), 3);
         // Nothing spent while it only waits (a dropped connection ends the wait).
         let mut w = Auto::default();
-        assert_eq!(w.delay(0.0, false), Some(1000));
-        assert_eq!(w.delay(10.0, false), Some(1000));
+        assert_eq!(w.delay(0.0, false, Retries::Fast), Some(1000));
+        assert_eq!(w.delay(10.0, false, Retries::Fast), Some(1000));
         assert_eq!(w.made(), 0);
         // The window slides: failures far apart each get their retries, up to the cap.
         let mut s = Auto::default();
         let mut now = 0.0;
         for i in 0..AUTO_MAX {
-            assert!(s.delay(now, true).is_some(), "retry {i}");
+            assert!(s.delay(now, true, Retries::Fast).is_some(), "retry {i}");
             s.spend(now);
             now += AUTO_WINDOW_MS + 1.0;
         }
-        assert_eq!(s.delay(now, true), None, "never a loop");
-        assert_eq!(s.delay(now + 1e9, true), None);
+        assert_eq!(s.delay(now, true, Retries::Fast), None, "never a loop");
+        assert_eq!(s.delay(now + 1e9, true, Retries::Fast), None);
+    }
+
+    #[test]
+    fn the_player_service_is_not_hammered() {
+        assert_eq!(retries("VISIONOS player HTTP 429", false), Retries::Once(RATE_LIMIT_WAIT_MS));
+        assert!(RATE_LIMIT_WAIT_MS >= 60_000);
+        assert_eq!(retries("VISIONOS player HTTP 429 (while stuck: x)", true), Retries::Once(RATE_LIMIT_WAIT_MS));
+        assert_eq!(retries("VISIONOS player HTTP 403", false), Retries::Once(REFUSED_WAIT_MS));
+        assert_eq!(retries("VISIONOS player HTTP 400", false), Retries::Once(REFUSED_WAIT_MS));
+        assert_eq!(retries("VISIONOS player HTTP 500", false), Retries::Fast);
+        assert_eq!(retries("VISIONOS player HTTP 0", false), Retries::Fast);
+        assert_eq!(retries("VISIONOS player: no answer in 8 s", false), Retries::Fast);
+        // One, and only when nothing else went out in the window.
+        let mut a = Auto::default();
+        assert_eq!(a.delay(0.0, false, Retries::Once(RATE_LIMIT_WAIT_MS)), Some(60_000));
+        a.spend(60_000.0);
+        assert_eq!(a.delay(60_100.0, false, Retries::Once(RATE_LIMIT_WAIT_MS)), None, "the panel, not a second one");
+        let mut b = Auto::default();
+        b.spend(0.0);
+        assert_eq!(b.delay(100.0, false, Retries::Once(REFUSED_WAIT_MS)), None);
+        assert_eq!(b.delay(AUTO_WINDOW_MS + 1.0, false, Retries::Once(REFUSED_WAIT_MS)), Some(REFUSED_WAIT_MS), "the window slid");
+        assert_eq!(Auto::default().delay(0.0, true, Retries::Never), None);
+    }
+
+    #[test]
+    fn a_verdict_during_a_refresh_of_a_playing_video_gets_one_retry() {
+        let e = "VISIONOS ERROR: Something went wrong";
+        assert_eq!(retries(e, true), Retries::Once(AUTO_DELAYS_MS[0]));
+        assert_eq!(retries(e, false), Retries::Never, "at a start it is the verdict");
+        assert_eq!(retries("VISIONOS LOGIN_REQUIRED: Sign in to confirm you’re not a bot", true), Retries::Never);
+        assert_eq!(retries("VISIONOS UNPLAYABLE: x", true), Retries::Never);
+        assert_eq!(retries("VISIONOS ERROR: for members only", true), Retries::Never);
+        assert_eq!(retries("no compatible formats (x)", true), Retries::Never);
+        assert_eq!(retries("googlevideo HTTP 403 after a player refresh", true), Retries::Fast);
     }
 
     #[test]
@@ -584,11 +656,11 @@ mod tests {
         assert!(!a.may_return(1000.0 + RETURN_GAP_MS - 1.0, None), "visibility and focus of one return: one retry");
         assert!(a.may_return(1000.0 + RETURN_GAP_MS, None));
         // The return's retry fails before a picture: the panel again, no chain of its own.
-        assert_eq!(a.delay(2000.0, false), None);
+        assert_eq!(a.delay(2000.0, false, Retries::Fast), None);
         assert_eq!(a.made(), 1);
         // It played and fails later: an ordinary failure.
-        assert_eq!(a.delay(3000.0, true), Some(1000));
-        assert_eq!(a.delay(4000.0, false), Some(1000), "the return is over");
+        assert_eq!(a.delay(3000.0, true, Retries::Fast), Some(1000));
+        assert_eq!(a.delay(4000.0, false, Retries::Fast), Some(1000), "the return is over");
         let mut c = Auto::default();
         let mut now = 0.0;
         for _ in 0..RETURN_MAX {

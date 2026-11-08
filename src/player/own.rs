@@ -176,6 +176,29 @@ struct Recover {
     reason: String,
 }
 
+/// What a new player of the same video takes over from the last one.
+#[derive(Clone, Default)]
+pub struct Carry {
+    /// It was paused: the next one starts paused.
+    pub paused: bool,
+    /// The audio track chosen in the menu.
+    pub audio_sel: String,
+    /// The playback speed (0: not set).
+    pub rate: f64,
+    /// An automatic retry goes on with the viewing session: history is reported once.
+    pub session: Option<Viewing>,
+}
+
+/// The viewing session YouTube's history knows (`Carry::session`).
+#[derive(Clone)]
+pub struct Viewing {
+    cpn: String,
+    rt0: f64,
+    sent: f64,
+    schedule: Option<Schedule>,
+    tracking: Option<Tracking>,
+}
+
 /// Failure reasons that are expected, not bugs (no incident; the panel still shows).
 pub fn quiet(reason: &str) -> bool {
     // Expected, not bugs: upcoming streams/premieres, videos our anonymous VISIONOS
@@ -521,6 +544,12 @@ pub struct Own {
     waiting: bool,
     waiting_since: f64,
     first_frame: Option<f64>,
+    /// The playback speed chosen (a new MediaSource resets the element's).
+    rate: f64,
+    /// When this viewing session began (`ping_now`; an automatic retry keeps it).
+    rt0: f64,
+    /// The watchtime ping of a failure, not sent yet: (going on, final) (`last_ping`).
+    last_pings: Option<(String, String)>,
     /// Starts without playing (an automatic Try again of a paused video). Before the first frame
     /// `paused` is true anyway; this says it is meant.
     pub start_paused: bool,
@@ -800,6 +829,9 @@ impl Own {
             waiting: true,
             waiting_since: now,
             first_frame: None,
+            rate: 1.0,
+            rt0: now,
+            last_pings: None,
             start_paused: false,
             fail_frame: None,
             mc: ui::MenuCtl::default(),
@@ -813,7 +845,7 @@ impl Own {
             cc_text: String::new(),
             cue_flip: false,
             toast_until: 0.0,
-            fs: false,
+            fs: bridge::is_fullscreen(),
             classes: String::new(),
             failed: false,
             notes: Vec::new(),
@@ -932,6 +964,10 @@ impl Own {
         bridge::media_source(self.ms, self.vid);
         if !self.start_paused {
             bridge::media_call(self.vid, "play");
+        }
+        if self.rate != 1.0 {
+            self.apply_rate();
+            self.show_rate(self.rate);
         }
         self.timer(Tm::Tick, TICK_MS);
         self.ui();
@@ -1245,16 +1281,20 @@ impl Own {
                 l.manifest = u;
                 l.media_url.clear();
             }
+            let in_use = [self.tracks[V].rep, self.tracks[A].rep];
+            let mut kept_old = false;
             for rep in self.reps.values_mut() {
                 // The same file only: on a dubbed video every audio track has the same itag, and the
                 // index's byte ranges would cut another track's file in the middle of a cluster
-                // (`SourceBuffer error (audio/webm; codecs="opus")`, 8 Nov 2026).
-                if let Some(f) = fmts.iter().find(|f| f.itag == rep.f.itag && f.mime == rep.f.mime && f.xtags == rep.f.xtags && f.audio_id == rep.f.audio_id && f.len == rep.f.len) {
-                    rep.f.url = f.url.clone();
+                // (`SourceBuffer error (audio/webm; codecs="opus")`, 8 Nov 2026). No such file any
+                // more: the old URL stays, until it runs out (the panel's way: a new player, a new index).
+                match fmts.iter().find(|f| f.itag == rep.f.itag && f.mime == rep.f.mime && f.xtags == rep.f.xtags && f.audio_id == rep.f.audio_id && f.len == rep.f.len) {
+                    Some(f) => rep.f.url = f.url.clone(),
+                    None => kept_old |= in_use.contains(&rep.f.itag),
                 }
             }
             for f in self.ladder.iter_mut().chain(self.audio.iter_mut()) {
-                if let Some(n) = fmts.iter().find(|n| n.itag == f.itag && n.mime == f.mime && !n.xtags && n.audio_id == f.audio_id && (f.video || !f.audio_id.is_empty() || !n.alt_audio)) {
+                if let Some(n) = fmts.iter().find(|n| n.itag == f.itag && n.mime == f.mime && !n.xtags && n.audio_id == f.audio_id && n.len == f.len && (f.video || !f.audio_id.is_empty() || !n.alt_audio)) {
                     f.url = n.url.clone();
                 }
             }
@@ -1264,8 +1304,14 @@ impl Own {
                 self.exp_off = true;
                 self.note("the fresh URLs expire as soon: no more proactive refreshes".into());
             }
-            self.urls_epoch = bridge::epoch();
-            self.urls_life = life;
+            if kept_old {
+                // A track in use still has its old URL: those are not fresh, and asking again changes nothing.
+                self.exp_off = true;
+                self.note("a track's file changed: its old URL stays, no more proactive refreshes".into());
+            } else {
+                self.urls_epoch = bridge::epoch();
+                self.urls_life = life;
+            }
             self.note(format!("player refreshed ({ms:.0} ms)"));
             self.end_refresh();
             return;
@@ -3491,6 +3537,7 @@ impl Own {
         self.eos = false;
         self.ms = next_id();
         bridge::media_source(self.ms, self.vid);
+        self.apply_rate();
         if self.first_frame.is_some() {
             // The position at once (no 0:00 in the controls while the MediaSource opens).
             bridge::media_set(self.vid, "currentTime", self.start);
@@ -3542,7 +3589,7 @@ impl Own {
         let now = bridge::now();
         stats::Now {
             cmt: self.time(),
-            rt: (now - self.created) / 1000.0,
+            rt: (now - self.rt0) / 1000.0,
             lact: now - self.last_input,
             fs: self.fs,
             volume: (bridge::media_get(self.vid, "volume").clamp(0.0, 1.0) * 100.0).round() as u32,
@@ -4406,9 +4453,16 @@ impl Own {
         self.toast(&format!("{}{} s", if dt > 0.0 { "+" } else { "−" }, dt.abs()));
     }
 
+    /// (A new source resets `playbackRate` to the default: both, so no moment runs at another speed.)
+    fn apply_rate(&self) {
+        bridge::media_set(self.vid, "defaultPlaybackRate", self.rate);
+        bridge::media_set(self.vid, "playbackRate", self.rate);
+    }
+
     fn set_rate(&mut self, r: f64) {
         let r = ui::clamp_rate(r);
-        bridge::media_set(self.vid, "playbackRate", r);
+        self.rate = r;
+        self.apply_rate();
         self.show_rate(r);
         self.toast(&ui::rate_label(r));
     }
@@ -4880,9 +4934,15 @@ impl Own {
         self.tel_end(Some(&reason));
         self.note(format!("FAILED: {reason}"));
         self.el_snap = Some(self.element_state());
+        // What comes next decides whether this viewing session ends (`last_ping`).
         if self.playback_sent > 0.0 {
             self.rec.close();
-            self.send_watchtime(true);
+            if let Some(t) = self.tracking.clone() {
+                let n = self.ping_now();
+                let segs = self.rec.take(n.cmt);
+                let s = self.session_now();
+                self.last_pings = Some((stats::watchtime_url(&t.watchtime, &s, &n, &segs, false), stats::watchtime_url(&t.watchtime, &s, &n, &segs, true)));
+            }
         }
         // The picture on screen outlives this player (`failed_state`): the next one takes it over.
         self.fail_frame = self.poster.take().or_else(|| {
@@ -4894,11 +4954,43 @@ impl Own {
         self.out.push(Out::Failed { t, reason });
     }
 
-    /// A failed player's state for the next one: paused (before a first frame: asked to start
-    /// paused), whether it had shown a picture, and the held frame's id (the caller places or drops it).
-    pub fn failed_state(&mut self) -> (bool, bool, Option<String>) {
+    /// A failed player's state for the next one: what it takes over (paused: before a first frame,
+    /// asked to start paused), whether it had shown a picture, and the held frame's id (the caller
+    /// places or drops it).
+    pub fn failed_state(&mut self) -> (Carry, bool, Option<String>) {
         let played = self.first_frame.is_some();
-        (if played { self.paused } else { self.start_paused }, played, self.fail_frame.take())
+        let viewing = (self.playback_sent > 0.0).then(|| Viewing { cpn: self.cpn.clone(), rt0: self.rt0, sent: self.playback_sent, schedule: self.schedule.take(), tracking: self.tracking.clone() });
+        let carry = Carry { paused: if played { self.paused } else { self.start_paused }, session: viewing, ..self.carry() };
+        (carry, played, self.fail_frame.take())
+    }
+
+    /// What a new player started by a button takes over from this running one.
+    pub fn carry(&self) -> Carry {
+        Carry { paused: false, audio_sel: self.audio_sel.clone(), rate: self.rate, session: None }
+    }
+
+    /// Before `attach`: goes on from the last player of this video.
+    pub fn take_over(&mut self, c: Carry) {
+        self.start_paused = c.paused;
+        self.audio_sel = c.audio_sel;
+        if c.rate > 0.0 {
+            self.rate = c.rate;
+        }
+        if let Some(s) = c.session {
+            self.cpn = s.cpn;
+            self.rt0 = s.rt0;
+            self.playback_sent = s.sent;
+            self.schedule = s.schedule;
+            self.tracking = s.tracking;
+        }
+    }
+
+    /// The failure's last watchtime ping: `end`, the viewing session is over (the panel), else an
+    /// automatic retry goes on with it.
+    pub fn last_ping(&mut self, end: bool) {
+        if let Some((on, last)) = self.last_pings.take() {
+            self.ping(if end { last } else { on }, end);
+        }
     }
 
     /// An automatic Try again's player says so in its notes (debug overlay, incidents).

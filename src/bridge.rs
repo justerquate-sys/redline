@@ -162,6 +162,9 @@ extern "C" {
     /// True when some element in the document matches `sel`.
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn any(sel: &str) -> bool;
+    /// True when some element matching `sel` holds text (a field's value, else its text).
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn has_text(sel: &str) -> bool;
     // ---- pages left to the site (native mode); see bridge.js.
     /// Sets (`None`: removes) an attribute on `<html>`.
     #[wasm_bindgen(js_namespace = YTC)]

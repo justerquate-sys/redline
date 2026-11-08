@@ -893,21 +893,26 @@ code: 152 - 4". Messages (`fail::message`, unit-tested):
 *The automatic Try again* (8 Nov 2026, owner: "why not make it so that it refreshes by itself"; nobody presses Try again for
 what Try again would fix; `fail::permanent`, `fail::Auto`, `App::after_player`'s `Out::Failed`, the one choke point of every
 `Own::fail`). A reason that isn't permanent shows no panel: the app does what Try again does (a new player, VISIONOS asked
-afresh) by itself, **after 1 s, then 4 s, then 10 s; at most 3 within a sliding 5 min and 9 while the video stays open** (a new
-navigation starts over), at the same position and play/pause state. Media errors (live and post-live ones too, which have
+afresh, though the bot-check block stays: only a pressed Try again lifts it) by itself, **after 1 s, then 4 s, then 10 s; at most 3 within a sliding 5 min and 9 while the video stays open** (a new
+navigation starts over), at the same position and play/pause state, audio track and speed, in the same viewing session (the same `cpn`, no second
+`playback` ping; `final` only when the panel shows). The player service's refusals are not hammered (`fail::retries`): `VISIONOS player HTTP 429` gets one retry
+a minute later, 403 and 400 one after 4 s, none if others went out in the window; `VISIONOS ERROR` during a refresh of a video that has played gets one (the
+new player's answer at its start is the verdict). Media errors (live and post-live ones too, which have
 no recovery in place), stalls ("no first frame", "stalled for"), index and googlevideo failures and "VISIONOS player" without an
 answer all go this way. Only then the panel, its technical line naming them. *Permanent* (the panel at once): upcoming
 streams/premieres, members-only, sign-in and the bot check (every route was tried), YouTube's own `VISIONOS <STATUS>` answers
 (`ERROR`, `UNPLAYABLE`, `LOGIN_REQUIRED`, `CONTENT_CHECK_REQUIRED`, …), no compatible format, own player turned off. During a wait
 the picture stays (the failed player's frame as a held canvas, which the next player takes over until its first frame) and, from
-the 4 s wait on, the calm "Still loading — retrying…" status; its buttons work. Leaving the video, or opening another, ends the wait
+the 4 s wait on, the calm "Still loading — retrying…" status; its buttons work, and pause/play (the button, Space, k) sets how the next player
+starts. Leaving the video, or opening another, ends the wait
 (a generation on `Timer::AutoRetry`). A dropped connection (a reason with `HTTP 0` or "no answer") keeps its own flow: the wait
 ends unspent at the probe's verdict, "No connection" shows, and it continues by itself when the connection is back; a retry goes
 out only after the probe answered. (No probe for other reasons: its own request may be blocked, and a verdict from that would
 cost the retries; a retry that meets a dropped connection fails with a network reason, so at most one is spent.) Each failure is
 kept in `ytcPlayerLogV1` (debug overlay) and is a `player-retry` incident in development builds; `player-failed` is the last one.
 *Back at the panel* (`Auto::may_return`, `App::panel_return`): the tab shown again, or the window focused after at least 60 s
-without it, retries once more when the reason isn't permanent, keeping position and play/pause, and the panel is gone if it works.
+without it (300 ms later, and not if that press was on the panel), retries once more when the reason isn't permanent, keeping position, play/pause, audio track
+and speed, and the panel is gone if it works.
 One retry per return (never two within 5 s, a return fires both events), at most 3 while the video stays open, and a return's
 retry that fails before a picture goes back to the panel without a chain of its own.
 *A stale tab* (`bridge::ext_gone`, `App::stale_reload`). Reloading or updating the extension leaves open tabs running the old
@@ -915,15 +920,17 @@ content script, for as long as they navigate inside the page: its `chrome.runtim
 reliable signal; TV and other hosts never report it). Nothing of the player goes through the extension (requests are the page's,
 the Wasm is in the script, the network rules stay while the extension is loaded; measured with a real `chrome.runtime.reload()`:
 playback goes on, in-page navigation and new videos play; e2e "a tab orphaned for real …"), only `chrome.storage` writes are lost. So
-a stale tab is handled when a player fails with a reason that isn't permanent: the page loads again at the video and position
-(`location.replace`; the current code then runs), instead of retries or the panel; once (`fail::STALE_KEY`, `sessionStorage`: at most
-one such reload in 10 min), and a paused video stays paused.
+a stale tab gets the ordinary automatic retries first, and only when those are used up, for a reason that isn't permanent or the connection's (a reload offline
+would land on the browser's error page), the page loads again at the video and position (`location.replace`; the current code then runs) instead of the panel;
+once (`fail::STALE_KEY`, `sessionStorage`: at most one such reload in 10 min), and a paused video stays paused. Never in fullscreen or while text is being typed
+(a focused field, a text area): the panel instead.
 *The dubbed-audio bug behind an owner report* (8 Nov 2026, Brave: "The browser couldn't play this video / SourceBuffer error
 (audio/webm; codecs="opus")"). On a video with several audio tracks every track has the same itag. Fresh URLs (near the expiry, a
 403, a throttled or stuck request) gave the audio representation the URL of the first track listed while it kept its own index, so
 the next audio range cut another file in the middle of a cluster, and the append failed; a recovery with the same URL failed
 the same way, and only a new index (fresh URLs in `media_error`, or Try again) mended it. Now only the same track and file (`audio_id`, `contentLength`) gets
-the new URL. e2e "fresh URLs on a dubbed video …". (That report's exact text, with no " (after N automatic retries)", cannot come
+the new URL; a track in use whose file changed keeps its old URL, the URLs' deadline does not move, and no more proactive refreshes go out (when it runs out,
+the 403 reaches the automatic Try again and a new index). e2e "fresh URLs on a dubbed video …", "a track whose file changed …". (That report's exact text, with no " (after N automatic retries)", cannot come
 from 0.13.8 or later for a WebM track: the only bare path is a live stream's, and live formats exclude WebM; so that tab ran older code.)
 
 **Stalls are not failures** (`fail::START`, `fail::PLAY`, `own.rs` `stuck_tick`). No first frame

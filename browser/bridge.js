@@ -642,6 +642,7 @@ const YTC = (() => {
     replace_doc(url) { location.replace(url); },
     ua: () => navigator.userAgent,
     ext_gone() { return extAtBoot && !extId(); },
+    has_text(sel) { return [...d.querySelectorAll(sel)].some(e => !!(e.value ?? e.textContent ?? '').trim()); },
     local_flag(key) { try { return localStorage.getItem(key) === '1'; } catch { return false; } },
     local_flag_set(key, on) { try { if (on) localStorage.setItem(key, '1'); else localStorage.removeItem(key); } catch {} },
     // ---- app shell (the TV app, tv/). An app shell sets YTC_PLATFORM ('tv') and YTC_SHELL before this

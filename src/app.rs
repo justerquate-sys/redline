@@ -134,6 +134,8 @@ const VISION_CACHE: usize = 40;
 const NET_PROBE_MS: u32 = 3000;
 /// An automatic Try again waits this long at most for the connectivity check's answer.
 const AUTO_PROBE_WAIT_MS: f64 = 3000.0;
+/// Text the viewer is typing: a reload would lose it (`stale_reload`).
+const TYPING: &str = "#ytc textarea,#ytc [contenteditable],#ytc input:focus:not([readonly]),#ytc-a-newpl input";
 const VISION_MAX_AGE_MS: f64 = 30.0 * 60.0 * 1000.0;
 /// The pointer or focus rests this long on a video link before its first media is prefetched.
 /// The response and decodingInfo may arrive during that dwell; neither restarts it.
@@ -241,6 +243,8 @@ enum Timer {
     NetProbe,
     /// The automatic Try again of wait `generation`.
     AutoRetry { generation: u32 },
+    /// The window got the focus back after `away` ms without it (`generation`): retry at the panel.
+    PanelFocus { generation: u32, away: f64 },
     /// TV: the first page stops waiting for the shell's token.
     TvHold,
     /// TV: poll the device sign-in (generation).
@@ -380,6 +384,8 @@ pub struct App {
     retry_start: Option<RetryStart>,
     /// When the window lost the focus.
     blur_at: Option<f64>,
+    /// A focused window's retry is waiting for the press that may have focused it.
+    focus_wait: Option<u32>,
     /// The stale tab's mark was read once (`fail::STALE_KEY`).
     stale_read: bool,
     /// The next player start asks VISIONOS itself (Try again: no cached or prefetched response).
@@ -484,8 +490,8 @@ struct PlayerFailed {
     v: String,
     t: f64,
     list: Option<String>,
-    /// It was paused: an automatic retry stays paused (a pressed Try again plays).
-    paused: bool,
+    /// What the next player takes over. An automatic retry stays paused; a pressed Try again plays.
+    carry: player::own::Carry,
     /// Not a permanent reason: coming back to the tab retries.
     retriable: bool,
     /// The picture on screen while an automatic Try again waits (a held canvas).
@@ -495,7 +501,7 @@ struct PlayerFailed {
 /// How the next player starts when it is a retry.
 struct RetryStart {
     t: f64,
-    paused: bool,
+    carry: player::own::Carry,
     frame: Option<String>,
 }
 
@@ -599,6 +605,7 @@ pub fn boot() {
         auto_gen: 0,
         retry_start: None,
         blur_at: None,
+        focus_wait: None,
         stale_read: false,
         offline: false,
         vision_fresh: false,
@@ -1463,6 +1470,12 @@ impl App {
                 }
             }
             Some(Timer::AutoRetry { generation }) => self.auto_retry_due(generation),
+            Some(Timer::PanelFocus { generation, away }) => {
+                if self.focus_wait == Some(generation) {
+                    self.focus_wait = None;
+                    self.panel_return(Some(away));
+                }
+            }
             Some(Timer::TvHold) => self.tv_release(),
             Some(Timer::TvPoll { generation }) => self.tv_poll(generation),
             Some(Timer::TvFocus) => self.tv_focus_check(),
@@ -1823,6 +1836,9 @@ impl App {
         if act == player::fail::ACT_RETRY || act == player::fail::ACT_NATIVE {
             return self.player_panel_act(act == player::fail::ACT_RETRY);
         }
+        if act == "p-toggle" && self.wait_toggle() {
+            return true;
+        }
         if act.starts_with("p-") {
             self.mo.theater = act == "p-theater" && !kbd;
             self.up_cancel();
@@ -2094,6 +2110,7 @@ impl App {
             // Blocked 0–9 (see `player::own::blocked_key`): taken without waking the player or
             // cancelling Up next.
             k if watch && crate::player::own::blocked_key(k) => true,
+            " " | "k" if watch && self.wait_toggle() => true,
             _ => {
                 let handled = matches!(self.route, Route::Watch { .. }) && self.player.as_mut().is_some_and(|p| p.on_key(key));
                 if handled {
@@ -2135,8 +2152,17 @@ impl App {
     }
 
     pub fn on_window_focus(&mut self) {
-        let away = self.blur_at.take().map_or(0.0, |at| bridge::now() - at);
-        self.panel_return(Some(away));
+        let Some(at) = self.blur_at.take() else { return };
+        // (`ytc-test-longblur`, localStorage, tests only: the time away counts as long.)
+        let away = if bridge::local_flag("ytc-test-longblur") { player::fail::RETURN_AWAY_MS } else { bridge::now() - at };
+        if away < player::fail::RETURN_AWAY_MS || self.player_failed.is_none() {
+            return;
+        }
+        // A little later: the press that focused the window may be on the panel (it wins).
+        self.auto_gen += 1;
+        self.focus_wait = Some(self.auto_gen);
+        let id = self.timer(Timer::PanelFocus { generation: self.auto_gen, away });
+        bridge::timer(id, player::fail::RETURN_FOCUS_WAIT_MS);
     }
 
     pub fn on_window_blur(&mut self) {
@@ -3006,7 +3032,7 @@ impl App {
             if let Some(id) = retry.and_then(|r| r.frame) {
                 bridge::held_drop(&id);
             }
-            self.show_failed(v, t as f64, list, "own player turned off (op: false)", false);
+            self.show_failed(v, t as f64, list, "own player turned off (op: false)", Default::default());
             return;
         }
         let start = match &retry {
@@ -3016,7 +3042,9 @@ impl App {
         };
         let mut p = Own::new(v, start, self.nav_start, self.cfg.prefs.clone(), self.bw);
         p.list = list;
-        p.start_paused = retry.as_ref().is_some_and(|r| r.paused) || self.stale_paused(v);
+        let (carry, frame) = retry.map_or((Default::default(), None), |r| (r.carry, r.frame));
+        p.take_over(carry);
+        p.start_paused |= self.stale_paused(v);
         // Every route met the bot check a moment ago: try the remembered route only (no
         // parallel recovery); blocked again → the panel, whose Try again recovers fully.
         p.no_recover = self.vision_block_until > bridge::now();
@@ -3025,7 +3053,7 @@ impl App {
         // The first frame decoded while the pointer or focus rested on the link: the box shows it from the
         // open's first frame (the zoom grows the real picture); anything else warm is dropped.
         let warm = player::own::warm_take(v);
-        match (retry.and_then(|r| r.frame), warm) {
+        match (frame, warm) {
             // A retry's held picture: where the video was (the warm frame is its start).
             (Some(id), other) => {
                 if let Some(other) = other {
@@ -3119,6 +3147,7 @@ impl App {
     /// No failed player any more: its panel, or an automatic Try again's wait and held picture, are over.
     fn clear_failed(&mut self) {
         self.auto_wait = None;
+        self.focus_wait = None;
         if let Some(id) = self.player_failed.take().and_then(|f| f.frame) {
             bridge::held_drop(&id);
         }
@@ -3191,26 +3220,30 @@ impl App {
                 // Try again first (a stale tab: a reload), and the panel only after those.
                 Out::Failed { t, reason } => {
                     let Some(mut p) = self.player.take() else { return };
-                    let (paused, played, frame) = p.failed_state();
+                    let (mut carry, played, frame) = p.failed_state();
                     let (v, list) = (p.v.clone(), p.list.clone());
                     self.bw = p.bw;
-                    let retriable = !player::fail::permanent(&reason);
-                    if retriable && self.stale_reload(&v, t, list.as_deref(), paused, frame.as_deref()) {
-                        return;
-                    }
-                    // (`ytc-test-noautotry`, localStorage, tests only: the panel of a retriable reason at once.)
-                    let delay = if retriable && !bridge::local_flag("ytc-test-noautotry") { self.auto.delay(bridge::now(), played) } else { None };
+                    let how = player::fail::retries(&reason, played);
+                    let retriable = how != player::fail::Retries::Never;
+                    // (`ytc-test-noautotry`, localStorage, tests only: no automatic retry.)
+                    let delay = if bridge::local_flag("ytc-test-noautotry") { None } else { self.auto.delay(bridge::now(), played, how) };
+                    p.last_ping(delay.is_none());
                     if !player::own::quiet(&reason) {
                         self.incident(if delay.is_some() { "player-retry" } else { "player-failed" }, &reason, Some(p.report()));
                     }
                     self.offline = false;
                     match delay {
-                        Some(ms) => self.auto_retry_wait(PlayerFailed { v, t, list, paused, retriable, frame }, &reason, ms),
+                        Some(ms) => self.auto_retry_wait(PlayerFailed { v, t, list, carry, retriable, frame }, &reason, ms),
                         None => {
+                            carry.session = None;
+                            // The retries are used up, and the connection isn't the reason: a tab running old code reloads.
+                            if retriable && !player::fail::network_like(&reason) && self.stale_reload(&v, t, list.as_deref(), carry.paused, frame.as_deref()) {
+                                return;
+                            }
                             if let Some(id) = frame {
                                 bridge::held_drop(&id);
                             }
-                            self.show_failed(&v, t, list, &reason, paused);
+                            self.show_failed(&v, t, list, &reason, carry);
                         }
                     }
                     // Everything failing at once (HTTP 0 / no answer) is usually the connection or
@@ -3238,10 +3271,10 @@ impl App {
 
     /// A player failure: the panel in the player box (records why for the debug overlay). The
     /// page stays; only the panel's Open on YouTube leaves (since 2 Nov 2026).
-    fn show_failed(&mut self, v: &str, t: f64, list: Option<String>, reason: &str, paused: bool) {
+    fn show_failed(&mut self, v: &str, t: f64, list: Option<String>, reason: &str, carry: player::own::Carry) {
         self.log_failure(v, t, reason);
         self.player_wait = false;
-        self.player_failed = Some(PlayerFailed { v: v.to_string(), t, list, paused, retriable: !player::fail::permanent(reason), frame: None });
+        self.player_failed = Some(PlayerFailed { v: v.to_string(), t, list, carry, retriable: !player::fail::permanent(reason), frame: None });
         self.show_panel(v, reason);
     }
 
@@ -3299,6 +3332,17 @@ impl App {
         }
     }
 
+    /// Pause or play while an automatic Try again waits: the next player starts that way.
+    fn wait_toggle(&mut self) -> bool {
+        if self.auto_wait.is_none() {
+            return false;
+        }
+        let Some(f) = self.player_failed.as_mut() else { return false };
+        f.carry.paused = !f.carry.paused;
+        bridge::class_all(&format!("#{}", player::ui::BOX), "paused", f.carry.paused);
+        true
+    }
+
     /// Back at a panel whose reason isn't permanent (the tab shown; the window focused after long
     /// without it): one more try, in a new player; it clears the panel when it works.
     fn panel_return(&mut self, away_ms: Option<f64>) {
@@ -3313,11 +3357,16 @@ impl App {
         self.retry_player();
     }
 
-    /// The extension was reloaded or updated under this tab (it goes on running the old code): a
-    /// failing player reloads the page instead, at its video and position, once. True: it is leaving.
+    /// The extension was reloaded or updated under this tab (it goes on running the old code, which
+    /// plays fine): when a player's retries are used up, the page loads again at its video and
+    /// position, once, unless that would cost the viewer something (fullscreen, text being typed): then
+    /// the panel. True: it is leaving.
     fn stale_reload(&mut self, v: &str, t: f64, list: Option<&str>, paused: bool, frame: Option<&str>) -> bool {
         // (`ytc-test-stale`, localStorage, tests only.)
         if !(bridge::ext_gone() || bridge::local_flag("ytc-test-stale")) || !matches!(&self.route, Route::Watch { v: rv, .. } if rv == v) {
+            return false;
+        }
+        if bridge::is_fullscreen() || bridge::has_text(TYPING) {
             return false;
         }
         let now = bridge::epoch();
@@ -3387,9 +3436,9 @@ impl App {
     }
 
     fn panel_act(&mut self, retry: bool, keep: bool) -> bool {
-        let (v, t, list, paused, frame) = match (&mut self.player_failed, &self.player) {
-            (Some(f), _) => (f.v.clone(), f.t, f.list.clone(), f.paused, f.frame.take()),
-            (None, Some(p)) => (p.v.clone(), p.resume_at(), p.list.clone(), false, None),
+        let (v, t, list, mut carry, frame) = match (&mut self.player_failed, &self.player) {
+            (Some(f), _) => (f.v.clone(), f.t, f.list.clone(), std::mem::take(&mut f.carry), f.frame.take()),
+            (None, Some(p)) => (p.v.clone(), p.resume_at(), p.list.clone(), p.carry(), None),
             (None, None) => return false,
         };
         if !matches!(&self.route, Route::Watch { v: rv, .. } if *rv == v) {
@@ -3410,9 +3459,14 @@ impl App {
             bridge::go(&player::native_url(&v, t, list.as_deref()));
             return true;
         }
-        self.retry_start = Some(RetryStart { t: t.max(0.0), paused: keep && paused, frame });
+        if !keep {
+            // Pressed: it plays, in a new viewing session, and every route is tried again.
+            carry.paused = false;
+            carry.session = None;
+            self.vision_block_until = 0.0;
+        }
+        self.retry_start = Some(RetryStart { t: t.max(0.0), carry, frame });
         self.vision_cache.retain(|(k, _, _)| *k != v);
-        self.vision_block_until = 0.0;
         self.vision_fresh = true;
         bridge::html(player::ui::BOX, &player::html(&v));
         bridge::attr(player::ui::BOX, "class", "player");
@@ -3512,6 +3566,9 @@ impl App {
         self.fx_form_now(false);
         self.voice_press(pop);
         self.acts.on_press(pop);
+        if pop == "pfail" {
+            self.focus_wait = None;
+        }
         if let Some(p) = self.player.as_mut() {
             p.chap_press(pop == "chaps");
         }
