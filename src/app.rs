@@ -18,7 +18,7 @@ use crate::parse::{self, Feed, Item, Stats, Video, Watch};
 use crate::player::{self, Out, Own, Vision, formats::Throughput};
 use crate::render::{self, Head, ImgPlan, Lay, INFO, LIST, MAIN, MORE, PILL, SUGGEST};
 use crate::util::next_id;
-use crate::route::{self, ChannelKey, Route, native_url};
+use crate::route::{self, ChannelKey, ChannelTab, Route, native_url};
 use crate::snap::{self, Snap};
 use crate::util::pct_encode;
 use crate::json::{self, Value};
@@ -26,6 +26,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+mod changlue;
 mod fxglue;
 mod homeready;
 mod impglue;
@@ -181,6 +182,8 @@ enum Purpose {
     WatchLaterMenu { nav: u32 },
     Resolve { nav: u32, path: String },
     Cont { nav: u32, generation: u32 },
+    /// A channel tab's new sort; `back` = where the list it replaced is parked (`app/changlue.rs`).
+    ChanSort { nav: u32, generation: u32, back: String },
     /// `spec` = speculative (cards in view, idle time): cancelled on navigation.
     Prefetch { v: String, list: Option<String>, spec: bool },
     /// `bg` = background refresh of Home/Subscriptions (then its first continuation).
@@ -267,7 +270,7 @@ enum Timer {
     ImpFlush,
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 enum Mode {
     Push,
     Pop,
@@ -300,6 +303,8 @@ struct FeedState {
 }
 
 pub struct App {
+    /// The channel page's tabs and the lists set aside (`app/changlue.rs`).
+    chan: changlue::ChanState,
     cfg: Config,
     /// chrome.storage config read. Feeds never wait for it (they use the tab's
     /// mirror or the fallback); the player does, for its prefs and switches.
@@ -578,6 +583,7 @@ pub fn boot() {
         saved: Vec::new(),
         known: HashMap::new(),
         channels: HashMap::new(),
+        chan: Default::default(),
         feed: FeedState { cont_ep: "browse", ..Default::default() },
         generation: 0,
         cont_busy: false,
@@ -912,7 +918,7 @@ impl App {
         let stale: Vec<u32> = self
             .pending
             .iter()
-            .filter(|(_, p)| matches!(p.purpose, Purpose::Page { .. } | Purpose::WatchLaterOrder { .. } | Purpose::WatchLaterMenu { .. } | Purpose::Resolve { .. } | Purpose::Cont { .. }))
+            .filter(|(_, p)| matches!(p.purpose, Purpose::Page { .. } | Purpose::WatchLaterOrder { .. } | Purpose::WatchLaterMenu { .. } | Purpose::Resolve { .. } | Purpose::Cont { .. } | Purpose::ChanSort { .. }))
             .map(|(id, _)| *id)
             .collect();
         for id in stale {
@@ -930,8 +936,15 @@ impl App {
             Route::Playlists => Req::Browse { id: "FEplaylist_aggregation".into(), params: None },
             Route::Search { q, sp } => Req::Search { q: q.clone(), params: sp.clone() },
             Route::Playlist { list } => Req::Browse { id: format!("VL{list}"), params: None },
-            Route::Channel { key: ChannelKey::Id(id), .. } => Req::Browse { id: id.clone(), params: Some(CHANNEL_VIDEOS_PARAMS.into()) },
-            Route::Channel { key: ChannelKey::Path(p), .. } => Req::Browse { id: self.channels.get(p)?.clone(), params: Some(CHANNEL_VIDEOS_PARAMS.into()) },
+            Route::Channel { key, path, tab } => {
+                let id = match key {
+                    ChannelKey::Id(id) => id.clone(),
+                    ChannelKey::Path(p) => self.channels.get(p)?.clone(),
+                };
+                // Another tab: the params YouTube listed for it, else `navigation/resolve_url` names them.
+                let params = if *tab == ChannelTab::Videos { CHANNEL_VIDEOS_PARAMS.to_string() } else { self.chan_params(path, *tab)? };
+                Req::Browse { id, params: Some(params) }
+            }
             Route::Watch { .. } | Route::Unknown { .. } => return None,
         })
     }
@@ -960,6 +973,10 @@ impl App {
     fn write_snap(&mut self) {
         if self.fx.topic_on() || self.fx.chip_on() {
             return; // topic and YouTube-chip cards stay in memory only
+        }
+        // A channel list in another sort too: a reload opens the tab as YouTube first sends it.
+        if self.feed.head.as_ref().and_then(Head::nav).is_some_and(|n| n.sorts.first().is_some_and(|o| !o.selected)) {
+            return;
         }
         let Some(sn) = self.snapshot() else { return };
         let json = snap::to_json_ref(&sn);
@@ -1027,10 +1044,11 @@ impl App {
             ..Default::default()
         };
         self.fx_new_feed();
+        self.chan_sync();
         let title = self.head_title();
         self.set_title(&title);
         let head = self.feed.head.clone().unwrap_or_else(|| render::feed_head(""));
-        render::page(&head, &self.fx_visible(&self.feed.shown), self.has_more(), &self.feed_empty(""), ImgPlan::first(Lay::Grid, self.cols))
+        render::page(&head, &self.fx_visible(&self.feed.shown), self.has_more(), &self.feed_empty(""), ImgPlan::first(self.lay(), self.cols))
     }
 
     fn head_title(&self) -> String {
@@ -1086,6 +1104,8 @@ impl App {
     }
 
     fn navigate(&mut self, route: Route, url: String, mode: Mode) {
+        // Only the channel's tab changes: its header and tab row stay on the page.
+        let tab_only = self.chan_same(&route);
         self.media_rest = None;
         self.imp_end();
         self.voice_leave();
@@ -1096,7 +1116,12 @@ impl App {
         self.acts.leave();
         self.tv_drawers_reset();
         self.stop_player();
-        self.save_current();
+        if tab_only {
+            self.chan_leave_tab();
+        } else {
+            self.chan_left(&route, mode);
+            self.save_current();
+        }
         self.fx_leave();
         self.abort_nav_requests();
         self.nav += 1;
@@ -1134,6 +1159,10 @@ impl App {
         self.side_move();
         bridge::value("ytc-q", if let Route::Search { q, .. } = &self.route { q } else { "" });
         self.tv_keyboard_label();
+        if tab_only {
+            self.chan_enter(mode);
+            return;
+        }
         if mode == Mode::Pop {
             if let Some(i) = self.saved.iter().position(|s| s.url == self.url) {
                 let s = self.saved.remove(i);
@@ -1141,6 +1170,7 @@ impl App {
                 bridge::html(MAIN, &s.html);
                 self.restore_scroll(s.scroll);
                 self.feed = s.feed;
+                self.chan_sync();
                 self.fx_restored();
                 self.stats = s.stats;
                 self.set_title(&s.title.clone());
@@ -1206,6 +1236,7 @@ impl App {
     /// A page painted from memory or a snapshot is ready to use.
     fn after_paint(&mut self) {
         self.rendered = true;
+        self.chan_tab_in_view();
         self.ready_lazy(false);
         self.tv_after_paint();
         self.spec_schedule();
@@ -1276,6 +1307,7 @@ impl App {
                 if !self.first_ready_pending() {
                     bridge::html(MAIN, &render::skeleton(&self.route));
                 }
+                self.chan.shell = false;
                 // TV: a focus while the page loads (the rail; the content takes it when it arrives).
                 self.tv_focus_check();
                 if self.home_hold {
@@ -1332,11 +1364,13 @@ impl App {
             self.page_request(req);
             return;
         }
-        if let Route::Channel { key: ChannelKey::Path(p), .. } = &self.route {
-            let p = p.clone();
+        if let Route::Channel { path, tab, .. } = &self.route {
+            // YouTube names the channel and the tab's params for this URL.
+            let url = if *tab == ChannelTab::Videos { format!("https://www.youtube.com{path}") } else { format!("https://www.youtube.com{path}/{}", tab.slug()) };
+            let path = path.clone();
             self.mark("request");
             let nav = self.nav;
-            self.send(Req::Resolve { url: format!("https://www.youtube.com{p}") }, Purpose::Resolve { nav, path: p }, false);
+            self.send(Req::Resolve { url }, Purpose::Resolve { nav, path }, false);
         }
     }
 
@@ -1753,6 +1787,8 @@ impl App {
             return;
         }
         match route::parse(url) {
+            // A tab set aside on this page opens from memory.
+            Some(Route::Channel { path, tab, .. }) if self.chan_loaded(&path, tab) => return,
             // Home paints the ready response when there is one (no request needed).
             Some(Route::Home) if self.ready_waiting() => return,
             Some(Route::Subs) if self.snap_fresh(url) => return,
@@ -1916,6 +1952,9 @@ impl App {
                 self.start_route();
                 return true;
             }
+            "ch-sort" => {
+                return self.chan_sort(arg.parse().unwrap_or(usize::MAX), kbd);
+            }
             "fresh" => {
                 bridge::html(PILL, "");
                 if let Some(body) = self.held.take() {
@@ -1933,6 +1972,11 @@ impl App {
         let Some(route) = route::parse(href) else { return false };
         if route == Route::Home && self.home_in_place() {
             self.home_again();
+            return true;
+        }
+        if self.chan_same(&route) && route.url() == self.route.url() {
+            // The tab on screen: back to its first cards, nothing new.
+            self.chan_top();
             return true;
         }
         let url = match &route {
@@ -2107,6 +2151,9 @@ impl App {
                 return true;
             }
             "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown" if !watch => {
+                if let Some(handled) = self.chan_arrow(key) {
+                    return handled;
+                }
                 let delta = match key {
                     "ArrowLeft" => -1,
                     "ArrowRight" => 1,
@@ -2241,6 +2288,9 @@ impl App {
     /// Pages that never show Shorts (Subscriptions, History, channels,
     /// playlists) drop them on arrival, exactly as before they were parsed.
     fn admit(&self, items: &mut Vec<Item>) {
+        if changlue::admit_tab(&self.route, items) {
+            return;
+        }
         if matches!(self.fx_surface(), crate::features::filters::Surface::Subs | crate::features::filters::Surface::Other) {
             items.retain(|i| !i.is_short());
         }
@@ -2305,7 +2355,7 @@ impl App {
         // CHUNK counted cards (hidden Shorts ride along without taking a slot); on TV as many more as complete the
         // grid's last row (`render::row_chunk`; the buffer and continuation thresholds still count in CHUNKs).
         let hide_shorts = self.counted(&self.feed.buf) != self.feed.buf.len();
-        let want = if crate::tv::on() { render::row_chunk(self.counted(&self.feed.shown), render::TV_COLS, CHUNK) } else { CHUNK };
+        let want = if crate::tv::on() { render::row_chunk(self.counted(&self.feed.shown), render::lay_cols(self.lay(), 0.0, true), CHUNK) } else { CHUNK };
         let (mut n, mut counted) = (0, 0);
         for it in &self.feed.buf {
             if counted == want {
@@ -2358,7 +2408,11 @@ impl App {
     }
 
     fn lay(&self) -> Lay {
-        if matches!(self.route, Route::Watch { .. }) { Lay::Rel } else { Lay::Grid }
+        match self.route {
+            Route::Watch { .. } => Lay::Rel,
+            Route::Channel { tab: ChannelTab::Shorts, .. } => Lay::Shorts,
+            _ => Lay::Grid,
+        }
     }
 
     // ------------------------------------------------------------ responses
@@ -2623,11 +2677,15 @@ impl App {
                 if nav != self.nav {
                     return;
                 }
-                let bid = ok.then(|| json::parse(body)).flatten().and_then(|j| parse::resolve(&j));
+                let answer = ok.then(|| json::parse(body)).flatten();
+                let bid = answer.as_ref().and_then(parse::resolve);
+                let params = answer.as_ref().and_then(parse::resolve_params);
                 match bid {
                     Some(bid) => {
                         self.channels.insert(path, bid.clone());
-                        self.page_request(Req::Browse { id: bid, params: Some(CHANNEL_VIDEOS_PARAMS.into()) });
+                        // A tab's URL: the params YouTube named for it.
+                        let params = params.filter(|_| !matches!(self.route, Route::Channel { tab: ChannelTab::Videos, .. })).unwrap_or_else(|| CHANNEL_VIDEOS_PARAMS.into());
+                        self.page_request(Req::Browse { id: bid, params: Some(params) });
                     }
                     None => self.fail(status, "This channel could not be found."),
                 }
@@ -2637,6 +2695,12 @@ impl App {
                     return;
                 }
                 self.on_cont_body(status, body);
+            }
+            Purpose::ChanSort { nav, generation, back } => {
+                if nav != self.nav || generation != self.generation {
+                    return;
+                }
+                self.chan_sort_body(status, body, &back);
             }
             Purpose::Page { nav } => {
                 if nav != self.nav || !self.home_answered(id, status) {
@@ -2778,7 +2842,16 @@ impl App {
     fn fail(&mut self, status: u32, detail: &str) {
         let detail = if status == 0 { "Network error: YouTube could not be reached.".to_string() } else { format!("{detail} (HTTP {status})") };
         let url = self.url.clone();
-        bridge::html(MAIN, &render::message("Couldn't load this page", &detail, Some(&url), &native_url(&url)));
+        let msg = render::message("Couldn't load this page", &detail, Some(&url), &native_url(&url));
+        // A tab that failed: the channel's header and tabs stay, so another tab is a press away.
+        if std::mem::take(&mut self.chan.inplace) {
+            bridge::html(render::CH_SORT, "");
+            self.chan.row.clear();
+            bridge::html(LIST, &msg);
+            bridge::attr(MORE, "class", "more done");
+        } else {
+            bridge::html(MAIN, &msg);
+        }
         self.feed = FeedState { cont_ep: "browse", ..Default::default() };
         self.rendered = true;
         self.ready();
@@ -2834,12 +2907,14 @@ impl App {
                 self.fx_search_response(json);
                 (render::feed_head(&format!("Results for {q}")), q.clone(), parse::search(json), "search", "No results.")
             }
-            Route::Channel { path, .. } => {
+            Route::Channel { path, tab, .. } => {
                 let c = parse::channel(json);
                 if let Some(b) = &c.bid {
                     self.channels.insert(path.clone(), b.clone());
                 }
-                (render::channel_head(&c), c.title.clone(), c.feed, "browse", "This channel has no videos.")
+                let Some(tab) = self.chan_answered(path, *tab, &c) else { return };
+                let nav = render::ChannelNav { path: path.clone(), tab, tabs: self.chan.visible(), sorts: c.sorts.clone() };
+                (render::channel_head(&c, nav), c.title.clone(), c.feed, "browse", "Nothing here yet.")
             }
             Route::Playlist { list } => {
                 let p = parse::playlist(json);
@@ -2909,7 +2984,7 @@ impl App {
         self.generation += 1;
         self.cont_busy = false;
         self.want = false;
-        self.cols = render::page_cols(bridge::width(), crate::tv::on());
+        self.cols = render::lay_cols(self.lay(), bridge::width(), crate::tv::on());
         self.stats.merge(&feed.stats);
         self.remember(&feed.items);
         self.remember(&extra);
@@ -2925,10 +3000,15 @@ impl App {
             ..Default::default()
         };
         self.fx_new_feed();
-        let head = self.feed.head.as_ref().expect("head set above");
-        let html = render::page(head, &self.fx_visible(&self.feed.shown), self.has_more(), &self.feed_empty(empty), ImgPlan::first(Lay::Grid, self.cols));
         let skeleton = !self.rendered && !self.direct;
-        bridge::html(MAIN, &html);
+        if std::mem::take(&mut self.chan.inplace) {
+            self.chan_write_list(empty);
+        } else {
+            let head = self.feed.head.as_ref().expect("head set above");
+            let html = render::page(head, &self.fx_visible(&self.feed.shown), self.has_more(), &self.feed_empty(empty), ImgPlan::first(self.lay(), self.cols));
+            bridge::html(MAIN, &html);
+            self.chan_sync();
+        }
         self.fade_thumbs();
         self.fx_entrance(skeleton, true);
     }
@@ -2936,7 +3016,7 @@ impl App {
     /// Feed thumbnails still loading fade in when they land (fresh renders
     /// only: restored pages and snapshot repaints stay instant).
     pub(crate) fn fade_thumbs(&self) {
-        if self.lay() == Lay::Grid {
+        if self.lay() != Lay::Rel {
             bridge::fade_imgs("#ytc-list img");
         }
     }

@@ -599,7 +599,10 @@ impl Actions {
         self.confirm = 0;
         self.subs.entry(ch.to_string()).or_insert_with(|| Toggle::new(false));
         if !signed_in() {
-            bridge::html(TV_CH_SUB, "<button type=\"button\" class=\"tvb\" data-act=\"tv-signin\">Subscribe</button>");
+            // (Already there, it stays: rewriting it would take the focus off it each time a tab's answer comes.)
+            if !bridge::any(&format!("#{TV_CH_SUB} [data-act=tv-signin]")) {
+                bridge::html(TV_CH_SUB, "<button type=\"button\" class=\"tvb\" data-act=\"tv-signin\">Subscribe</button>");
+            }
             return;
         }
         if bridge::any(&format!("#{TV_CH_SUB} #{}", watch::SUB_B)) {

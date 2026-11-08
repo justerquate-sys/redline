@@ -450,6 +450,69 @@ const homeDoc = (data, n) => `<!DOCTYPE html><html lang="en"><head><script nonce
 ytcfg.set({"EVENT_ID":"e2eHomeEvent${String(n).padStart(4, '0')}","INNERTUBE_CLIENT_VERSION":"2.20261102.01.00","INNERTUBE_CONTEXT_GL":"DE","LOGGED_IN":false,"VISITOR_DATA":"${HOME_VD}"});window.__ytAppRan=1;</script></head>
 <body><script nonce="n1">var ytInitialData = ${data};</script><script nonce="n1">window.__ytAppRan=1;</script></body></html>`;
 const gunzipJSON = buf => { try { return JSON.parse(zlib.gunzipSync(buf).toString('utf8')); } catch { try { return JSON.parse(buf.toString('utf8')); } catch { return null; } } };
+// Channel tabs: real signed-out answers (Nov 2026), trimmed (tests/fixtures/channel_tabs.json). `delay`: ms per tab
+// segment; `hang`: tab segments that never answer; `dead`: a tab that answers 500.
+const CT = JSON.parse(fixture('channel_tabs.json').toString('utf8'));
+const CTX = { delay: {}, hang: new Set(), dead: new Set(), contN: 0 };
+const ctBid = key => CT[key].metadata.channelMetadataRenderer.externalId;
+const CT_CHANNELS = Object.fromEntries(['sky.videos', 'arthas.videos', 'beast.streams', 'f1.videos', 'cc.courses', 'lofi.releases', 'veritasium.playables', 'numberphile.videos'].map(k => [ctBid(k), k.split('.')[0]]));
+const CT_SKY = ctBid('sky.videos'), CT_ARTHAS = ctBid('arthas.videos'), CT_BEAST = ctBid('beast.streams'), CT_F1 = ctBid('f1.videos'), CT_NUMBERPHILE = ctBid('numberphile.videos');
+const ctWalk = (v, fn) => { if (v && typeof v === 'object') { fn(v); for (const k of Object.keys(v)) ctWalk(v[k], fn); } };
+// Every token a page hands out: its list's continuation, its sort chips (`sort` = the chip's label).
+const CT_TOKENS = new Map();
+for (const key of Object.keys(CT)) ctWalk(CT[key], o => {
+  const t = o.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token;
+  if (t) CT_TOKENS.set(t, { key, page: true });
+  if (o.chipViewModel?.tapCommand?.innertubeCommand?.continuationCommand?.token && o.chipViewModel.displayType !== 'CHIP_VIEW_MODEL_DISPLAY_TYPE_DROP_DOWN') CT_TOKENS.set(o.chipViewModel.tapCommand.innertubeCommand.continuationCommand.token, { key, sort: o.chipViewModel.text });
+  const sheet = o.listItemViewModel?.rendererContext?.commandContext?.onTap?.innertubeCommand?.commandExecutorCommand?.commands?.find(c => c.continuationCommand);
+  if (sheet) CT_TOKENS.set(sheet.continuationCommand.token, { key, sort: o.listItemViewModel.title.content });
+});
+const ctGrid = key => { let out = null; ctWalk(CT[key], o => { if (!out && Array.isArray(o.contents) && o.contents.some(x => x.richItemRenderer)) out = o.contents; if (!out && Array.isArray(o.items) && o.items.some(x => x.lockupViewModel)) out = o.items; }); return out || []; };
+// The same cards under new ids: what a further page of a tab looks like.
+const ctMore = (key, n) => {
+  let str = JSON.stringify(ctGrid(key).filter(x => !x.continuationItemRenderer));
+  const ids = new Set([...str.matchAll(/"(?:contentId|videoId)":"([A-Za-z0-9_-]{11})"/g)].map(m => m[1]));
+  for (const id of ids) str = str.split(id).join(id.slice(0, 8) + 'C' + (n % 10) + 'z');
+  for (const id of new Set([...str.matchAll(/"(?:contentId|playlistId)":"(PL[A-Za-z0-9_-]+)"/g)].map(m => m[1]))) str = str.split(id).join(id + 'C' + n);
+  return JSON.parse(str);
+};
+const ctAnswer = (ep, body) => {
+  if (ep === 'navigation/resolve_url') {
+    const m = /youtube\.com\/(?:(?:@|c\/|user\/)ct(sky|arthas|beast|f1)|channel\/(UC[\w-]+))(?:\/(\w+))?$/.exec(body.url || '');
+    if (!m) return null;
+    const who = { sky: CT_SKY, arthas: CT_ARTHAS, beast: CT_BEAST, f1: CT_F1 }[m[1]] || m[2];
+    if (!CT_CHANNELS[who]) return null;
+    // As YouTube: the channel, and params that name the tab (a form of its own, not the tab list's).
+    const slug = m[3] || 'featured';
+    return JSON.stringify({ endpoint: { browseEndpoint: { browseId: who, params: Buffer.from(`\x12${String.fromCharCode(slug.length)}${slug}\xb8\x01\x00`, 'latin1').toString('base64') } } });
+  }
+  if (ep !== 'browse') return null;
+  if (body.continuation) {
+    const hit = CT_TOKENS.get(body.continuation);
+    if (body.continuation.startsWith('CTMORE:')) {
+      const [, key, n] = body.continuation.split(':');
+      return JSON.stringify({ onResponseReceivedActions: [{ appendContinuationItemsAction: { continuationItems: [...ctMore(key, +n), ...(+n < 3 ? [{ continuationItemRenderer: { continuationEndpoint: { continuationCommand: { token: `CTMORE:${key}:${+n + 1}` } } } }] : [])] } }] });
+    }
+    if (!hit) return null;
+    if (hit.page) return ctAnswer(ep, { continuation: `CTMORE:${hit.key}:1` });
+    // A sort's answer: the real one for that chip bar, with its chosen chip marked.
+    return JSON.stringify(CT[hit.key.startsWith('arthas') ? 'arthas.videos.popular' : 'sky.videos.popular']);
+  }
+  const who = CT_CHANNELS[body.browseId];
+  if (!who) return null;
+  const params = decodeURIComponent(body.params || '');
+  const slug = (/[a-z]{4,}/.exec(Buffer.from(params, 'base64').toString('latin1')) || ['videos'])[0];
+  // A tab YouTube lists whose content the client cannot show (a Playables page under the tab's own name).
+  if (CTX.unknown === slug) { const j = JSON.parse(JSON.stringify(CT['sky.' + slug])); const t = j.contents.twoColumnBrowseResultsRenderer.tabs.map(x => x.tabRenderer).find(x => x && x.selected); t.content = CT['veritasium.playables'].contents.twoColumnBrowseResultsRenderer.tabs.map(x => x.tabRenderer).find(x => x && x.selected).content; return JSON.stringify(j); }
+  if (who === 'beast' && slug === 'videos') return JSON.stringify(CT['sky.videos']);
+  if (who === 'arthas' && slug === 'playlists' && params.startsWith('EglwbGF5bGlzdHMY')) return JSON.stringify(CT['arthas.playlists.last']);
+  const page = CT[`${who}.${slug}`] || (who === 'sky' && { courses: CT['cc.courses'], releases: CT['lofi.releases'] }[slug]);
+  // A tab this channel lacks: YouTube answers with its Home (`featured` selected). CTX.patch: a step's edit of the answer.
+  const out = page || CT['beast.streams'];
+  if (CTX.patch) { const j = JSON.parse(JSON.stringify(out)); CTX.patch(j, slug); return JSON.stringify(j); }
+  return JSON.stringify(out);
+};
+
 // Simulated `next` latency (speed table).
 const NEXT = { latency: 0, contLatency: 0, gate: null };
 const ids11 = str => [...new Set([...str.matchAll(/"contentId":"([A-Za-z0-9_-]{11})"/g)].map(m => m[1]))];
@@ -553,6 +616,8 @@ const shelvesContStr = (() => {
 function apiFixture(ep, body) {
   const hooked = MEMBERS_HOOK.api?.(ep, body);
   if (hooked) return hooked;
+  const ct = ctAnswer(ep, body);
+  if (ct) return ct;
   if (AUDIT.worst && ep === 'search' && body.query === 'worst' && !body.continuation && !body.params) return worstSearchStr;
   if (AUDIT.worst && ep === 'next' && body.videoId === WORST_ID && !body.continuation && !body.playlistId) return worstNextStr;
   if (ep === 'browse' && /^CHIP(GAMING|POD)/.test(body.continuation || '')) return body.continuation.startsWith('CHIPGAMING') ? chipFeed(7, 'g') : chipFeed(8, 'p');
@@ -593,7 +658,12 @@ function apiFixture(ep, body) {
   if (ep === 'browse') {
     if (body.continuation) return body.continuation.startsWith('4qmFsgJbEiRWTFBM') ? '{"onResponseReceivedActions":[]}' : fx('browse_cont.json');
     if (body.browseId === 'FEwhat_to_watch') return fx('home.json');
-    if (body.browseId?.startsWith('UC')) return fx('channel_videos.json');
+    if (body.browseId?.startsWith('UC')) {
+      // Another tab of the recorded channel: the same answer with that tab selected.
+      const seg = /[a-z]{4,}/.exec(Buffer.from(decodeURIComponent(body.params || ''), 'base64').toString('latin1'))?.[0];
+      if (seg === 'streams' || seg === 'playlists') { const j = JSON.parse(fx('channel_videos.json')), tabs = j.contents.twoColumnBrowseResultsRenderer.tabs, content = tabs.find(x => x.tabRenderer?.content).tabRenderer.content; for (const t of tabs) if (t.tabRenderer) { const on = t.tabRenderer.endpoint?.commandMetadata?.webCommandMetadata?.url?.endsWith('/' + seg); t.tabRenderer.selected = on; if (on) t.tabRenderer.content = content; else delete t.tabRenderer.content; } return JSON.stringify(j); }
+      return fx('channel_videos.json');
+    }
     if (body.browseId?.startsWith('VL')) return fx('playlist.json');
   }
   return null;
@@ -703,6 +773,16 @@ async function handle(route) {
       return route.fulfill({ status: act.status, contentType: 'application/json', body: act.body });
     }
     if (ep === 'search' && IMG.search) await new Promise(r => setTimeout(r, IMG.search));
+    if (ep === 'browse' && CT_CHANNELS[body.browseId]) {
+      const seg = (/[a-z]{4,}/.exec(Buffer.from(decodeURIComponent(body.params || ''), 'base64').toString('latin1')) || ['videos'])[0];
+      if (CTX.hang.has(seg)) return new Promise(() => {});
+      if (CTX.dead.has(seg)) return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+      if (CTX.delay[seg]) await new Promise(r => setTimeout(r, CTX.delay[seg]));
+    }
+    if (ep === 'browse' && CT_TOKENS.get(body.continuation)?.sort) {
+      if (CTX.sortFail) return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+      if (CTX.sortDelay) await new Promise(r => setTimeout(r, CTX.sortDelay));
+    }
     if (ep === 'visitor_id') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ responseContext: { visitorData: FRESH_VD, serviceTrackingParams: [] } }) });
     // A hung player request: the first VISIONOS request for this video never answers (the hedge must).
     // The player service refusing or failing: vis429http…, vis403http…, vis500http….
@@ -1213,6 +1293,648 @@ chrome.runtime.onMessage.addListener(m => {
     assert.equal(log.api.filter(a => a.ep === 'navigation/resolve_url').pop().body.url, 'https://www.youtube.com/@monkeydeveloper');
     // Preloaded items enter the DOM in chunks as the user scrolls.
     await page.waitForFunction(() => { scrollTo(0, document.body.scrollHeight); return document.querySelectorAll('#ytc-list .c').length >= 60; }, null, { timeout: 5000, polling: 100 });
+  });
+
+
+  // ---------------------------------------------------------------------- channel tabs (real, trimmed answers)
+  const ctShot = async (p, name) => { if (process.env.YTC_SHOTS) { await p.waitForTimeout(250); await p.screenshot({ path: path.join(process.env.YTC_SHOTS, `${name}.png`), animations: 'disabled' }); } };
+  const ctOpen = async (url = `https://www.youtube.com/channel/${CT_SKY}`, w = 1400, h = 900) => {
+    const p = await ctx.newPage();
+    p.errs = [];
+    p.on('pageerror', e => p.errs.push(String(e)));
+    await p.setViewportSize({ width: w, height: h });
+    await p.goto(url, { waitUntil: 'commit' });
+    await p.waitForSelector('#ytc-list .c:not(.sk), .feed .empty');
+    await p.mouse.move(2, 2);
+    return p;
+  };
+  const ctTabs = p => p.$$eval('#ytc-cht .ct', a => a.map(e => [e.textContent, new URL(e.href).pathname.split('/').pop(), e.getAttribute('aria-current') === 'page']));
+  const ctSelected = p => p.$eval('#ytc-cht [aria-current=page]', e => e.id.replace('ytc-ct-', ''));
+  const ctBrowses = () => log.api.filter(a => a.ep === 'browse' && !a.body?.continuation && CT_CHANNELS[a.body?.browseId]).length;
+  const ctLand = (p, n = 1) => p.waitForFunction(n => document.querySelectorAll('#ytc-list .c:not(.sk)').length >= n, n);
+
+  await step('channel tabs: from the response itself (a channel lacking a tab has none), the bare URL opens Videos, no heading, the description line is clean', async () => {
+    const p = await ctOpen();
+    try {
+      assert.deepEqual(await ctTabs(p), [['Videos', 'videos', true], ['Shorts', 'shorts', false], ['Live', 'streams', false], ['Shows', 'shows', false], ['Podcasts', 'podcasts', false], ['Playlists', 'playlists', false]]);
+      assert.equal(await p.locator('.feed h2').count(), 0, 'no leftover heading: the tabs say it');
+      assert.ok(await p.locator('#ytc-list .c').count() >= 10);
+      // Sort chips, in the page's order, Latest selected.
+      assert.deepEqual(await p.$$eval('#ytc-chs .fx-ch', a => a.map(e => [e.textContent, e.getAttribute('aria-pressed')])), [['Latest', 'true'], ['Popular', 'false'], ['Oldest', 'false']]);
+      // Home, Posts, Store, Membership and Search stay out; nothing offers paid membership.
+      assert.doesNotMatch(await p.textContent('.chb'), /Home|Posts|Store|Membership|Search|Join/);
+      await p.close();
+      // The channel with members-only videos: no Shorts tab, sort from the drop-down's sheet, no "Members only" chip.
+      const a = await ctOpen(`https://www.youtube.com/channel/${CT_ARTHAS}`);
+      assert.deepEqual((await ctTabs(a)).map(t => t[1]), ['videos', 'streams', 'playlists']);
+      assert.deepEqual(await a.$$eval('#ytc-chs .fx-ch', x => x.map(e => e.textContent)), ['Latest', 'Popular', 'Oldest']);
+      // Nothing offers membership: no such chip or tab. A members-only video keeps its label on the card, in every tab.
+      assert.doesNotMatch(`${await a.textContent('.chb')} ${await a.textContent('#ytc-chs')} ${await a.textContent('.ch')}`, /Members only|Public|Join/i);
+      assert.ok(await a.locator('#ytc-list .c .th b.mo').count() >= 1, 'the members-only label on its card');
+      assert.equal(await a.locator('#ytc-list .c .th b.mo').first().textContent(), 'Members only');
+      const about = await a.textContent('.ch .about');
+      assert.ok(about && !/^[\s•·]/.test(about), JSON.stringify(about));
+      await a.close();
+      // Only Home and Posts: YouTube's page as it comes, without a tab row.
+      const f = await ctOpen(`https://www.youtube.com/channel/${CT_F1}`);
+      assert.equal(await f.locator('.chb').count(), 0, 'no tab row');
+      await f.close();
+    } finally { if (!p.isClosed()) await p.close(); }
+  });
+
+  await step('channel tabs: each tab renders its own cards (Shorts vertical whatever the switch says, Live badges, playlists with counts), opening what they should', async () => {
+    const p = await ctOpen();
+    try {
+      await ctShot(p, 'channel-tabs-videos-1400');
+      // Shorts: the tab decides, not the "Shorts in feeds" switch (off by default); no extra badge; the normal player.
+      await p.click('#ytc-ct-shorts');
+      await ctLand(p);
+      assert.equal(new URL(p.url()).pathname.endsWith('/shorts'), true);
+      assert.ok(await p.locator('#ytc-list.sh .c').count() >= 5);
+      const shape = await p.$eval('#ytc-list .c .th', e => { const r = e.getBoundingClientRect(); return r.height / r.width; });
+      assert.ok(Math.abs(shape - 16 / 9) < 0.02, `vertical card ${shape}`);
+      assert.equal(await p.locator('#ytc-list .c .th b').count(), 0, 'no Shorts badge in the Shorts tab');
+      assert.match(await p.$eval('#ytc-list .c a.t', e => e.getAttribute('href')), /^\/watch\?v=/, 'the normal player');
+      await ctShot(p, 'channel-tabs-shorts-1400');
+      // Live: live now, upcoming labelled, past streams; none dropped.
+      await p.click('#ytc-ct-streams');
+      await ctLand(p);
+      assert.ok(await p.locator('#ytc-list .c .th b.lv').count() >= 1, 'a live badge');
+      assert.equal(await p.locator('#ytc-list .c .th b.lv').first().textContent(), 'LIVE');
+      const badges = await p.$$eval('#ytc-list .c .th b', a => a.map(e => e.textContent));
+      assert.ok(badges.includes('Upcoming'), `upcoming labelled: ${badges}`);
+      assert.ok(badges.some(b => /^\d+:\d\d/.test(b)), 'a past stream with its length');
+      assert.ok((await p.textContent('#ytc-list')).includes('Scheduled for'));
+      await ctShot(p, 'channel-tabs-live-1400');
+      // Playlists: counts, opening the playlist page; no "Playlist · Playlist".
+      await p.click('#ytc-ct-playlists');
+      await ctLand(p);
+      assert.ok(await p.locator('#ytc-list .plc').count() >= 5);
+      assert.match(await p.locator('#ytc-list .plc .th b.n').first().textContent(), /\d+ (video|episode)/);
+      assert.match(await p.$eval('#ytc-list .plc a.t', e => e.getAttribute('href')), /^\/playlist\?list=/);
+      assert.equal(await p.locator('#ytc-list .plc .m').first().textContent(), 'Playlist');
+      await ctShot(p, 'channel-tabs-playlists-1400');
+      // Podcasts: square art, its own word.
+      await p.click('#ytc-ct-podcasts');
+      await ctLand(p);
+      assert.ok(await p.locator('#ytc-list.sq .plc').count() >= 1);
+      assert.equal(await p.locator('#ytc-list .plc .m').first().textContent(), 'Podcast');
+      await ctShot(p, 'channel-tabs-podcasts-1400');
+      // Shows: playlists with an episode count.
+      await p.click('#ytc-ct-shows');
+      await ctLand(p);
+      assert.match(await p.locator('#ytc-list .plc .th b.n').first().textContent(), /episode/);
+      assert.equal(await p.locator('#ytc-list .plc .m').first().textContent(), 'Show');
+      assert.deepEqual(p.errs, []);
+    } finally { await p.close(); }
+  });
+
+  await step('channel tabs: direct URL (all four forms), reload, Back and Forward open the right tab; a tab the channel lacks falls back to the first it has; tab changes push history', async () => {
+    const p = await ctOpen(`https://www.youtube.com/channel/${CT_SKY}/streams`);
+    try {
+      assert.equal(await ctSelected(p), 'streams');
+      assert.ok(await p.locator('#ytc-list .c .th b.lv').count() >= 1, 'the Live cards, not Videos');
+      const resolved = log.api.filter(a => a.ep === 'navigation/resolve_url').pop();
+      assert.equal(resolved.body.url, `https://www.youtube.com/channel/${CT_SKY}/streams`, 'YouTube names the tab');
+      // Reload: the same tab (the snapshot paints it, the answer refreshes it).
+      await p.reload({ waitUntil: 'commit' });
+      await p.waitForSelector('#ytc-cht [aria-current=page]');
+      assert.equal(await ctSelected(p), 'streams');
+      assert.ok(await p.locator('#ytc-list .c .th b.lv').count() >= 1);
+      // Tab changes push; Back and Forward go through them.
+      const len = await p.evaluate(() => history.length);
+      await p.click('#ytc-ct-playlists');
+      await ctLand(p);
+      await p.waitForFunction(() => location.pathname.endsWith('/playlists'));
+      assert.equal(await p.evaluate(() => history.length), len + 1);
+      await p.goBack({ waitUntil: 'commit' });
+      await p.waitForFunction(() => location.pathname.endsWith('/streams') && document.querySelector('#ytc-ct-streams[aria-current=page]'));
+      assert.ok(await p.locator('#ytc-list .c .th b.lv').count() >= 1);
+      await p.goForward({ waitUntil: 'commit' });
+      await p.waitForFunction(() => location.pathname.endsWith('/playlists') && document.querySelector('#ytc-ct-playlists[aria-current=page]'));
+      assert.ok(await p.locator('#ytc-list .plc').count() >= 5);
+      await p.close();
+      // The handle form with a pasted link.
+      const h = await ctOpen('https://www.youtube.com/@ctsky/shorts');
+      assert.equal(await ctSelected(h), 'shorts');
+      assert.equal(new URL(h.url()).pathname, '/@ctsky/shorts');
+      assert.equal(await h.$eval('#ytc-ct-videos', e => new URL(e.href).pathname), '/@ctsky/videos');
+      assert.equal(await h.$eval('#ytc-ct-streams', e => new URL(e.href).pathname), '/@ctsky/streams');
+      await h.close();
+      // The two older URL forms: the tab opens, and the tab links stay in the form the page was opened in.
+      for (const [form, seg, sel] of [['/c/ctsky', 'playlists', '#ytc-list .plc'], ['/user/ctsky', 'streams', '#ytc-list .c .th b.lv']]) {
+        const c = await ctOpen(`https://www.youtube.com${form}/${seg}`);
+        assert.equal(await ctSelected(c), seg);
+        assert.equal(new URL(c.url()).pathname, `${form}/${seg}`);
+        assert.ok(await c.locator(sel).count() >= 1, `${form}: its own cards`);
+        assert.equal(log.api.filter(a => a.ep === 'navigation/resolve_url').pop().body.url, `https://www.youtube.com${form}/${seg}`);
+        assert.equal(await c.$eval('#ytc-ct-videos', e => new URL(e.href).pathname), `${form}/videos`);
+        await c.click('#ytc-ct-videos');
+        await c.waitForFunction(f => location.pathname === f + '/videos' && document.querySelector('#ytc-list .c:not(.sk)'), form);
+        await c.goBack({ waitUntil: 'commit' });
+        await c.waitForFunction(p => location.pathname === p, `${form}/${seg}`);
+        await c.close();
+      }
+      // A tab this channel does not have (YouTube answers with its Home): its first tab, same history entry.
+      const b = await ctOpen(`https://www.youtube.com/channel/${CT_BEAST}/streams`);
+      await b.waitForFunction(() => /\/videos$/.test(location.pathname));
+      await b.close();
+      // A kind of tab the client cannot show opens Videos.
+      const o = await ctOpen(`https://www.youtube.com/channel/${CT_SKY}/posts`);
+      assert.equal(await ctSelected(o), 'videos');
+      await o.close();
+    } finally { if (!p.isClosed()) await p.close(); }
+  });
+
+  await step('channel tabs: each tab keeps its cards and scroll position while the channel is open; a tab already loaded needs no request and shows no skeleton; a video and back keep them too', async () => {
+    const p = await ctOpen(`https://www.youtube.com/channel/${CT_SKY}`, 1400, 600);
+    try {
+      // Loaded: the Videos tab, scrolled.
+      await p.evaluate(() => scrollTo(0, 900));
+      await p.waitForFunction(() => scrollY > 400);
+      const y0 = await p.evaluate(() => scrollY);
+      const first0 = await p.$eval('#ytc-list .c a.t', e => e.href);
+      const el0 = await p.evaluateHandle(() => document.querySelector('#ytc-list .c'));
+      // The sticky row stays on screen: the next tab is a press away.
+      const stuck = await p.$eval('.chb', e => e.getBoundingClientRect().top);
+      assert.ok(Math.abs(stuck - 64) <= 1, `the tab row under the top bar: ${stuck}`);
+      await p.click('#ytc-ct-shorts');
+      await ctLand(p);
+      assert.ok(await p.evaluate(() => scrollY) <= y0, 'a new list does not open past its first cards');
+      await p.evaluate(() => scrollTo(0, 300));
+      await p.waitForTimeout(50);
+      const yShorts = await p.evaluate(() => scrollY);
+      await p.waitForTimeout(150);
+      const n = ctBrowses();
+      await p.evaluate(() => { const l = document.getElementById('ytc-list'); window.__sk = 0; new MutationObserver(() => { if (l.querySelector('.sk')) window.__sk++; }).observe(l, { childList: true }); });
+      // Back to Videos: its cards, its place, no request, no skeleton. (The same DOM nodes: no picture reloads.)
+      await p.click('#ytc-ct-videos');
+      assert.equal(await p.$eval('#ytc-list .c a.t', e => e.href), first0);
+      assert.equal(await p.evaluate(e => e.isConnected, el0), true, 'the very same cards');
+      assert.ok(Math.abs(await p.evaluate(() => scrollY) - y0) <= 2, 'its scroll position');
+      assert.equal(ctBrowses(), n, 'no request');
+      assert.equal(await p.evaluate(() => window.__sk), 0, 'no skeleton');
+      await p.click('#ytc-ct-shorts');
+      assert.ok(Math.abs(await p.evaluate(() => scrollY) - yShorts) <= 2, 'Shorts its own');
+      assert.equal(ctBrowses(), n);
+      // To a video and back: the tab, its place and the other tab's cards are still there.
+      await p.click('#ytc-list .c a.t');
+      await p.waitForFunction(() => location.pathname === '/watch');
+      await p.goBack({ waitUntil: 'commit' });
+      await p.waitForFunction(() => /\/shorts$/.test(location.pathname) && document.querySelector('#ytc-ct-shorts[aria-current=page]') && document.querySelector('#ytc-list .c:not(.sk)'));
+      await p.click('#ytc-ct-videos');
+      assert.equal(await p.$eval('#ytc-list .c a.t', e => e.href), first0);
+      assert.equal(ctBrowses(), n, 'still no request');
+      // Pressing the tab on screen: back to its first cards, no history, no request.
+      const len = await p.evaluate(() => history.length);
+      await p.click('#ytc-ct-videos');
+      await p.waitForFunction(() => scrollY < 500);
+      assert.equal(await p.evaluate(() => history.length), len);
+      assert.deepEqual(p.errs, []);
+    } finally { await p.close(); }
+  });
+
+  await step('channel tabs: a late answer of a tab the user left does not touch the tab on screen, and is there when coming back; a failed tab keeps the header and the tabs', async () => {
+    const p = await ctOpen();
+    try {
+      CTX.delay = { streams: 500 };
+      await p.click('#ytc-ct-streams');
+      await p.waitForFunction(() => document.querySelector('#ytc-list.grid .c.sk'));
+      assert.equal(await p.locator('#ytc-list .c.sk').count() >= 6, true, 'skeletons while it loads');
+      await ctShot(p, 'channel-tabs-skeleton-1400');
+      await p.click('#ytc-ct-shorts');
+      await ctLand(p);
+      assert.equal(await ctSelected(p), 'shorts');
+      const shorts = await p.$$eval('#ytc-list .c a.t', a => a.map(e => e.href).join());
+      await p.waitForTimeout(700); // the late answer lands
+      assert.ok((await p.$$eval('#ytc-list .c a.t', a => a.map(e => e.href).join())).startsWith(shorts), 'the tab on screen is untouched (its own further cards may have come)');
+      assert.equal(await p.locator('#ytc-list .c .th b.lv').count(), 0);
+      assert.ok(await p.locator('#ytc-list.sh').count() === 1);
+      // It was not wasted: Live opens from memory, without asking again.
+      const n = ctBrowses();
+      await p.click('#ytc-ct-streams');
+      await p.waitForFunction(() => document.querySelector('#ytc-list .c .th b.lv'));
+      assert.equal(ctBrowses(), n, 'the late answer is reused');
+      CTX.delay = {};
+      // A tab YouTube lists but whose content the client cannot show: out of the row, the first tab instead of an empty page.
+      CTX.unknown = 'shows';
+      await p.click('#ytc-ct-shows');
+      await p.waitForFunction(() => !document.querySelector('#ytc-ct-shows') && /\/videos$/.test(location.pathname) && document.querySelector('#ytc-ct-videos[aria-current=page]') && document.querySelector('#ytc-list .c:not(.sk)'));
+      CTX.unknown = null;
+      // A tab that fails: the reason in place of its list, the channel stays.
+      CTX.dead.add('playlists');
+      await p.click('#ytc-ct-playlists');
+      await p.waitForSelector('#ytc-list .msg, #ytc-list .tvpc');
+      assert.ok(await p.locator('.ch h1').count() === 1 && await p.locator('#ytc-cht .ct').count() >= 3, 'header and tabs stay');
+      await p.click('#ytc-ct-videos');
+      await ctLand(p);
+      assert.equal(await p.locator('#ytc-list .msg').count(), 0);
+      // Back to a tab that failed: it asks again, and recovers by itself; never the old error from memory.
+      const asked = ctBrowses();
+      CTX.dead.clear();
+      await p.click('#ytc-ct-playlists');
+      await p.waitForSelector('#ytc-list .plc');
+      assert.equal(await p.locator('#ytc-list .msg').count(), 0, 'not the old error');
+      assert.ok(ctBrowses() > asked, 'it asked again');
+      assert.equal(await ctSelected(p), 'playlists');
+      assert.ok(await p.locator('#ytc-chs>.fx-ch').count() >= 2, 'its chips are back');
+      assert.deepEqual(p.errs, []);
+    } finally { CTX.delay = {}; CTX.dead.clear(); CTX.unknown = null; await p.close(); }
+  });
+
+  await step('channel tabs: sort chips use the chip bar\'s own tokens (both shapes) and Playlists\' menu its params; a late sort answer is ignored; a failed one puts the list back', async () => {
+    const p = await ctOpen();
+    try {
+      const latest = await p.$eval('#ytc-list .c a.t', e => e.href);
+      const token = CT['sky.videos'].contents.twoColumnBrowseResultsRenderer.tabs.map(t => t.tabRenderer).find(t => t && t.selected).content.richGridRenderer.header.chipBarViewModel.chips[1].chipViewModel.tapCommand.innertubeCommand.continuationCommand.token;
+      await p.click('#ytc-cs-1');
+      await p.waitForFunction(h => { const a = document.querySelector('#ytc-list .c:not(.sk) a.t'); return a && a.href !== h; }, latest);
+      assert.equal(log.api.filter(a => a.ep === 'browse' && a.body?.continuation === token).length, 1, "the chip's own token");
+      await p.waitForFunction(() => !document.querySelector('#ytc-chs .fx-pg'));
+      assert.deepEqual(await p.$$eval('#ytc-chs>.fx-ch', a => a.map(e => e.getAttribute('aria-pressed'))), ['false', 'true', 'false']);
+      await ctShot(p, 'channel-tabs-popular-1400');
+      // Back to Latest: from memory, no request.
+      const n = log.api.filter(a => a.ep === 'browse').length;
+      await p.click('#ytc-cs-0');
+      assert.equal(await p.$eval('#ytc-list .c a.t', e => e.href), latest);
+      assert.equal(log.api.filter(a => a.ep === 'browse').length, n);
+      // A tab remembers its sort.
+      await p.click('#ytc-cs-1');
+      await p.waitForFunction(h => document.querySelector('#ytc-list .c:not(.sk) a.t')?.href !== h, latest);
+      await p.click('#ytc-ct-shorts');
+      await ctLand(p);
+      await p.click('#ytc-ct-videos');
+      assert.equal(await p.$eval('#ytc-cs-1', e => e.getAttribute('aria-pressed')), 'true');
+      await p.close();
+      // A late sort answer: left for the sort already in memory, and for another tab, it changes nothing.
+      const l = await ctOpen();
+      const pressed = () => l.$$eval('#ytc-chs>.fx-ch', a => a.map(e => e.getAttribute('aria-pressed') === 'true'));
+      const first1 = await l.$eval('#ytc-list .c a.t', e => e.href);
+      CTX.sortDelay = 400;
+      await l.click('#ytc-cs-1');
+      await l.waitForSelector('#ytc-list .c.sk');
+      await l.click('#ytc-cs-0');
+      assert.equal(await l.$eval('#ytc-list .c a.t', e => e.href), first1, 'Latest at once, from memory');
+      await l.waitForTimeout(700);
+      assert.equal(await l.$eval('#ytc-list .c a.t', e => e.href), first1, 'the late answer ignored');
+      await l.waitForFunction(() => !document.querySelector('#ytc-chs .fx-pg'));
+      assert.deepEqual(await pressed(), [true, false, false]);
+      await l.click('#ytc-cs-2');
+      await l.waitForSelector('#ytc-list .c.sk');
+      await l.click('#ytc-ct-shorts');
+      await ctLand(l);
+      const shorts = await l.$eval('#ytc-list .c a.t', e => e.href);
+      await l.waitForTimeout(700);
+      assert.equal(await l.$eval('#ytc-list .c a.t', e => e.href), shorts, 'nor on another tab');
+      assert.equal(await l.locator('#ytc-list.sh').count(), 1);
+      CTX.sortDelay = 0;
+      await l.click('#ytc-ct-videos');
+      await ctLand(l);
+      // A sort that fails: the list it replaced and its chip come back, and the tab still works.
+      await l.waitForFunction(() => document.querySelector('#ytc-cs-0'));
+      await l.click('#ytc-cs-0').catch(() => {});
+      await l.waitForFunction(() => document.querySelector('#ytc-list .c:not(.sk)'));
+      const kept = await l.$eval('#ytc-list .c a.t', e => e.href), sel = await pressed();
+      CTX.sortFail = true;
+      await l.click(sel[1] ? '#ytc-cs-2' : '#ytc-cs-1');
+      await l.waitForFunction(h => document.querySelector('#ytc-list .c:not(.sk) a.t')?.href === h, kept);
+      await l.waitForFunction(() => !document.querySelector('#ytc-chs .fx-pg'));
+      assert.deepEqual(await pressed(), sel, 'its chip back');
+      CTX.sortFail = false;
+      assert.deepEqual(l.errs, []);
+      await l.close();
+      // The drop-down shape's token; Playlists' menu is a `browse` with its own params.
+      const a = await ctOpen(`https://www.youtube.com/channel/${CT_ARTHAS}/playlists`);
+      assert.deepEqual(await a.$$eval('#ytc-chs .fx-ch', x => x.map(e => e.textContent)), ['Date added (newest)', 'Last video added']);
+      const first = await a.$eval('#ytc-list .c a.t', e => e.href);
+      await a.click('#ytc-cs-1');
+      await a.waitForFunction(() => document.querySelector('#ytc-list .c:not(.sk) a.t'));
+      const b = log.api.filter(x => x.ep === 'browse' && x.body?.browseId === CT_ARTHAS).pop();
+      assert.match(decodeURIComponent(b.body.params), /^EglwbGF5bGlzdHMY/);
+      assert.notEqual(first, null);
+      await a.click('#ytc-ct-videos');
+      await ctLand(a);
+      const before = await a.$eval('#ytc-list .c a.t', e => e.href);
+      const sheetTokens = () => log.api.filter(x => x.ep === 'browse' && x.body?.continuation && CT_TOKENS.get(x.body.continuation)?.sort === 'Popular').length;
+      const had = sheetTokens();
+      await a.click('#ytc-cs-1');
+      await a.waitForFunction(h => { const x = document.querySelector('#ytc-list .c:not(.sk) a.t'); return x && x.href !== h; }, before);
+      assert.equal(sheetTokens(), had + 1, "the sheet's token");
+      assert.doesNotMatch(await a.textContent('#ytc-chs'), /Members/);
+      assert.deepEqual(a.errs, []);
+      await a.close();
+    } finally { CTX.sortDelay = 0; CTX.sortFail = false; if (!p.isClosed()) await p.close(); }
+  });
+
+  await step('channel tabs: infinite scroll through continuations on each tab, on the same chunks; Shorts stay in their tab', async () => {
+    const p = await ctOpen(`https://www.youtube.com/channel/${CT_SKY}/shorts`);
+    try {
+      const n0 = await p.locator('#ytc-list .c').count();
+      assert.ok(n0 >= 5);
+      await p.waitForFunction(n => { scrollTo(0, document.body.scrollHeight); return document.querySelectorAll('#ytc-list .c').length > n; }, n0, { timeout: 8000, polling: 100 });
+      assert.ok(log.api.some(a => a.ep === 'browse' && a.body?.continuation), 'a continuation went out');
+      const more = await p.locator('#ytc-list .c').count();
+      assert.ok(await p.locator('#ytc-list .c .th b').count() === 0, 'no Shorts badge on later pages either');
+      // Each tab pages on its own.
+      await p.click('#ytc-ct-playlists');
+      await ctLand(p);
+      const m0 = await p.locator('#ytc-list .plc').count();
+      await p.waitForFunction(n => { scrollTo(0, document.body.scrollHeight); return document.querySelectorAll('#ytc-list .plc').length > n; }, m0, { timeout: 8000, polling: 100 });
+      await p.click('#ytc-ct-shorts');
+      assert.ok(await p.locator('#ytc-list .c').count() >= more, 'the Shorts tab kept what it had loaded');
+      assert.deepEqual(p.errs, []);
+    } finally { await p.close(); }
+  });
+
+  await step('channel tabs: hovering a tab prefetches it once and the click uses it; the indicator slides on a pointer press, jumps on a key; keyboard walk; timings', async () => {
+    const p = await ctOpen();
+    try {
+      // Hover: the existing page prefetch; the click reuses it.
+      const n = ctBrowses();
+      await p.hover('#ytc-ct-streams');
+      await p.waitForTimeout(250);
+      assert.equal(ctBrowses(), n + 1, 'hover prefetch');
+      await p.click('#ytc-ct-streams');
+      await p.waitForSelector('#ytc-list .c .th b.lv');
+      assert.equal(ctBrowses(), n + 1, 'the click used it');
+      // Pointer: one mark moving (clip-path transition) from the old tab to the new one.
+      await p.hover('#ytc-ct-shorts');
+      await p.waitForTimeout(150);
+      await p.click('#ytc-ct-shorts');
+      await p.waitForFunction(() => document.querySelector('#ytc-cht>i.chk'));
+      const anim = await p.waitForFunction(() => { const m = document.querySelector('#ytc-cht>i.chk'); return m && m.getAnimations().some(a => a.transitionProperty === 'clip-path'); }, null, { timeout: 2000 }).then(() => true, () => false);
+      assert.ok(anim, 'the indicator slides on a pointer press');
+      await p.waitForFunction(() => { const m = document.querySelector('#ytc-cht>i.chk'); return m && !m.getAnimations().length; });
+      const box = await p.evaluate(() => { const m = /inset\(([\d.]+)px calc\(100% - [\d.]+px\) ([\d.]+)px ([\d.]+)px/.exec(getComputedStyle(document.querySelector('#ytc-cht>i.chk')).clipPath); const s = document.getElementById('ytc-cht').getBoundingClientRect(); const u = document.querySelector('#ytc-ct-shorts u').getBoundingClientRect(); return { l: s.left + +m[3], ul: u.left, t: s.top + +m[1], ut: u.top }; });
+      assert.ok(Math.abs(box.l - box.ul) < 1 && Math.abs(box.t - box.ut) < 1, JSON.stringify(box));
+      // Left edge: header, tab text and grid on one line.
+      const edges = await p.evaluate(() => [document.querySelector('.ch').getBoundingClientRect().left, document.querySelector('#ytc-ct-videos span').getBoundingClientRect().left, document.querySelector('#ytc-chs .fx-ch').getBoundingClientRect().left, document.querySelector('#ytc-list .c').getBoundingClientRect().left]);
+      assert.ok(edges.every(x => Math.abs(x - edges[0]) < 0.5), `one left edge: ${edges}`);
+
+      // Keyboard: Tab reaches the tabs, ←/→ walk them, Enter changes the tab with no motion and keeps the focus on it.
+      await p.focus('#ytc-ct-videos');
+      await p.keyboard.press('ArrowRight');
+      assert.equal(await p.evaluate(() => document.activeElement.id), 'ytc-ct-shorts');
+      await p.keyboard.press('ArrowRight');
+      assert.equal(await p.evaluate(() => document.activeElement.id), 'ytc-ct-streams');
+      const ring = await p.evaluate(() => { const l = document.activeElement.firstElementChild, r = l.getBoundingClientRect(), s = getComputedStyle(l), n = document.querySelector('.cht').getBoundingClientRect(); return { style: s.outlineStyle, off: parseFloat(s.outlineOffset), w: parseFloat(s.outlineWidth), top: r.top - n.top, bottom: n.bottom - r.bottom, left: r.left - n.left }; });
+      assert.equal(ring.style, 'solid', 'the keyboard focus ring');
+      assert.ok(ring.off >= 2 && ring.top >= ring.off + ring.w && ring.bottom >= ring.off + ring.w && ring.left >= ring.off + ring.w, `the ring clear of the label and inside the row: ${JSON.stringify(ring)}`);
+      await ctShot(p, 'channel-tabs-keyboard-1400');
+      await p.keyboard.press('Enter');
+      await p.waitForFunction(() => document.querySelector('#ytc-ct-streams[aria-current=page]'));
+      assert.equal(await p.evaluate(() => document.activeElement.id), 'ytc-ct-streams');
+      assert.equal(await p.evaluate(() => { const m = document.querySelector('#ytc-cht>i.chk'); return m ? m.getAnimations().length : 0; }), 0, 'a key moves the indicator at once');
+      await p.keyboard.press('ArrowDown');
+      assert.equal(await p.evaluate(() => document.activeElement.id), 'ytc-cs-0', '↓ to the sort chips');
+      await p.keyboard.press('ArrowDown');
+      assert.ok(await p.evaluate(() => document.activeElement.matches('#ytc-list a.t')), '↓ to the cards');
+      await p.keyboard.press('ArrowUp');
+      assert.equal(await p.evaluate(() => document.activeElement.id), 'ytc-cs-0', '↑ from the first row');
+      await p.keyboard.press('ArrowUp');
+      assert.equal(await p.evaluate(() => document.activeElement.id), 'ytc-ct-streams', '↑ to the selected tab');
+
+      // Timings: press → the new list in the DOM (same task) and → the next frame.
+      const time = sel => p.evaluate(sel => new Promise(res => {
+        const a = document.querySelector(sel), t0 = performance.now();
+        a.click();
+        const t1 = performance.now();
+        requestAnimationFrame(() => requestAnimationFrame(() => res([t1 - t0, performance.now() - t0])));
+      }), sel);
+      const runs = { loaded: [], cached: [] };
+      // Loaded tabs, back and forth, with the pointer on the page like a real press.
+      for (let i = 0; i < 16; i++) runs.loaded.push(await time(i % 2 ? '#ytc-ct-streams' : '#ytc-ct-shorts'));
+      // A tab prefetched by hovering: answer in memory, parsed and written in the press.
+      for (const seg of ['shows', 'podcasts', 'playlists']) {
+        await p.hover(`#ytc-ct-${seg}`);
+        await p.waitForTimeout(200);
+        runs.cached.push(await time(`#ytc-ct-${seg}`));
+        await p.mouse.move(2, 2);
+      }
+      const med = (r, i) => median(r.map(x => x[i])).toFixed(1);
+      console.log(`     (channel tab switch, fixture, ${await p.locator('#ytc-list .c').count()} cards: already loaded ${med(runs.loaded, 0)} ms in the press, ${med(runs.loaded, 1)} ms to the frame after next (n=${runs.loaded.length}); hover-prefetched ${med(runs.cached, 0)} / ${med(runs.cached, 1)} ms (n=${runs.cached.length}))`);
+      assert.ok(+med(runs.loaded, 0) < 16, `a loaded tab within a frame: ${med(runs.loaded, 0)} ms`);
+      assert.deepEqual(p.errs, []);
+    } finally { await p.close(); }
+  });
+
+  await step('channel tabs: a tab with no sort choices loses its skeleton chips (the real shape), also when left for one that is still loading', async () => {
+    const p = await ctOpen(`https://www.youtube.com/channel/${CT_NUMBERPHILE}`);
+    const row = () => p.evaluate(() => { const c = document.getElementById('ytc-chs'); return { sk: c.querySelectorAll('.sk').length, kids: c.children.length, shown: getComputedStyle(c).display !== 'none' }; });
+    const gone = { sk: 0, kids: 0, shown: false };
+    try {
+      assert.equal(await p.locator('#ytc-chs>.fx-ch').count(), 3, 'Videos has its chips');
+      for (const [tab, seg] of [['#ytc-ct-shorts', 'shorts'], ['#ytc-ct-streams', 'streams']]) {
+        CTX.delay = { [seg]: 150 };
+        await p.click(tab);
+        await p.waitForSelector('#ytc-chs .sk');
+        await ctLand(p);
+        assert.deepEqual(await row(), gone, `${seg}: no chip bar, no chips`);
+      }
+      CTX.delay = {};
+      await p.click('#ytc-ct-videos');
+      assert.equal(await p.locator('#ytc-chs>.fx-ch').count(), 3, 'and back with Videos');
+      await p.close();
+      // Shows has no chips and is loaded; Live is left while its skeleton shows.
+      const q = await ctOpen(`https://www.youtube.com/channel/${CT_SKY}/shows`);
+      assert.equal(await q.locator('#ytc-chs').evaluate(c => c.children.length), 0);
+      CTX.delay = { streams: 500 };
+      await q.click('#ytc-ct-streams');
+      await q.waitForSelector('#ytc-chs .sk');
+      await q.click('#ytc-ct-shows');
+      await q.waitForSelector('#ytc-list .plc');
+      assert.equal(await q.locator('#ytc-chs').evaluate(c => c.children.length), 0, 'Shows from memory, no skeleton chips over it');
+      await q.waitForTimeout(650);
+      assert.equal(await q.locator('#ytc-chs').evaluate(c => c.children.length), 0, 'nor after the late answer');
+      await q.close();
+    } finally { CTX.delay = {}; if (!p.isClosed()) await p.close(); }
+  });
+
+  await step('channel tabs: the indicator keeps to its tab when the window is resized, and still slides between tabs', async () => {
+    const p = await ctOpen(`https://www.youtube.com/channel/${CT_SKY}`, 1000, 800);
+    const mark = () => p.evaluate(() => { const s = document.getElementById('ytc-cht'), m = s.querySelector(':scope>i.chk'), u = document.querySelector('#ytc-cht [aria-current=page] u').getBoundingClientRect(), a = s.getBoundingClientRect(), c = /inset\(([\d.]+)px calc\(100% - ([\d.]+)px\) ([\d.]+)px ([\d.]+)px/.exec(getComputedStyle(m).clipPath); return { left: +c[4], right: +c[2], tabLeft: u.left - a.left, tabRight: u.right - a.left, markW: m.getBoundingClientRect().width, scopeW: s.clientWidth, n: m.getAnimations().length }; });
+    const onTab = (m, what) => assert.ok(Math.abs(m.left - m.tabLeft) < 1 && Math.abs(m.right - m.tabRight) < 1 && Math.abs(m.markW - m.scopeW) < 1, `${what}: ${JSON.stringify(m)}`);
+    try {
+      await p.click('#ytc-ct-shorts');
+      await ctLand(p);
+      await p.waitForFunction(() => { const m = document.querySelector('#ytc-cht>i.chk'); return m && !m.getAnimations().length; });
+      onTab(await mark(), 'after the press');
+      await p.setViewportSize({ width: 1500, height: 800 });
+      await p.waitForTimeout(100);
+      onTab(await mark(), 'wider');
+      await p.setViewportSize({ width: 800, height: 800 });
+      await p.waitForTimeout(100);
+      onTab(await mark(), 'narrower');
+      await p.setViewportSize({ width: 1400, height: 800 });
+      await p.waitForTimeout(100);
+      // It still moves: from the old tab to the new one, mid-way between them.
+      const from = await mark();
+      await p.click('#ytc-ct-playlists');
+      await p.waitForFunction(() => document.querySelector('#ytc-cht>i.chk').getAnimations().some(a => a.transitionProperty === 'clip-path'));
+      const mid = await mark();
+      assert.ok(mid.n >= 1 && mid.left >= from.left - 1, JSON.stringify({ from, mid }));
+      await p.waitForFunction(() => !document.querySelector('#ytc-cht>i.chk').getAnimations().length);
+      onTab(await mark(), 'after the slide');
+    } finally { await p.close(); }
+  });
+
+  await step('channel tabs: walking six tabs does not push a playlist\'s or Home\'s snapshot out', async () => {
+    const wasRich = HOME.rich;
+    HOME.rich = true;
+    const p = await ctOpen('https://www.youtube.com/');
+    const has = u => p.evaluate(u => !!sessionStorage.getItem('ytc:snap:' + u) && JSON.parse(sessionStorage.getItem('ytc:snaps') || '[]').includes(u), u);
+    const list = 'PL_pGtHsOvhtxX3WHo-Hi268L78XBziem_';
+    try {
+      await p.waitForTimeout(200);
+      await p.goto(`https://www.youtube.com/playlist?list=${list}`, { waitUntil: 'commit' });
+      await p.waitForSelector('#ytc-list .c:not(.sk)');
+      await p.waitForTimeout(200);
+      await p.goto(`https://www.youtube.com/channel/${CT_SKY}`, { waitUntil: 'commit' });
+      await p.waitForSelector('#ytc-list .c:not(.sk)');
+      assert.ok(await has('/') && await has(`/playlist?list=${list}`), 'both written on leaving them');
+      const n = await p.evaluate(() => JSON.parse(sessionStorage.getItem('ytc:snaps')).length);
+      for (const t of ['shorts', 'streams', 'shows', 'podcasts', 'playlists', 'videos', 'shorts']) {
+        await p.click(`#ytc-ct-${t}`);
+        await p.waitForFunction(t => document.querySelector(`#ytc-ct-${t}[aria-current=page]`) && document.querySelector('#ytc-list .c:not(.sk)'), t);
+      }
+      assert.ok(await has('/'), 'Home kept');
+      assert.ok(await has(`/playlist?list=${list}`), 'the playlist kept');
+      assert.equal(await p.evaluate(() => JSON.parse(sessionStorage.getItem('ytc:snaps')).length), n, 'a tab left writes none');
+      // The tab on screen is still kept for a reload.
+      await p.reload({ waitUntil: 'commit' });
+      await p.waitForSelector('#ytc-ct-shorts[aria-current=page]');
+      assert.ok(await has(new URL(p.url()).pathname), 'the tab on screen, on leaving the document');
+    } finally { HOME.rich = wasRich; await p.close(); }
+  });
+
+  await step('channel tabs: a narrow window shows the selected tab of its scrolling row: on a direct link, on a press, on Back', async () => {
+    const titles = { videos: 'Видео', shorts: 'Shorts', streams: 'Трансляции', shows: 'Шоу', podcasts: 'Подкасты', playlists: 'Плейлисты' };
+    CTX.patch = j => { for (const t of j.contents.twoColumnBrowseResultsRenderer.tabs) { const r = t.tabRenderer, seg = r?.endpoint?.commandMetadata?.webCommandMetadata?.url?.split('/').pop(); if (titles[seg]) r.title = titles[seg]; } };
+    const p = await ctOpen(`https://www.youtube.com/channel/${CT_SKY}/playlists`, 480, 800);
+    const seen = async what => { await p.waitForTimeout(60); const v = await p.evaluate(() => { const r = document.querySelector('#ytc-cht [aria-current=page]').getBoundingClientRect(), c = document.querySelector('.cht').getBoundingClientRect(); return { left: r.left, right: r.right, rowLeft: c.left, rowRight: c.right, page: document.documentElement.scrollWidth - innerWidth }; }); assert.ok(v.left >= v.rowLeft - 0.5 && v.right <= v.rowRight + 0.5 && v.page <= 0, `${what}: ${JSON.stringify(v)}`); };
+    try {
+      await seen('direct link');
+      await ctShot(p, 'channel-tabs-ru-480');
+      await p.click('#ytc-ct-videos');
+      await ctLand(p);
+      await seen('a press on the first tab');
+      await p.goBack({ waitUntil: 'commit' });
+      await p.waitForFunction(() => /\/playlists$/.test(location.pathname) && document.querySelector('#ytc-ct-playlists[aria-current=page]'));
+      await seen('Back');
+      await p.reload({ waitUntil: 'commit' });
+      await p.waitForSelector('#ytc-ct-playlists[aria-current=page]');
+      await seen('reload');
+    } finally { CTX.patch = null; await p.close(); }
+  });
+
+  await step('channel tabs: a chip pressed during a snapshot refresh stays: the refresh of the old list, on its way or held behind the pill, does not take it back', async () => {
+    const p = await ctOpen();
+    const pressed = () => p.$$eval('#ytc-chs>.fx-ch', a => a.map(e => e.getAttribute('aria-pressed') === 'true'));
+    // A snapshot old enough to refresh, and that refresh already on its way as a hover prefetch.
+    const refreshing = async () => {
+      await p.goto('https://www.youtube.com/playlist?list=PL_pGtHsOvhtxX3WHo-Hi268L78XBziem_', { waitUntil: 'commit' });
+      await p.waitForSelector('#ytc-list .c:not(.sk)');
+      await p.waitForTimeout(1100);
+      await p.evaluate(h => { const a = document.createElement('a'); a.id = 'e2e-ch'; a.href = h; a.textContent = 'channel'; a.style.cssText = 'position:fixed;left:300px;top:70px;z-index:99;color:#fff'; document.body.append(a); }, `/channel/${CT_SKY}`);
+      CTX.delay = { videos: 900 };
+      await p.hover('#e2e-ch');
+      await p.waitForTimeout(150);
+      await p.click('#e2e-ch');
+      await p.waitForSelector('#ytc-cs-1');
+    };
+    try {
+      await p.evaluate(() => sessionStorage.setItem('ytc:bgage', '1000'));
+      await refreshing();
+      await p.click('#ytc-cs-1');
+      await p.waitForFunction(() => document.querySelector('#ytc-cs-1[aria-pressed=true]') && document.querySelector('#ytc-list .c:not(.sk)'));
+      await p.waitForTimeout(1100); // the refresh lands
+      await p.waitForFunction(() => !document.querySelector('#ytc-chs .fx-pg'));
+      assert.deepEqual(await pressed(), [false, true, false], 'Popular stays');
+      assert.equal(await p.locator('#ytc-list .c.sk').count(), 0);
+      // Scrolled past the swap limit, the refresh is held behind the pill: a chip ends that too.
+      await p.click('#ytc-cs-0');
+      await p.waitForTimeout(100);
+      await refreshing();
+      await p.setViewportSize({ width: 1400, height: 500 });
+      await p.evaluate(() => scrollTo(0, 500));
+      await p.waitForFunction(() => document.querySelector('#ytc-pill :is(a,button)') || document.getElementById('ytc-pill')?.children.length, null, { timeout: 4000 });
+      await p.click('#ytc-cs-1', { force: true }).catch(() => {});
+      await p.evaluate(() => document.getElementById('ytc-cs-1')?.click());
+      await p.waitForFunction(() => document.querySelector('#ytc-cs-1[aria-pressed=true]') && document.querySelector('#ytc-list .c:not(.sk)'));
+      assert.equal(await p.evaluate(() => document.getElementById('ytc-pill').children.length), 0, 'no New videos pill for the old list');
+      assert.deepEqual(p.errs, []);
+    } finally { CTX.delay = {}; await p.close(); }
+  });
+
+  await step('channel tabs: the lists set aside go when leaving for Home or Search (a video keeps them)', async () => {
+    const p = await ctOpen();
+    const tabs = async () => { await p.click('#ytc-ct-shorts'); await ctLand(p); await p.waitForFunction(() => document.querySelector('#ytc-list.sh'));  };
+    const held = () => ctBrowses();
+    try {
+      await tabs();
+      // A video and back: Videos still from memory.
+      await p.click('#ytc-list .c a.t');
+      await p.waitForFunction(() => location.pathname === '/watch');
+      await p.goBack({ waitUntil: 'commit' });
+      await p.waitForFunction(() => /\/shorts$/.test(location.pathname) && document.querySelector('#ytc-list.sh .c:not(.sk)'));
+      let n = held();
+      await p.click('#ytc-ct-videos');
+      await ctLand(p);
+      assert.equal(held(), n, 'kept across a video');
+      await p.click('#ytc-ct-shorts');
+      assert.equal(held(), n);
+      // Home and back: the tab on screen comes back from its saved page, the one set aside asks again.
+      await p.mouse.move(2, 2);
+      await p.click('#ytc-nav-home');
+      await p.waitForFunction(() => location.pathname === '/');
+      await p.goBack({ waitUntil: 'commit' });
+      await p.waitForFunction(() => /\/shorts$/.test(location.pathname) && document.querySelector('#ytc-list.sh .c:not(.sk)'));
+      n = held();
+      await p.click('#ytc-ct-videos');
+      await p.waitForFunction(() => !document.querySelector('#ytc-list.sh') && document.querySelector('#ytc-list .c:not(.sk)'));
+      assert.equal(held(), n + 1, 'gone after Home');
+      await p.close();
+      // The same for Search.
+      const q = await ctOpen();
+      await q.click('#ytc-ct-shorts');
+      await ctLand(q);
+      // (By a link: a search typed into the box would stay in the shared profile's history, which later steps count.)
+      await q.evaluate(() => { const a = document.createElement('a'); a.id = 'e2e-s'; a.href = '/results?search_query=roblox'; a.textContent = 'search'; a.style.cssText = 'position:fixed;left:300px;top:70px;z-index:99;color:#fff'; document.body.append(a); });
+      await q.click('#e2e-s');
+      await q.waitForFunction(() => location.pathname === '/results');
+      await q.goBack({ waitUntil: 'commit' });
+      await q.waitForFunction(() => /\/shorts$/.test(location.pathname) && document.querySelector('#ytc-list.sh .c:not(.sk)'));
+      n = held();
+      await q.click('#ytc-ct-videos');
+      await q.waitForFunction(() => !document.querySelector('#ytc-list.sh') && document.querySelector('#ytc-list .c:not(.sk)'));
+      assert.equal(held(), n + 1, 'gone after Search');
+      await q.close();
+    } finally { if (!p.isClosed()) await p.close(); }
+  });
+
+  await step('channel tabs: a long name with no spaces wraps instead of running off the page', async () => {
+    CTX.patch = j => { j.metadata.channelMetadataRenderer.title = 'W'.repeat(120); if (j.header?.pageHeaderRenderer) j.header.pageHeaderRenderer.pageTitle = 'W'.repeat(120); };
+    const p = await ctOpen();
+    try {
+      for (const w of [1400, 480]) {
+        await p.setViewportSize({ width: w, height: 800 });
+        const v = await p.evaluate(() => { const r = document.querySelector('.ch h1').getBoundingClientRect(), g = document.querySelector('#ytc-list').getBoundingClientRect(); return { right: r.right, grid: g.right, page: document.documentElement.scrollWidth - innerWidth }; });
+        assert.ok(v.right <= v.grid + 1 && v.page <= 0, `${w}: ${JSON.stringify(v)}`);
+      }
+    } finally { CTX.patch = null; await p.close(); }
+  });
+
+  await step('channel tabs: 480 px window: the row scrolls sideways, the page does not', async () => {
+    const p = await ctOpen(`https://www.youtube.com/channel/${CT_SKY}`, 480, 900);
+    try {
+      assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no sideways page');
+      assert.ok(await p.$eval('.cht', e => e.scrollWidth > e.clientWidth || e.clientWidth <= innerWidth));
+      await ctShot(p, 'channel-tabs-videos-480');
+      await p.click('#ytc-ct-shorts');
+      await ctLand(p);
+      await ctShot(p, 'channel-tabs-shorts-480');
+      assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    } finally { await p.close(); }
   });
 
   await step('playlist page', async () => {
@@ -2838,7 +3560,7 @@ chrome.runtime.onMessage.addListener(m => {
     const mk = await page.evaluate(() => new Promise(res => requestAnimationFrame(() => requestAnimationFrame(() => { const m = document.querySelector('#ytc-mpre > i.pmk'); res({ ok: !!m, run: m ? m.getAnimations().map(a => a.transitionProperty) : [] }); }))));
     assert.ok(mk.ok && mk.run.includes('clip-path'), 'the selection mark slides ' + JSON.stringify(mk));
     await page.waitForTimeout(450);
-    const markOn = () => page.evaluate(() => { const m = document.querySelector('#ytc-mpre > i.pmk'), b = document.querySelector('#ytc-mpre button.on'), s = document.getElementById('ytc-mpre').getBoundingClientRect(), r = b.getBoundingClientRect(), v = (c => { const v = /inset\(([^)]*?)(?: round [^)]*)?\)/.exec(c)[1].trim().split(/\s+/).map(parseFloat); return [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]]; })(getComputedStyle(m).clipPath); return { dl: v[3] - (r.left - s.left), dt: v[0] - (r.top - s.top), dw: (s.width - v[1] - v[3]) - r.width, label: b.textContent, run: m.getAnimations().length }; });
+    const markOn = () => page.evaluate(() => { const m = document.querySelector('#ytc-mpre > i.pmk'), b = document.querySelector('#ytc-mpre button.on'), s = document.getElementById('ytc-mpre').getBoundingClientRect(), r = b.getBoundingClientRect(), v = (c => { const v = /inset\((.*?)(?: round [^)]*)?\)$/.exec(c)[1].match(/calc\([^)]*\)|\S+/g).map(x => x.startsWith('calc') ? m.offsetWidth - parseFloat(x.replace('calc(100% - ', '')) : parseFloat(x)); return [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]]; })(getComputedStyle(m).clipPath); return { dl: v[3] - (r.left - s.left), dt: v[0] - (r.top - s.top), dw: (s.width - v[1] - v[3]) - r.width, label: b.textContent, run: m.getAnimations().length }; });
     let mo = await markOn();
     assert.ok(Math.abs(mo.dl) < 0.6 && Math.abs(mo.dt) < 0.6 && Math.abs(mo.dw) < 0.6 && mo.label === '1.5×', 'the mark lands exactly on 1.5 ' + JSON.stringify(mo));
     await page.keyboard.press('>');
@@ -5536,7 +6258,7 @@ chrome.runtime.onMessage.addListener(m => {
     const pr = await pill;
     assert.ok(pr && pr.ok && pr.run.includes('clip-path'), 'the Top/Newest pill slides ' + JSON.stringify(pr));
     await page.waitForTimeout(450);
-    const pillOn = await page.evaluate(() => { const s = document.getElementById('ytc-csort'), m = s.querySelector(':scope > i.ycsk'), b = document.getElementById('ytc-cs1'), a = s.getBoundingClientRect(), r = b.getBoundingClientRect(), v = (c => { const v = /inset\(([^)]*?)(?: round [^)]*)?\)/.exec(c)[1].trim().split(/\s+/).map(parseFloat); return [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]]; })(getComputedStyle(m).clipPath); return { dl: v[3] - (r.left - a.left), dw: (a.width - v[1] - v[3]) - r.width, dt: v[0] - (r.top - a.top), fg: getComputedStyle(b).color }; });
+    const pillOn = await page.evaluate(() => { const s = document.getElementById('ytc-csort'), m = s.querySelector(':scope > i.ycsk'), b = document.getElementById('ytc-cs1'), a = s.getBoundingClientRect(), r = b.getBoundingClientRect(), v = (c => { const v = /inset\((.*?)(?: round [^)]*)?\)$/.exec(c)[1].match(/calc\([^)]*\)|\S+/g).map(x => x.startsWith('calc') ? m.offsetWidth - parseFloat(x.replace('calc(100% - ', '')) : parseFloat(x)); return [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]]; })(getComputedStyle(m).clipPath); return { dl: v[3] - (r.left - a.left), dw: (a.width - v[1] - v[3]) - r.width, dt: v[0] - (r.top - a.top), fg: getComputedStyle(b).color }; });
     assert.ok(Math.abs(pillOn.dl) < 0.6 && Math.abs(pillOn.dw) < 0.6 && Math.abs(pillOn.dt) < 0.6, 'the pill lands exactly on Newest ' + JSON.stringify(pillOn));
     await page.waitForFunction(() => document.querySelector('#ytc-cm-list > .ycm .yca')?.textContent === '@newest-e2e');
     assert.ok(calls('next').some(a => a.body.continuation === T_NEW));
@@ -5872,7 +6594,7 @@ chrome.runtime.onMessage.addListener(m => {
     const cm = await chMark;
     assert.ok(cm && cm.ok && cm.mk === '1' && cm.run.includes('clip-path'), 'the chapter highlight slides to the new row ' + JSON.stringify(cm));
     await page.waitForTimeout(550);
-    const onRow = () => page.evaluate(() => { const ol = document.getElementById('ytc-chol'), m = ol.querySelector(':scope > i.ychk'), a = ol.querySelector('li.on a'), s = ol.getBoundingClientRect(), r = a.getBoundingClientRect(), v = (c => { const v = /inset\(([^)]*?)(?: round [^)]*)?\)/.exec(c)[1].trim().split(/\s+/).map(parseFloat); return [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]]; })(getComputedStyle(m).clipPath); return { dt: v[0] - (r.top - s.top + ol.scrollTop - ol.clientTop), dl: v[3] - (r.left - s.left - ol.clientLeft), dh: (parseFloat(m.style.height) - v[0] - v[2]) - r.height, bg: getComputedStyle(a).backgroundColor, run: m.getAnimations().length }; });
+    const onRow = () => page.evaluate(() => { const ol = document.getElementById('ytc-chol'), m = ol.querySelector(':scope > i.ychk'), a = ol.querySelector('li.on a'), s = ol.getBoundingClientRect(), r = a.getBoundingClientRect(), v = (c => { const v = /inset\((.*?)(?: round [^)]*)?\)$/.exec(c)[1].match(/calc\([^)]*\)|\S+/g).map(x => x.startsWith('calc') ? m.offsetWidth - parseFloat(x.replace('calc(100% - ', '')) : parseFloat(x)); return [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]]; })(getComputedStyle(m).clipPath); return { dt: v[0] - (r.top - s.top + ol.scrollTop - ol.clientTop), dl: v[3] - (r.left - s.left - ol.clientLeft), dh: (parseFloat(m.style.height) - v[0] - v[2]) - r.height, bg: getComputedStyle(a).backgroundColor, run: m.getAnimations().length }; });
     let orow = await onRow();
     assert.ok(Math.abs(orow.dt) < 0.6 && Math.abs(orow.dl) < 0.6 && Math.abs(orow.dh) < 0.6 && orow.run === 0 && orow.bg === 'rgba(0, 0, 0, 0)', 'the highlight lands exactly on the current row ' + JSON.stringify(orow));
     if (process.env.YTC_SHOTS) {
@@ -7100,7 +7822,7 @@ chrome.runtime.onMessage.addListener(m => {
     const b = apiCount('browse');
     await page.click('#ytc-filters [data-act=fx-topic][data-arg="-1"]');
     await page.waitForFunction(first => document.querySelector('#ytc-list .c')?.dataset.v === first, allIds[0]);
-    assert.equal(apiCount('browse'), b, 'All from memory');
+    assert.equal(apiCount('browse'), b, 'All from memory; extra: ' + JSON.stringify(log.api.filter(a => a.ep === 'browse' && !a.body?.continuation).slice(b).map(a => [a.body.browseId, a.body.params])));
     // Editor: move Podcasts earlier, hide Gaming; remembered across a reload.
     await page.hover('#ytc-filters .fx-plus');
     await page.waitForTimeout(300);
@@ -7831,7 +8553,7 @@ chrome.runtime.onMessage.addListener(m => {
     const plm = await plMark;
     assert.ok(plm && plm.ok && plm.run.includes('clip-path'), 'the current-row mark springs from the previous row ' + JSON.stringify(plm));
     await page.waitForTimeout(600);
-    const plOn = await page.evaluate(() => { const s = document.getElementById('ytc-pll'), m = s.querySelector(':scope > i.plk'), b = s.querySelector('.pli.cur'), a = s.getBoundingClientRect(), r = b.getBoundingClientRect(), v = (c => { const v = /inset\(([^)]*?)(?: round [^)]*)?\)/.exec(c)[1].trim().split(/\s+/).map(parseFloat); return [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]]; })(getComputedStyle(m).clipPath); return { dt: v[0] - (r.top - a.top + s.scrollTop), dh: (parseFloat(m.style.height) - v[0] - v[2]) - r.height, bg: getComputedStyle(b).backgroundColor }; });
+    const plOn = await page.evaluate(() => { const s = document.getElementById('ytc-pll'), m = s.querySelector(':scope > i.plk'), b = s.querySelector('.pli.cur'), a = s.getBoundingClientRect(), r = b.getBoundingClientRect(), v = (c => { const v = /inset\((.*?)(?: round [^)]*)?\)$/.exec(c)[1].match(/calc\([^)]*\)|\S+/g).map(x => x.startsWith('calc') ? m.offsetWidth - parseFloat(x.replace('calc(100% - ', '')) : parseFloat(x)); return [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]]; })(getComputedStyle(m).clipPath); return { dt: v[0] - (r.top - a.top + s.scrollTop), dh: (parseFloat(m.style.height) - v[0] - v[2]) - r.height, bg: getComputedStyle(b).backgroundColor }; });
     assert.ok(Math.abs(plOn.dt) < 0.6 && Math.abs(plOn.dh) < 0.6 && plOn.bg === 'rgba(0, 0, 0, 0)', 'the mark lands on the new current row ' + JSON.stringify(plOn));
     assert.ok(page.url().includes(`v=${items[3]}&list=${PL}`));
     // Without a playlist: Autoplay counts down (YouTube's countDownSecs), Cancel stays.
@@ -9704,6 +10426,199 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
     await tab.waitForFunction(() => /Saved/.test(document.querySelector('#popup-status').textContent));
     await tab.close(); await pop.close();
     await sw.evaluate(k => { if (k === undefined) return chrome.storage.local.remove('ytcVoiceKeyV1'); return chrome.storage.local.set({ ytcVoiceKeyV1: k }); }, before.ytcVoiceKeyV1);
+  });
+
+  await step('TV channel tabs (960×540 and 1920×1080): first card focused by default, ↑ to the tabs, ←/→, OK, ↓ back to the cards; selected tab a quiet surface, the white frame, no motion, in the safe area', async () => {
+    const tv = await tvOpen();
+    const focus = () => tv.evaluate(() => { const a = document.activeElement; return a.id || (a.matches('#ytc-list a.t') ? 'card' : a.tagName); });
+    try {
+      for (const [W, H] of TVSIZES) {
+        await tv.setViewportSize({ width: W, height: H });
+        await tvGo(tv, 'code', `https://www.youtube.com/channel/${CT_SKY}`);
+        await tv.waitForFunction(() => document.activeElement && document.activeElement.matches('#ytc-list a.t'), null, { timeout: 5000 });
+        await tv.waitForTimeout(200);
+        assert.deepEqual(await tvAudit(tv, `channel tabs ${W}`), []);
+        assert.deepEqual((await tv.$$eval('#ytc-cht .ct', a => a.map(e => e.textContent))), ['Videos', 'Shorts', 'Live', 'Shows', 'Podcasts', 'Playlists']);
+        await tvShot(tv, 'channel-tabs-videos');
+        // Sizes per the TV reference; a quiet surface on the selected tab, not an accent, no indicator mark.
+        const look = await tv.evaluate(() => {
+          const s = getComputedStyle(document.querySelector('#ytc-ct-videos')), o = getComputedStyle(document.querySelector('#ytc-ct-shorts')), rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+          return { sel: s.backgroundColor, other: o.backgroundColor, fs: parseFloat(s.fontSize) / rem, h: document.querySelector('#ytc-ct-videos').getBoundingClientRect().height / rem, u: getComputedStyle(document.querySelector('#ytc-ct-videos u')).display };
+        });
+        assert.equal(look.sel, 'rgb(48, 48, 48)');
+        assert.equal(look.other, 'rgba(0, 0, 0, 0)');
+        assert.equal(look.fs, 0.875, 'tab text 21 px at 1080p');
+        assert.equal(look.h, 2);
+        assert.equal(look.u, 'none');
+        // Left edge: header, tabs and grid on one line.
+        const edges = await tv.evaluate(() => [document.querySelector('.ch').getBoundingClientRect().left, document.querySelector('#ytc-ct-videos').getBoundingClientRect().left, document.querySelector('#ytc-list .c').getBoundingClientRect().left]);
+        assert.ok(edges.every(x => Math.abs(x - edges[0]) < 0.5), `one left edge: ${edges}`);
+        // One row: chips and tabs on one line, the chips on the grid's right edge.
+        const row = await tv.evaluate(() => { const r = s => document.querySelector(s).getBoundingClientRect(), c = [...document.querySelectorAll('#ytc-list .c')].slice(0, 5).pop(); return { tab: r('#ytc-ct-videos').top, chip: r('#ytc-cs-0').top, h: r('#ytc-cs-0').height, tabH: r('#ytc-ct-videos').height, right: r('#ytc-cs-2').right, grid: c.getBoundingClientRect().right }; });
+        assert.ok(Math.abs(row.tab - row.chip) < 0.5 && Math.abs(row.h - row.tabH) < 0.5, JSON.stringify(row));
+        assert.ok(Math.abs(row.right - row.grid) < 0.5, JSON.stringify(row));
+        // ↑ from the first row reaches the tabs, ←/→ walk them, each with the white frame.
+        await tv.keyboard.press('ArrowUp');
+        assert.equal(await focus(), 'ytc-ct-videos', '↑ to the tabs');
+        await tv.waitForTimeout(100);
+        assert.deepEqual(await tvAudit(tv, `channel tabs focus ${W}`), []);
+        const ring = await tv.evaluate(() => { const s = getComputedStyle(document.activeElement); return [s.outlineStyle, s.outlineColor, s.transitionDuration]; });
+        assert.deepEqual(ring.slice(0, 2), ['solid', 'rgb(241, 241, 241)']);
+        await tvShot(tv, 'channel-tabs-focus');
+        // Subscribe, at the header's right end: ↑ from the selected tab, ↓ back to it.
+        await tv.keyboard.press('ArrowUp');
+        assert.ok(await tv.evaluate(() => document.activeElement.matches('#ytc-chsub button')), `↑ to Subscribe: ${await focus()}`);
+        await tv.waitForTimeout(100);
+        assert.deepEqual(await tvAudit(tv, `channel tabs Subscribe ${W}`), []);
+        await tvShot(tv, 'channel-tabs-subscribe');
+        await tv.keyboard.press('ArrowDown');
+        assert.equal(await focus(), 'ytc-ct-videos', '↓ back to the selected tab');
+        // ↑ from every column of the first row: the selected tab.
+        for (let col = 4; col >= 0; col--) {
+          await tv.locator('#ytc-list a.t').nth(col).focus();
+          await tv.keyboard.press('ArrowUp');
+          assert.equal(await focus(), 'ytc-ct-videos', `↑ from column ${col + 1}`);
+        }
+        // The first row's top, the page's height budget.
+        const firstRow = await tv.evaluate(() => { const rem = parseFloat(getComputedStyle(document.documentElement).fontSize), t = document.querySelector('#ytc-list .c').getBoundingClientRect().top + scrollY; return { px: t, rem: t / rem }; });
+        console.log(`     (TV channel page at ${W}×${H}: first card row at ${firstRow.px.toFixed(1)} px, ${firstRow.rem.toFixed(3)} rem)`);
+        await tv.keyboard.press('ArrowRight');
+        assert.equal(await focus(), 'ytc-ct-shorts');
+        await tv.keyboard.press('ArrowRight');
+        assert.equal(await focus(), 'ytc-ct-streams');
+        await tv.keyboard.press('ArrowLeft');
+        assert.equal(await focus(), 'ytc-ct-shorts');
+        // OK opens the tab; the focus stays on it; the cards are there.
+        await tv.keyboard.press('Enter');
+        await tv.waitForFunction(() => document.querySelector('#ytc-ct-shorts[aria-current=page]') && document.querySelector('#ytc-list.sh .c:not(.sk)'));
+        assert.equal(await focus(), 'ytc-ct-shorts');
+        await tv.waitForTimeout(200);
+        assert.deepEqual(await tvAudit(tv, `channel tabs shorts ${W}`), []);
+        await tvShot(tv, 'channel-tabs-shorts');
+        // ↓ back to the cards.
+        await tv.keyboard.press('ArrowDown');
+        assert.equal(await focus(), 'card');
+        await tv.waitForTimeout(100);
+        assert.deepEqual(await tvAudit(tv, `channel tabs shorts card ${W}`), []);
+        await tvShot(tv, 'channel-tabs-shorts-card');
+        // ↑ from the first row: the selected tab.
+        await tv.keyboard.press('ArrowUp');
+        assert.equal(await focus(), 'ytc-ct-shorts');
+        await tv.focus('#ytc-ct-playlists');
+        await tv.keyboard.press('ArrowRight');
+        assert.equal(await focus(), 'ytc-cs-0', '→ from the last tab to the chips');
+        await tv.focus('#ytc-ct-streams');
+        await tv.keyboard.press('Enter');
+        await tv.waitForFunction(() => document.querySelector('#ytc-list .c .th b.lv'));
+        await tv.waitForTimeout(150);
+        assert.deepEqual(await tvAudit(tv, `channel tabs live ${W}`), []);
+        await tvShot(tv, 'channel-tabs-live');
+        await tv.focus('#ytc-ct-playlists');
+        await tv.keyboard.press('Enter');
+        await tv.waitForFunction(() => document.querySelector('#ytc-list .plc'));
+        await tv.waitForTimeout(150);
+        assert.deepEqual(await tvAudit(tv, `channel tabs playlists ${W}`), []);
+        await tvShot(tv, 'channel-tabs-playlists');
+        // No motion on TV.
+        assert.equal(await tv.evaluate(() => document.getAnimations().filter(a => a.effect?.target?.closest?.('.chb')).length), 0);
+      }
+      assert.deepEqual(tv.errors, []);
+    } finally {
+      await tvClose(tv);
+    }
+  });
+
+  await step('TV channel tabs, edges (960×540 and 1920×1080): ↑ from all five columns of a tab without chips; ↓ from the row while a tab loads and on an empty tab stays put; a tab\'s answer keeps the focus on Subscribe; the scrim leaves the first row\'s ring alone without a description; a long name stays clear of Subscribe', async () => {
+    const tv = await tvOpen();
+    const focus = () => tv.evaluate(() => { const a = document.activeElement; return a.id || (a.matches('#ytc-list a.t') ? 'card' : a.closest('#ytc-chsub') ? 'SUBSCRIBE' : a.closest('#ytc-side') ? 'RAIL' : a.tagName); });
+    const home = () => tv.waitForFunction(() => document.activeElement && document.activeElement.matches('#ytc-list a.t'), null, { timeout: 5000 });
+    const ring = () => tv.evaluate(() => { const m = document.getElementById('ytc-main'), rem = parseFloat(getComputedStyle(document.documentElement).fontSize), c = document.querySelector('#ytc-list .c').getBoundingClientRect(), cs = getComputedStyle(document.querySelector('#ytc-list .c .th')); return { scrim: parseFloat(getComputedStyle(m).getPropertyValue('--scrim')), rowTop: c.top / rem, ringTop: (c.top - parseFloat(cs.outlineWidth) - parseFloat(cs.outlineOffset)) / rem, about: !!document.querySelector('.ch .about') }; });
+    try {
+      for (const [W, H] of TVSIZES) {
+        await tv.setViewportSize({ width: W, height: H });
+        // A tab without chips: Subscribe is all that lies over the last columns, and one press never reaches it.
+        await tvGo(tv, 'code', `https://www.youtube.com/channel/${CT_SKY}/shows`);
+        await home();
+        assert.equal(await tv.locator('#ytc-chs>*').count(), 0);
+        const ups = [];
+        for (let col = 0; col < 5; col++) {
+          await tv.locator('#ytc-list a.t').nth(col).focus();
+          await tv.keyboard.press('ArrowUp');
+          ups.push(await focus());
+        }
+        assert.deepEqual(ups, Array(5).fill('ytc-ct-shows'), `↑ per column at ${W}`);
+        await tv.keyboard.press('ArrowUp');
+        assert.equal(await focus(), 'SUBSCRIBE', 'and Subscribe takes a second ↑');
+        // ↓ from the row while a tab loads: nothing below can take the focus yet, and the rail is not "below".
+        CTX.delay = { streams: 800 };
+        await tv.focus('#ytc-ct-streams');
+        await tv.keyboard.press('Enter');
+        await tv.waitForSelector('#ytc-list .c.sk');
+        await tv.keyboard.press('ArrowDown');
+        assert.equal(await focus(), 'ytc-ct-streams', '↓ while it loads stays on the tab');
+        assert.equal(await tv.locator('#ytc-side :focus').count(), 0, 'the rail stays closed');
+        // ↑ to Subscribe while it loads; its answer comes: the focus stays there.
+        await tv.keyboard.press('ArrowUp');
+        assert.equal(await focus(), 'SUBSCRIBE');
+        await tv.keyboard.press('ArrowDown');
+        assert.equal(await focus(), 'ytc-ct-streams', '↓ from Subscribe while it loads: the tab');
+        await tv.keyboard.press('ArrowUp');
+        await tv.waitForSelector('#ytc-list .c .th b.lv');
+        await tv.waitForTimeout(400); // past the page's own focus check
+        assert.equal(await focus(), 'SUBSCRIBE', 'the answer leaves the focus on Subscribe');
+        CTX.delay = {};
+        // An empty tab: no stops below it.
+        CTX.patch = (j, seg) => { if (seg === 'podcasts') j.contents.twoColumnBrowseResultsRenderer.tabs.map(t => t.tabRenderer).find(t => t?.selected).content = { sectionListRenderer: { contents: [{ itemSectionRenderer: { contents: [{ messageRenderer: { text: { simpleText: 'This channel has no podcasts' } } }] } }] } }; };
+        await tv.focus('#ytc-ct-podcasts');
+        await tv.keyboard.press('Enter');
+        await tv.waitForFunction(() => /no podcasts/.test(document.querySelector('#ytc-list .empty')?.textContent || ''));
+        await tv.keyboard.press('ArrowDown');
+        assert.equal(await focus(), 'ytc-ct-podcasts', '↓ on an empty tab stays on the tab');
+        CTX.patch = null;
+        // With a description, and without: the scrim ends above the ring of the first row.
+        await tv.focus('#ytc-ct-videos');
+        await tv.keyboard.press('Enter');
+        await tv.waitForFunction(() => document.querySelector('#ytc-ct-videos[aria-current=page]') && document.querySelector('#ytc-list .c:not(.sk)'));
+        const withAbout = await ring();
+        assert.ok(withAbout.about && withAbout.ringTop >= withAbout.scrim, JSON.stringify(withAbout));
+        CTX.patch = j => { j.metadata.channelMetadataRenderer.description = ''; };
+        await tvGo(tv, 'code', `https://www.youtube.com/channel/${CT_SKY}`);
+        await home();
+        await tv.waitForTimeout(100);
+        const noAbout = await ring();
+        assert.ok(!noAbout.about && noAbout.ringTop >= noAbout.scrim, `no description: ${JSON.stringify(noAbout)}`);
+        console.log(`     (TV channel without a description at ${W}: first row ${noAbout.rowTop.toFixed(3)} rem, ring ${noAbout.ringTop.toFixed(3)} rem, scrim ${noAbout.scrim} rem)`);
+        assert.deepEqual(await tvAudit(tv, `channel no description ${W}`), []);
+        await tvShot(tv, 'channel-tabs-no-description');
+        // A long name with no spaces: it wraps, clear of Subscribe.
+        CTX.patch = j => { j.metadata.channelMetadataRenderer.title = 'W'.repeat(90); if (j.header?.pageHeaderRenderer) j.header.pageHeaderRenderer.pageTitle = 'W'.repeat(90); };
+        await tvGo(tv, 'code', `https://www.youtube.com/channel/${CT_SKY}`);
+        await home();
+        await tv.waitForSelector('#ytc-chsub button');
+        const long = await tv.evaluate(() => { const n = document.querySelector('.ch h1').getBoundingClientRect(), b = document.querySelector('#ytc-chsub button').getBoundingClientRect(); return { nameRight: n.right, subLeft: b.left, page: document.documentElement.scrollWidth - innerWidth }; });
+        assert.ok(long.nameRight <= long.subLeft && long.page <= 0, JSON.stringify(long));
+        assert.deepEqual(await tvAudit(tv, `channel long name ${W}`), []);
+        await tvShot(tv, 'channel-tabs-long-name');
+        CTX.patch = null;
+      }
+      // Signed in: the same answer leaves the focus on the real button.
+      CTX.delay = { streams: 700 };
+      await tvGo(tv, 'signed', `https://www.youtube.com/channel/${CT_SKY}/shows`);
+      await home();
+      await tv.waitForSelector('#ytc-sub-b');
+      await tv.focus('#ytc-ct-streams');
+      await tv.keyboard.press('Enter');
+      await tv.waitForSelector('#ytc-list .c.sk');
+      await tv.keyboard.press('ArrowUp');
+      assert.equal(await focus(), 'ytc-sub-b');
+      await tv.waitForSelector('#ytc-list .c .th b.lv');
+      await tv.waitForTimeout(400);
+      assert.equal(await focus(), 'ytc-sub-b', 'signed in too');
+      assert.deepEqual(tv.errors, []);
+    } finally {
+      CTX.delay = {}; CTX.patch = null;
+      await tvClose(tv);
+    }
   });
 
   await step('no live network traffic; no YouTube player JS or embed ever requested', async () => {

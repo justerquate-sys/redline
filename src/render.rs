@@ -2,8 +2,8 @@
 //! through `esc`; URLs are validated in `parse.rs`/`util.rs` before they get
 //! here. Each region is written with one `innerHTML`.
 
-use crate::parse::{ChannelCard, ChannelPage, Item, Link, PlaylistCard, PlaylistPage, Run, Stats, Video, Watch};
-use crate::route::Route;
+use crate::parse::{ChannelCard, ChannelPage, ChannelTabLink, Item, Link, PlaylistCard, PlaylistPage, Run, SortOpt, Stats, Video, Watch};
+use crate::route::{ChannelTab, Route};
 use crate::util::{esc, esc_into, is_video_id};
 
 pub const MAIN: &str = "ytc-main";
@@ -95,6 +95,14 @@ pub const COMMENTS: &str = "ytc-comments";
 /// Watch page: the playlist panel and the Up next header above the related list.
 pub const PLAYLIST: &str = "ytc-pl";
 pub const UPNEXT: &str = "ytc-up";
+/// Channel page: the header, the tab row (the scope of its sliding indicator) and the sort chips.
+pub const CH_HEAD: &str = "ytc-chd";
+pub const CH_TABS: &str = "ytc-cht";
+/// The box the tab row scrolls sideways in.
+pub const CH_ROW: &str = "ytc-chr";
+pub const CH_SORT: &str = "ytc-chs";
+/// The indicator under the selected tab (`bridge::mark_slide`).
+pub const CH_MARK: &str = "chk";
 
 // Sidebar: these links in this order, without Shorts
 // (never shown in the client). 22px outline icons; `g` + the key in GO opens each.
@@ -262,6 +270,77 @@ pub fn shell(route: &Route, _url: &str, main: Option<&str>) -> String {
 /// A card placeholder with the final card's geometry (thumbnail + two title
 /// lines + two metadata lines), so nothing moves when the cards arrive.
 const SK_CARD: &str = "<div class=\"c sk\"><div class=\"th\"></div><div class=\"d\"><div class=\"t\"><i></i><i class=\"s\"></i></div><div class=\"m\"><i></i></div><div class=\"m\"><i class=\"s\"></i></div></div></div>";
+/// The same on a channel's own tabs: its cards name no channel, so one metadata line.
+const SK_CHAN_CARD: &str = "<div class=\"c sk\"><div class=\"th\"></div><div class=\"d\"><div class=\"t\"><i></i><i class=\"s\"></i></div><div class=\"m\"><i></i></div></div></div>";
+
+/// The grid's class for a channel tab: the cards' shape follows what the tab holds.
+pub fn grid_class(tab: ChannelTab) -> &'static str {
+    match tab {
+        ChannelTab::Shorts => "grid sh",
+        // (YouTube's podcast art is mostly square; a release's is a 16:9 frame with its cover in the middle.)
+        ChannelTab::Podcasts => "grid sq",
+        _ => "grid",
+    }
+}
+
+/// Skeleton cards of a channel tab (the grid's class gives them their shape).
+pub fn channel_skeleton(n: usize) -> String {
+    SK_CHAN_CARD.repeat(n)
+}
+
+/// Skeleton sort chips while a tab that usually has them loads, so the cards do not move when they arrive.
+pub fn sort_skeleton(tab: ChannelTab) -> String {
+    match tab {
+        ChannelTab::Videos | ChannelTab::Shorts | ChannelTab::Streams | ChannelTab::Playlists => "<span class=\"fx-ch sk\" aria-hidden=\"true\"><i></i></span>".repeat(3),
+        _ => String::new(),
+    }
+}
+
+/// The id of a tab's link.
+pub fn ch_tab_id(tab: ChannelTab) -> String {
+    format!("ytc-ct-{}", tab.slug())
+}
+
+/// The id of a sort chip.
+pub fn ch_sort_id(i: usize) -> String {
+    format!("ytc-cs-{i}")
+}
+
+/// The tab row: YouTube's own titles, plain links (so middle-click, hover prefetch and focus work as on any link).
+fn channel_tab_row(out: &mut String, nav: &ChannelNav) {
+    out.push_str("<div class=\"chb\"><nav id=\"");
+    out.push_str(CH_ROW);
+    out.push_str("\" class=\"cht\" aria-label=\"Channel\"><div id=\"");
+    out.push_str(CH_TABS);
+    out.push_str("\" class=\"chl\">");
+    for t in &nav.tabs {
+        out.push_str("<a id=\"");
+        out.push_str(&ch_tab_id(t.tab));
+        out.push_str("\" class=\"ct\" href=\"");
+        esc_into(out, &nav.path);
+        out.push('/');
+        out.push_str(t.tab.slug());
+        out.push_str(if t.tab == nav.tab { "\" aria-current=\"page\"><span>" } else { "\"><span>" });
+        esc_into(out, &t.title);
+        out.push_str("</span><u></u></a>");
+    }
+    out.push_str("</div></nav></div>");
+}
+
+/// The sort chips of a tab (no chips when YouTube offers no choice).
+pub fn channel_sorts(sorts: &[SortOpt]) -> String {
+    let mut out = String::new();
+    for (i, o) in sorts.iter().enumerate() {
+        out.push_str("<button type=\"button\" id=\"");
+        out.push_str(&ch_sort_id(i));
+        out.push_str("\" class=\"fx-ch\" data-act=\"ch-sort\" data-arg=\"");
+        out.push_str(&i.to_string());
+        out.push_str(if o.selected { "\" aria-pressed=\"true\">" } else { "\" aria-pressed=\"false\">" });
+        esc_into(&mut out, &o.label);
+        out.push_str("</button>");
+    }
+    out
+}
 
 /// The heading every feed page and its skeleton start with: same height
 /// either way (the filter slot keeps it even without a title).
@@ -286,7 +365,19 @@ pub fn skeleton(route: &Route) -> String {
         Route::Playlists => feed_heading(&mut s, "Playlists"),
         Route::Search { q, .. } => feed_heading(&mut s, &format!("Results for {q}")),
         Route::Playlist { list } if list == "WL" => feed_heading(&mut s, "Watch later"),
-        Route::Channel { .. } => s.push_str("<div class=\"ch sk\"><div class=\"av lg\"></div><div><div class=\"l w30\"></div><div class=\"l w60\"></div></div></div>"),
+        Route::Channel { tab, .. } => {
+            s.clear();
+            s.push_str("<section class=\"feed chp\"><div class=\"ch sk\"><div class=\"av lg\"></div><div><div class=\"l w30\"></div><div class=\"l w60\"></div></div></div>");
+            // The tab row and the chips in their final height; the channel's real tabs are not known yet.
+            s.push_str("<div class=\"chb sk\"><div class=\"cht\"><div class=\"chl\"><span class=\"ct\"><i></i></span><span class=\"ct\"><i></i></span><span class=\"ct\"><i></i></span></div></div></div><div class=\"chs\">");
+            s.push_str(&sort_skeleton(*tab));
+            s.push_str("</div><div class=\"");
+            s.push_str(grid_class(*tab));
+            s.push_str("\">");
+            s.push_str(&channel_skeleton(12));
+            s.push_str("</div></section>");
+            return s;
+        }
         _ => s.push_str("<div class=\"fh\"><div class=\"sk l w30\"></div></div>"),
     }
     s.push_str("<div class=\"grid\">");
@@ -308,6 +399,8 @@ pub enum Lay {
     Grid,
     /// The watch page's related column (thumbnails 46 % of the column: 168–204 CSS px).
     Rel,
+    /// A channel's Shorts tab: vertical cards, more of them per row.
+    Shorts,
 }
 
 impl Lay {
@@ -316,6 +409,7 @@ impl Lay {
             return match self {
                 Lay::Grid => "18.4vw",
                 Lay::Rel => "14.2vw",
+                Lay::Shorts => "12.5vw",
             };
         }
         match self {
@@ -325,6 +419,7 @@ impl Lay {
             // (measured on i.ytimg.com, 3 Nov 2026).
             Lay::Grid => GRID_SIZES,
             Lay::Rel => "(max-width:1640px) 168px,204px",
+            Lay::Shorts => "(max-width:560px) 50vw,(max-width:950px) 33vw,220px",
         }
     }
 }
@@ -346,7 +441,7 @@ impl ImgPlan {
     /// First screen of a page; `cols` = grid columns at the current width.
     pub fn first(lay: Lay, cols: usize) -> ImgPlan {
         match lay {
-            Lay::Grid => ImgPlan { lay, eager: (cols * 2).clamp(4, 16), high: cols.clamp(1, 8) },
+            Lay::Grid | Lay::Shorts => ImgPlan { lay, eager: (cols * 2).clamp(4, 16), high: cols.clamp(1, 8) },
             Lay::Rel => ImgPlan { lay, eager: 6, high: 3 },
         }
     }
@@ -374,6 +469,24 @@ pub const TV_COLS: usize = 5;
 /// Grid columns of a browsing page: the TV app's fixed grid, or the desktop's at width `w`.
 pub fn page_cols(w: f64, tv: bool) -> usize {
     if tv { TV_COLS } else { grid_cols(w) }
+}
+
+/// Vertical cards per row on the TV app (client.css `html[data-ytc-tv] .grid.sh`).
+pub const TV_SHORTS_COLS: usize = 7;
+
+/// Columns of a layout at width `w` (mirrors `.grid.sh` in client.css for the Shorts tab).
+pub fn lay_cols(lay: Lay, w: f64, tv: bool) -> usize {
+    match (lay, tv) {
+        (Lay::Shorts, true) => TV_SHORTS_COLS,
+        (Lay::Shorts, false) => match w {
+            w if w > 1700.0 => 7,
+            w if w > 1300.0 => 6,
+            w if w > 950.0 => 5,
+            w if w > 560.0 => 3,
+            _ => 2,
+        },
+        _ => page_cols(w, tv),
+    }
 }
 
 /// Cards per DOM write on a fixed grid of `cols`: `chunk`, plus what completes the last row once `shown` cards
@@ -453,7 +566,15 @@ fn video_card(out: &mut String, v: &Video, plan: ImgPlan, i: usize) {
     out.push_str("\"><a class=\"th\" href=\"");
     out.push_str(&href);
     out.push_str("\" tabindex=\"-1\">");
-    video_img(out, v, plan, i);
+    match v.art.as_deref().or(v.thumb.as_deref()).filter(|_| plan.lay == Lay::Shorts) {
+        Some(art) => {
+            out.push_str("<img src=\"");
+            esc_into(out, art);
+            out.push('"');
+            img_tail(out, i < plan.eager, i < plan.high);
+        }
+        None => video_img(out, v, plan, i),
+    }
     if v.live {
         out.push_str("<b class=\"lv\">LIVE</b>");
     } else if !v.duration.is_empty() {
@@ -523,17 +644,22 @@ fn playlist_card(out: &mut String, p: &PlaylistCard, eager: bool) {
     out.push_str("\">");
     esc_into(out, &p.title);
     out.push_str("</a><div class=\"m\">");
+    let kind = if p.kind.is_empty() { "Playlist" } else { p.kind };
     match &p.channel_href {
         Some(h) if !p.channel.is_empty() => {
             out.push_str("<a href=\"");
             esc_into(out, h);
             out.push_str("\">");
             esc_into(out, &p.channel);
-            out.push_str("</a> · Playlist");
+            out.push_str("</a> · ");
+            out.push_str(kind);
         }
         _ => {
             esc_into(out, &p.channel);
-            out.push_str(if p.channel.is_empty() { "Playlist" } else { " · Playlist" });
+            if !p.channel.is_empty() {
+                out.push_str(" · ");
+            }
+            out.push_str(kind);
         }
     }
     out.push_str("</div></div></div>");
@@ -575,10 +701,20 @@ fn more(out: &mut String, cont: bool) {
 
 /// The non-card part of a feed page (kept with snapshots so a page can be
 /// repainted from data, never from stored HTML).
+/// A channel page's tabs and the state of the tab on screen.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ChannelNav {
+    /// The channel's own page, without the tab.
+    pub path: String,
+    pub tab: ChannelTab,
+    pub tabs: Vec<ChannelTabLink>,
+    pub sorts: Vec<SortOpt>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Head {
     Feed { title: String },
-    Channel { title: String, avatar: Option<String>, meta: Vec<String>, about: String },
+    Channel { title: String, avatar: Option<String>, meta: Vec<String>, about: String, nav: ChannelNav },
     Playlist { title: String, meta: Vec<String> },
     /// Watch later in the order YouTube sent it: its newest-first sort failed (a note and Try again).
     Unsorted { title: String },
@@ -590,21 +726,32 @@ impl Head {
             Head::Feed { title } | Head::Channel { title, .. } | Head::Playlist { title, .. } | Head::Unsorted { title } => title,
         }
     }
+
+    pub fn nav(&self) -> Option<&ChannelNav> {
+        if let Head::Channel { nav, .. } = self { Some(nav) } else { None }
+    }
+
+    pub fn nav_mut(&mut self) -> Option<&mut ChannelNav> {
+        if let Head::Channel { nav, .. } = self { Some(nav) } else { None }
+    }
 }
 
 /// A feed page: header, the first `items` (already chosen by the caller), the
 /// continuation sentinel. `empty` is shown when there are no items.
 pub fn page(head: &Head, items: &[Item], more_items: bool, empty: &str, plan: ImgPlan) -> String {
     let mut out = String::with_capacity(1024 + items.len() * 1000);
-    out.push_str("<section class=\"feed\">");
+    out.push_str(if head.nav().is_some() { "<section class=\"feed chp\">" } else { "<section class=\"feed\">" });
+    let mut grid = "grid";
     match head {
         Head::Feed { title } => feed_heading(&mut out, title),
-        Head::Channel { title, avatar, meta, about } => {
-            out.push_str("<div class=\"ch\">");
+        Head::Channel { title, avatar, meta, about, nav } => {
+            out.push_str("<div id=\"");
+            out.push_str(CH_HEAD);
+            out.push_str("\" class=\"ch\">");
             if let Some(a) = avatar {
                 img(&mut out, a, None, true, "av lg");
             }
-            out.push_str("<div><h1>");
+            out.push_str("<div class=\"chn\"><h1>");
             esc_into(&mut out, title);
             out.push_str("</h1><div class=\"m\">");
             esc_into(&mut out, &meta.join(" · "));
@@ -614,12 +761,21 @@ pub fn page(head: &Head, items: &[Item], more_items: bool, empty: &str, plan: Im
                 esc_into(&mut out, about);
                 out.push_str("</div>");
             }
-            out.push_str("</div></div>");
-            // TV: the Subscribe button's place, under the header (`Actions::tv_channel`).
+            out.push_str("</div>");
+            // TV: the Subscribe button's place, at the header's right end (`Actions::tv_channel`).
             if crate::tv::on() {
                 out.push_str("<div id=\"ytc-chsub\" class=\"chsub\"></div>");
             }
-            out.push_str("<h2>Videos</h2>");
+            out.push_str("</div>");
+            if !nav.tabs.is_empty() {
+                channel_tab_row(&mut out, nav);
+            }
+            out.push_str("<div id=\"");
+            out.push_str(CH_SORT);
+            out.push_str("\" class=\"chs\" role=\"group\" aria-label=\"Sort\">");
+            out.push_str(&channel_sorts(&nav.sorts));
+            out.push_str("</div>");
+            grid = grid_class(nav.tab);
         }
         Head::Playlist { title, meta } => {
             feed_heading(&mut out, title);
@@ -634,15 +790,25 @@ pub fn page(head: &Head, items: &[Item], more_items: bool, empty: &str, plan: Im
             out.push_str("\" data-act=\"retry\">Try again</a></div>");
         }
     }
-    if items.is_empty() && !empty.is_empty() {
+    let empty_para = |out: &mut String| {
         out.push_str("<p class=\"empty\">");
-        esc_into(&mut out, empty);
+        esc_into(out, empty);
         out.push_str("</p>");
+    };
+    // (A channel's list changes under its tabs: its note lives inside the list, and goes with it.)
+    let inside = head.nav().is_some();
+    if items.is_empty() && !inside && !empty.is_empty() {
+        empty_para(&mut out);
     }
     out.push_str("<div id=\"");
     out.push_str(LIST);
-    out.push_str("\" class=\"grid\">");
+    out.push_str("\" class=\"");
+    out.push_str(grid);
+    out.push_str("\">");
     cards(&mut out, items, plan);
+    if items.is_empty() && inside && !empty.is_empty() {
+        empty_para(&mut out);
+    }
     out.push_str("</div>");
     more(&mut out, more_items);
     out.push_str("</section>");
@@ -653,8 +819,8 @@ pub fn feed_head(title: &str) -> Head {
     Head::Feed { title: title.to_string() }
 }
 
-pub fn channel_head(c: &ChannelPage) -> Head {
-    Head::Channel { title: c.title.clone(), avatar: c.avatar.clone(), meta: c.meta.clone(), about: c.about.clone() }
+pub fn channel_head(c: &ChannelPage, nav: ChannelNav) -> Head {
+    Head::Channel { title: c.title.clone(), avatar: c.avatar.clone(), meta: c.meta.clone(), about: c.about.clone(), nav }
 }
 
 pub fn playlist_head(p: &PlaylistPage, wl: bool, unsorted: bool) -> Head {
@@ -1313,5 +1479,47 @@ mod tests {
         // A batch of 24 after 20 / 23 / 25 cards on a five-column grid: 25 / 27 / 25, every row full.
         assert_eq!([20, 23, 25].map(|n| row_chunk(n, TV_COLS, 24)), [25, 27, 25]);
         assert!((0..40).all(|n| (n + row_chunk(n, TV_COLS, 24)) % TV_COLS == 0));
+    }
+
+    #[test]
+    fn channel_page_tabs_and_no_heading() {
+        use crate::parse::{ChannelTabLink, SortOpt};
+        let nav = ChannelNav {
+            path: "/@x".into(),
+            tab: ChannelTab::Streams,
+            tabs: vec![ChannelTabLink { tab: ChannelTab::Videos, title: "Videos".into(), params: "a".into() }, ChannelTabLink { tab: ChannelTab::Streams, title: "<Live>".into(), params: "b".into() }],
+            sorts: vec![SortOpt { label: "Latest".into(), selected: true, token: Some("tokentoken".into()), params: None }, SortOpt { label: "Popular".into(), selected: false, token: Some("tokentoken2".into()), params: None }],
+        };
+        let head = Head::Channel { title: "Chan".into(), avatar: None, meta: vec![], about: "About".into(), nav };
+        let h = page(&head, &[], false, "none", ImgPlan::lazy(Lay::Grid));
+        assert!(!h.contains("<h2>"), "the tabs say it: no heading");
+        assert!(h.contains("href=\"/@x/videos\"") && h.contains("href=\"/@x/streams\" aria-current=\"page\""), "{h}");
+        assert!(h.contains("&lt;Live&gt;") && !h.contains("<Live>"), "escaped");
+        assert!(h.contains("data-act=\"ch-sort\" data-arg=\"1\" aria-pressed=\"false\">Popular"), "{h}");
+        assert!(!h.contains("tokentoken"), "tokens stay in memory, not in the page");
+        // No tabs at all: no row.
+        let head = Head::Channel { title: "Chan".into(), avatar: None, meta: vec![], about: String::new(), nav: Default::default() };
+        assert!(!page(&head, &[], false, "none", ImgPlan::lazy(Lay::Grid)).contains("class=\"chb\""));
+    }
+
+    #[test]
+    fn channel_tab_shapes() {
+        assert_eq!(grid_class(ChannelTab::Videos), "grid");
+        assert_eq!(grid_class(ChannelTab::Shorts), "grid sh");
+        assert_eq!(grid_class(ChannelTab::Podcasts), "grid sq");
+        assert_eq!(lay_cols(Lay::Shorts, 1400.0, false), 6);
+        assert_eq!(lay_cols(Lay::Shorts, 480.0, false), 2);
+        assert_eq!(lay_cols(Lay::Shorts, 960.0, true), TV_SHORTS_COLS);
+        assert_eq!(lay_cols(Lay::Grid, 1400.0, false), grid_cols(1400.0));
+        // A channel's skeleton in the tab's own shape, on the first paint of a direct link.
+        let sk = skeleton(&crate::route::parse("/@x/shorts").unwrap());
+        assert!(sk.contains("class=\"grid sh\"") && sk.contains("chb sk"), "{sk}");
+        let v = Video { id: "abcdefghijk".into(), art: Some("https://i.ytimg.com/vi/abcdefghijk/sardefault.jpg".into()), ..Default::default() };
+        let mut out = String::new();
+        cards(&mut out, &[Item::Video(v.clone())], ImgPlan::lazy(Lay::Shorts));
+        assert!(out.contains("sardefault") && !out.contains("srcset"), "{out}");
+        let mut out = String::new();
+        cards(&mut out, &[Item::Video(v)], ImgPlan::lazy(Lay::Grid));
+        assert!(!out.contains("sardefault"), "other pages keep the 16:9 frames");
     }
 }

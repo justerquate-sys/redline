@@ -11,6 +11,41 @@ pub enum ChannelKey {
     Path(String),
 }
 
+/// The channel tabs the client renders as a list of cards, in no particular order (the row follows the
+/// response's own order). Home, Posts, Store, Membership, Playables and Search are not here on purpose.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum ChannelTab {
+    #[default]
+    Videos,
+    Shorts,
+    Streams,
+    Podcasts,
+    Courses,
+    Releases,
+    Shows,
+    Playlists,
+}
+
+impl ChannelTab {
+    /// The last URL segment YouTube uses for the tab.
+    pub fn slug(self) -> &'static str {
+        match self {
+            ChannelTab::Videos => "videos",
+            ChannelTab::Shorts => "shorts",
+            ChannelTab::Streams => "streams",
+            ChannelTab::Podcasts => "podcasts",
+            ChannelTab::Courses => "courses",
+            ChannelTab::Releases => "releases",
+            ChannelTab::Shows => "shows",
+            ChannelTab::Playlists => "playlists",
+        }
+    }
+
+    pub fn from_slug(s: &str) -> Option<ChannelTab> {
+        [ChannelTab::Videos, ChannelTab::Shorts, ChannelTab::Streams, ChannelTab::Podcasts, ChannelTab::Courses, ChannelTab::Releases, ChannelTab::Shows, ChannelTab::Playlists].into_iter().find(|t| t.slug() == s)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Route {
     Home,
@@ -22,7 +57,8 @@ pub enum Route {
     /// `searchEndpoint`), sent verbatim; `None` = no filters.
     Search { q: String, sp: Option<String> },
     Watch { v: String, t: u32, list: Option<String> },
-    Channel { key: ChannelKey, path: String },
+    /// `path` = the channel's own page (`/@x`, `/channel/UC…`, `/c/x`, `/user/x`), without the tab.
+    Channel { key: ChannelKey, path: String, tab: ChannelTab },
     Playlist { list: String },
     Unknown { path: String },
 }
@@ -50,7 +86,9 @@ impl Route {
                 }
                 u
             }
-            Route::Channel { path, .. } => path.clone(),
+            // The Videos tab is the channel's own page.
+            Route::Channel { path, tab: ChannelTab::Videos, .. } => path.clone(),
+            Route::Channel { path, tab, .. } => format!("{path}/{}", tab.slug()),
             Route::Playlist { list } => format!("/playlist?list={list}"),
             Route::Unknown { path } => path.clone(),
         }
@@ -115,6 +153,9 @@ pub fn parse(href: &str) -> Option<Route> {
     let mut segs = path[1..].split('/');
     let first = segs.next().unwrap_or("");
     let second = segs.next().unwrap_or("");
+    let third = segs.next().unwrap_or("");
+    // A segment that names no tab the client renders (`/featured`, `/posts`, …) opens Videos, as a bare channel URL does.
+    let tab_of = |s: &str| ChannelTab::from_slug(s).unwrap_or_default();
     let route = match first {
         "" => Route::Home,
         "feed" => match second {
@@ -144,19 +185,19 @@ pub fn parse(href: &str) -> Option<Route> {
             None => Route::Unknown { path: local.to_string() },
         },
         "channel" if second.starts_with("UC") && is_safe_id(second) => {
-            Route::Channel { key: ChannelKey::Id(second.to_string()), path: format!("/channel/{second}") }
+            Route::Channel { key: ChannelKey::Id(second.to_string()), path: format!("/channel/{second}"), tab: tab_of(third) }
         }
         f if f.starts_with('@') && f.len() > 1 => {
             let p = format!("/{f}");
             match safe_rel_href(&p) {
-                Some(p) => Route::Channel { key: ChannelKey::Path(p.clone()), path: p },
+                Some(p) => Route::Channel { key: ChannelKey::Path(p.clone()), path: p, tab: tab_of(second) },
                 None => Route::Unknown { path: local.to_string() },
             }
         }
         "c" | "user" if !second.is_empty() => {
             let p = format!("/{first}/{second}");
             match safe_rel_href(&p) {
-                Some(p) => Route::Channel { key: ChannelKey::Path(p.clone()), path: p },
+                Some(p) => Route::Channel { key: ChannelKey::Path(p.clone()), path: p, tab: tab_of(third) },
                 None => Route::Unknown { path: local.to_string() },
             }
         }
@@ -180,8 +221,8 @@ mod tests {
         assert_eq!(parse("/results?search_query=x&sp=%22%3E"), Some(Route::Search { q: "x".into(), sp: None }), "hostile sp dropped");
         assert_eq!(parse("/watch?v=-Bxc4gJluC0&t=1m5s&list=WL"), Some(Route::Watch { v: "-Bxc4gJluC0".into(), t: 65, list: Some("WL".into()) }));
         assert_eq!(parse("/shorts/DQcrB2wLu04"), Some(Route::Watch { v: "DQcrB2wLu04".into(), t: 0, list: None }));
-        assert_eq!(parse("/@monkeydeveloper/videos"), Some(Route::Channel { key: ChannelKey::Path("/@monkeydeveloper".into()), path: "/@monkeydeveloper".into() }));
-        assert_eq!(parse("/channel/UCaZO-66UcqyVT9btiqdDryA"), Some(Route::Channel { key: ChannelKey::Id("UCaZO-66UcqyVT9btiqdDryA".into()), path: "/channel/UCaZO-66UcqyVT9btiqdDryA".into() }));
+        assert_eq!(parse("/@monkeydeveloper/videos"), Some(Route::Channel { key: ChannelKey::Path("/@monkeydeveloper".into()), path: "/@monkeydeveloper".into(), tab: ChannelTab::Videos }));
+        assert_eq!(parse("/channel/UCaZO-66UcqyVT9btiqdDryA"), Some(Route::Channel { key: ChannelKey::Id("UCaZO-66UcqyVT9btiqdDryA".into()), path: "/channel/UCaZO-66UcqyVT9btiqdDryA".into(), tab: ChannelTab::Videos }));
         assert_eq!(parse("/playlist?list=WL"), Some(Route::Playlist { list: "WL".into() }));
         assert_eq!(parse("/feed/playlists"), Some(Route::Playlists));
         assert_eq!(Route::Playlists.url(), "/feed/playlists");
@@ -195,5 +236,39 @@ mod tests {
         assert_eq!(native_url("/watch?v=x#a"), "/watch?v=x&yt-native=1#a");
         assert_eq!(native_url("/"), "/?yt-native=1");
         assert_eq!(Route::Search { q: "a&b c".into(), sp: None }.url(), "/results?search_query=a%26b%20c");
+    }
+
+    #[test]
+    fn channel_tabs_in_every_url_form() {
+        for (url, path, key_id) in [("/@x", "/@x", false), ("/channel/UCaZO-66UcqyVT9btiqdDryA", "/channel/UCaZO-66UcqyVT9btiqdDryA", true), ("/c/name", "/c/name", false), ("/user/name", "/user/name", false)] {
+            let tab_at = |t: &str| match parse(&format!("{url}{t}")) {
+                Some(Route::Channel { path: p, tab, key }) => {
+                    assert_eq!(p, path);
+                    assert_eq!(matches!(key, ChannelKey::Id(_)), key_id);
+                    tab
+                }
+                other => panic!("{url}{t}: {other:?}"),
+            };
+            assert_eq!(tab_at(""), ChannelTab::Videos, "the bare URL opens Videos");
+            assert_eq!(tab_at("/"), ChannelTab::Videos);
+            assert_eq!(tab_at("/videos"), ChannelTab::Videos);
+            assert_eq!(tab_at("/streams"), ChannelTab::Streams);
+            assert_eq!(tab_at("/shorts"), ChannelTab::Shorts);
+            assert_eq!(tab_at("/playlists?view=1"), ChannelTab::Playlists);
+            assert_eq!(tab_at("/podcasts"), ChannelTab::Podcasts);
+            assert_eq!(tab_at("/courses"), ChannelTab::Courses);
+            assert_eq!(tab_at("/releases"), ChannelTab::Releases);
+            assert_eq!(tab_at("/shows"), ChannelTab::Shows);
+            for out in ["/featured", "/posts", "/community", "/store", "/membership", "/search", "/about", "/playables"] {
+                assert_eq!(tab_at(out), ChannelTab::Videos, "{out} is not a tab of the client");
+            }
+        }
+        // The canonical URL: the channel's own page for Videos, the tab's otherwise.
+        assert_eq!(parse("/@x/videos").unwrap().url(), "/@x");
+        assert_eq!(parse("/@x/streams").unwrap().url(), "/@x/streams");
+        assert_eq!(parse("/@x/shorts").unwrap().url(), "/@x/shorts");
+        // A video is still a video (`/shorts/ID`), a tab is not.
+        assert!(matches!(parse("/shorts/DQcrB2wLu04"), Some(Route::Watch { .. })));
+        assert!(matches!(parse("/@x/shorts"), Some(Route::Channel { tab: ChannelTab::Shorts, .. })));
     }
 }

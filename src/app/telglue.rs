@@ -29,6 +29,7 @@ fn purpose(p: &Purpose) -> &'static str {
         Purpose::Page { .. } | Purpose::WatchLaterOrder { .. } | Purpose::WatchLaterMenu { .. } => "page",
         Purpose::Resolve { .. } => "resolve",
         Purpose::Cont { .. } => "cont",
+        Purpose::ChanSort { .. } => "page",
         Purpose::Prefetch { spec: true, .. } => "spec",
         Purpose::Prefetch { .. } => "prefetch",
         Purpose::PagePrefetch { bg: true, .. } => "bg",

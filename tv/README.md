@@ -70,6 +70,12 @@ fast-forward, Next: Up next's first, Previous: the playlist's previous item, els
 session, else this one from the start; a video right behind in the history is a step back, so Back then leaves as if Next
 was never pressed) work everywhere on the watch page, not over the search screen. The look is documented in [design/](design/README.md).
 
+Channel pages have a row of focusable tabs under the header (YouTube's own: Videos, Shorts, Live, Podcasts, Playlists, …),
+with the sort chips at its right end: the first card keeps the default focus, ↑ from the first row of cards lands on the
+selected tab from any column, ←/→ walk the row, OK opens the tab and the focus stays on it, ↓ returns to the cards, ↑ from
+the row reaches Subscribe at the header's right end. Back goes where it goes on any channel page: the rail first, or, for a channel
+opened from a video, a step back (through its tabs, then to the video). docs/architecture.md, "Channel pages".
+
 ## Updates
 
 Everything is in the app: **About & updates**, the last item of the rail (under Sign in / Account, so it is there

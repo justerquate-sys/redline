@@ -503,6 +503,10 @@ extern "C" {
     /// Scrolls box `id` (only it, instantly) the least so its `sel` descendant is fully in view.
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn scroll_keep(id: &str, sel: &str);
+    /// Scrolls box `id` sideways (only it, instantly) the least so its `sel` descendant is fully in view; in the next
+    /// animation frame (that frame's own layout, never a forced one).
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn scroll_keep_x(id: &str, sel: &str);
     /// A rubber-band nudge: `id` moves `dy` px and springs back over `ms` (compositor transform, nothing waits).
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn band(id: &str, dy: f64, ms: u32);
@@ -518,6 +522,18 @@ extern "C" {
     /// it there from where it is (CSS transition), else it jumps; '' removes it. Next animation frame.
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn mark_slide(scope: &str, item: &str, sub: &str, cls: &str, slide: bool);
+    /// Moves `id`'s children out of the page under `key` (kept whole: decoded pictures, scroll sizes).
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn park(id: &str, key: &str);
+    /// Puts what `key` holds back as `id`'s only children; false when it holds nothing.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn unpark(id: &str, key: &str) -> bool;
+    /// Forgets `key` (empty: everything parked).
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn park_drop(key: &str);
+    /// Row (0 = first) of the focused `sel` item inside `id`; -1 when none is focused.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn grid_row(id: &str, sel: &str) -> i32;
     /// Restarts the CSS animations of `id` and its descendants (one-shot effects on persistent elements).
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn replay(id: &str);

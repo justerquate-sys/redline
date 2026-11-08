@@ -39,6 +39,8 @@ pub struct Video {
     /// YouTube marks it for a channel's members (`members_style`, `members_icon`, `members_label`):
     /// the card's label, the Members-only switch, and next-video selection skips it.
     pub members: bool,
+    /// A Short's own vertical art (a channel's Shorts tab shows it; other pages use the 16:9 frames).
+    pub art: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -50,7 +52,12 @@ pub struct PlaylistCard {
     pub count: String,
     pub thumb: Option<String>,
     pub first_video: Option<String>,
+    /// What the card calls itself under the title; empty = "Playlist" (a channel tab sets its own kind).
+    pub kind: &'static str,
 }
+
+/// The names a playlist card can carry under its title (`PlaylistCard::kind`).
+pub const PLAYLIST_KINDS: [&str; 4] = ["Podcast", "Course", "Release", "Show"];
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ChannelCard {
@@ -185,6 +192,30 @@ pub struct ChannelPage {
     pub meta: Vec<String>,
     pub about: String,
     pub feed: Feed,
+    /// The content tabs this channel really has, in YouTube's order (`channel_tabs`).
+    pub tabs: Vec<ChannelTabLink>,
+    /// The last URL segment of the tab YouTube answered with (`videos`, `featured`, …).
+    pub selected: Option<String>,
+    /// The sort choices of that tab.
+    pub sorts: Vec<SortOpt>,
+}
+
+/// A tab of a channel: YouTube's own title (in the page's language) and `browse` params.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChannelTabLink {
+    pub tab: crate::route::ChannelTab,
+    pub title: String,
+    pub params: String,
+}
+
+/// A sort choice of a channel tab, as YouTube offers it: a continuation token that reloads the list (the chip
+/// bar), or `browse` params (Playlists' sort menu).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SortOpt {
+    pub label: String,
+    pub selected: bool,
+    pub token: Option<String>,
+    pub params: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -359,6 +390,7 @@ const CONTAINERS: &[&str] = &[
 /// Renderers that are known UI chrome rather than feed items.
 const IGNORED: &[&str] = &[
     "chipCloudRenderer",
+    "chipBarViewModel",
     "feedFilterChipBarRenderer",
     "relatedChipCloudRenderer",
     "itemSectionHeaderRenderer",
@@ -542,6 +574,10 @@ impl Walker<'_> {
                 let r = playlist_renderer(x);
                 self.push(r, k)
             }
+            "gridShowRenderer" => {
+                let r = show_renderer(x);
+                self.push(r, k)
+            }
             "continuationItemRenderer" => {
                 let tok = st(x, &["continuationEndpoint", "continuationCommand", "token"])
                     .or_else(|| st(x, &["button", "buttonRenderer", "command", "continuationCommand", "token"]));
@@ -679,7 +715,13 @@ fn shorts_lockup(x: &Value) -> Res {
         .or_else(|| st(x, &["accessibilityText"]).map(|a| a.split(", ").next().unwrap_or("").trim().to_string()).filter(|t| !t.is_empty()))
         .unwrap_or_default();
     let meta = text_at(x, &["overlayMetadata", "secondaryText"]).unwrap_or_default();
-    Res::Item(Item::Video(short_video(id, title, meta)))
+    let art = tallest(arr(x, &["thumbnailViewModel", "thumbnailViewModel", "image", "sources"]));
+    Res::Item(Item::Video(Video { art, ..short_video(id, title, meta) }))
+}
+
+/// The tallest picture of a list (a Short's vertical art; YouTube lists a cropped one of the same width beside it).
+fn tallest(list: &[Value]) -> Option<String> {
+    list.iter().filter_map(|t| Some((t.get("height").and_then(Value::as_u64).unwrap_or(0), safe_img(t.get("url")?.as_str()?)?))).max_by_key(|x| x.0).map(|x| x.1)
 }
 
 /// A Short from the older `reelItemRenderer` (reel shelves).
@@ -688,7 +730,8 @@ fn reel_item(x: &Value) -> Res {
     let Some(id) = x.get("videoId").and_then(Value::as_str).filter(|v| is_video_id(v)).or_else(|| short_cmd_id(nav)) else { return Res::Short };
     let title = text_at(x, &["headline"]).or_else(|| text_at(x, &["title"])).unwrap_or_default();
     let meta = text_at(x, &["viewCountText"]).unwrap_or_default();
-    Res::Item(Item::Video(short_video(id, title, meta)))
+    let art = tallest(arr(x, &["thumbnail", "thumbnails"]));
+    Res::Item(Item::Video(Video { art, ..short_video(id, title, meta) }))
 }
 
 fn short_video(id: &str, title: String, meta: String) -> Video {
@@ -832,7 +875,11 @@ fn lockup(x: &Value, stats: &mut Stats) -> Res {
     for (ri, row) in rows.iter().enumerate() {
         for (pi, p) in row.iter().enumerate() {
             let browses = p.cmd.and_then(browse_ref);
-            if channel.is_empty() && (browses.is_some() || (ri == 0 && pi == 0 && rows.len() > 1)) {
+            // A channel's own Playlists tab: "View full playlist" browses to the playlist itself: no channel.
+            let to_list = p.cmd.and_then(|c| st(c, &["browseEndpoint", "browseId"])).is_some_and(|b| b.starts_with("VL"));
+            if to_list {
+                rest.push(views_label(p));
+            } else if channel.is_empty() && (browses.is_some() || (ri == 0 && pi == 0 && rows.len() > 1)) {
                 channel = p.text.clone();
                 if channel_ref.is_none() {
                     channel_ref = browses;
@@ -864,7 +911,7 @@ fn lockup(x: &Value, stats: &mut Stats) -> Res {
             };
             let music = lockup_music(md, img);
             let members = lockup_members(md, img);
-            Res::Item(Item::Video(Video { id: id.into(), title, channel, channel_href, channel_bid, meta: join(&rest), duration, live, progress, thumb, thumb2x, thumb_w, thumb2x_w, anim, music, short, members }))
+            Res::Item(Item::Video(Video { id: id.into(), title, channel, channel_href, channel_bid, meta: join(&rest), duration, live, progress, thumb, thumb2x, thumb_w, thumb2x_w, anim, music, short, members, art: None }))
         }
         "LOCKUP_CONTENT_TYPE_PLAYLIST" | "LOCKUP_CONTENT_TYPE_PODCAST" | "LOCKUP_CONTENT_TYPE_ALBUM" | "LOCKUP_CONTENT_TYPE_COURSE" => {
             if !is_safe_id(id) {
@@ -875,7 +922,7 @@ fn lockup(x: &Value, stats: &mut Stats) -> Res {
             let (thumb, _) = thumbs(arr(img, &["image", "sources"]));
             // The video rows (titles of the first entries, "View full playlist") are noise for a card.
             let first_video = st(cmd, &["watchEndpoint", "videoId"]).filter(|v| is_video_id(v)).map(String::from);
-            Res::Item(Item::Playlist(PlaylistCard { id: id.into(), title, channel, channel_href: channel_ref.map(|r| r.0), count, thumb, first_video }))
+            Res::Item(Item::Playlist(PlaylistCard { id: id.into(), title, channel, channel_href: channel_ref.map(|r| r.0), count, thumb, first_video, kind: "" }))
         }
         other => {
             stats.bump(&format!("lockupViewModel:{}", other.trim_start_matches("LOCKUP_CONTENT_TYPE_")));
@@ -977,6 +1024,7 @@ fn tile(x: &Value, stats: &mut Stats) -> Res {
                 music,
                 short: false,
                 members,
+                art: None,
             }))
         }
         "TILE_CONTENT_TYPE_PLAYLIST" => {
@@ -985,7 +1033,7 @@ fn tile(x: &Value, stats: &mut Stats) -> Res {
             let (thumb, _) = thumbs(arr(hdr, &["thumbnail", "thumbnails"]));
             let count = arr(hdr, &["thumbnailOverlays"]).iter().find_map(|o| text_at(o, &["thumbnailOverlayTimeStatusRenderer", "text"])).unwrap_or_default();
             let first_video = st(cmd, &["watchEndpoint", "videoId"]).filter(|v| is_video_id(v)).map(String::from);
-            Res::Item(Item::Playlist(PlaylistCard { id: pid.into(), title, channel, channel_href: channel_ref.map(|r| r.0), count, thumb, first_video }))
+            Res::Item(Item::Playlist(PlaylistCard { id: pid.into(), title, channel, channel_href: channel_ref.map(|r| r.0), count, thumb, first_video, kind: "" }))
         }
         "TILE_CONTENT_TYPE_CHANNEL" => {
             let Some((href, bid)) = browse_ref(cmd) else { return Res::Bad };
@@ -1018,9 +1066,27 @@ fn playlist_renderer(x: &Value) -> Res {
         Some(r) => (r.get("text").and_then(Value::as_str).unwrap_or("").to_string(), r.get("navigationEndpoint").and_then(browse_ref).map(|r| r.0)),
         None => (String::new(), None),
     };
-    let thumb = thumbs(arr(x, &["thumbnails", "0", "thumbnails"])).0.or_else(|| thumbs(arr(x, &["thumbnail", "thumbnails"])).0);
+    let thumb = thumbs(arr(x, &["thumbnails", "0", "thumbnails"]))
+        .0
+        .or_else(|| thumbs(arr(x, &["thumbnail", "thumbnails"])).0)
+        // A channel's Releases tab.
+        .or_else(|| thumbs(arr(x, &["thumbnailRenderer", "playlistCustomThumbnailRenderer", "thumbnail", "thumbnails"])).0)
+        .or_else(|| thumbs(arr(x, &["thumbnailRenderer", "playlistVideoThumbnailRenderer", "thumbnail", "thumbnails"])).0);
     let first_video = st(x, &["navigationEndpoint", "watchEndpoint", "videoId"]).filter(|v| is_video_id(v)).map(String::from);
-    Res::Item(Item::Playlist(PlaylistCard { id: id.into(), title, channel, channel_href, count, thumb, first_video }))
+    Res::Item(Item::Playlist(PlaylistCard { id: id.into(), title, channel, channel_href, count, thumb, first_video, kind: "" }))
+}
+
+/// A channel's Shows tab: a show is a playlist (`VL…`) with its episode count on the thumbnail.
+fn show_renderer(x: &Value) -> Res {
+    let Some(id) = st(x, &["navigationEndpoint", "browseEndpoint", "browseId"]).and_then(|b| b.strip_prefix("VL")).filter(|b| is_safe_id(b)) else { return Res::Bad };
+    let title = text_at(x, &["title"]).unwrap_or_default();
+    let count = arr(x, &["thumbnailOverlays"]).iter().find_map(|o| text_at(o, &["thumbnailOverlayBottomPanelRenderer", "text"])).unwrap_or_default();
+    let (channel, channel_href) = match at(x, &["shortBylineText", "runs", "0"]).or_else(|| at(x, &["longBylineText", "runs", "0"])) {
+        Some(r) => (r.get("text").and_then(Value::as_str).unwrap_or("").to_string(), r.get("navigationEndpoint").and_then(browse_ref).map(|r| r.0)),
+        None => (String::new(), None),
+    };
+    let thumb = thumbs(arr(x, &["thumbnailRenderer", "showCustomThumbnailRenderer", "thumbnail", "thumbnails"])).0;
+    Res::Item(Item::Playlist(PlaylistCard { id: id.into(), title, channel, channel_href, count, thumb, first_video: None, kind: "" }))
 }
 
 // ------------------------------------------------------------- responses
@@ -1108,6 +1174,11 @@ pub fn suggestions(body: &[u8]) -> Option<Vec<String>> {
 
 pub fn resolve(v: &Value) -> Option<String> {
     st(v, &["endpoint", "browseEndpoint", "browseId"]).filter(|b| b.starts_with("UC") && is_safe_id(b)).map(String::from)
+}
+
+/// The `browse` params YouTube names for a channel URL (a tab's URL carries its tab's).
+pub fn resolve_params(v: &Value) -> Option<String> {
+    st(v, &["endpoint", "browseEndpoint", "params"]).filter(|p| crate::route::valid_sp(p)).map(String::from)
 }
 
 pub(crate) fn desc_link(cmd: &Value, current: &str) -> Option<Link> {
@@ -1243,8 +1314,128 @@ pub fn next(v: &Value) -> Watch {
     w
 }
 
+/// A tab's last URL segment (`/@x/streams` → `streams`).
+fn tab_slug<'a>(t: &'a Value<'a>) -> Option<&'a str> {
+    let url = st(t, &["endpoint", "commandMetadata", "webCommandMetadata", "url"])?;
+    url.split(['?', '#']).next()?.rsplit('/').next()
+}
+
+/// The content tabs YouTube lists for this channel that the client renders as cards, in its order, and the
+/// segment of the tab it answered with. Titles follow the page's language; a tab the channel lacks is not in the
+/// answer, so nothing is assumed.
+fn channel_tabs(v: &Value) -> (Vec<ChannelTabLink>, Option<String>) {
+    let (mut out, mut selected) = (Vec::new(), None);
+    for t in arr(v, &["contents", "twoColumnBrowseResultsRenderer", "tabs"]).iter().filter_map(|t| t.get("tabRenderer")) {
+        let Some(slug) = tab_slug(t) else { continue };
+        if t.get("selected").and_then(Value::as_bool) == Some(true) {
+            selected = Some(slug.to_string());
+        }
+        let Some(tab) = crate::route::ChannelTab::from_slug(slug) else { continue };
+        let Some(params) = st(t, &["endpoint", "browseEndpoint", "params"]).filter(|p| crate::route::valid_sp(p)) else { continue };
+        let Some(title) = text_at(t, &["title"]) else { continue };
+        if out.iter().all(|l: &ChannelTabLink| l.tab != tab) {
+            out.push(ChannelTabLink { tab, title: title.chars().take(40).collect(), params: params.to_string() });
+        }
+    }
+    (out, selected)
+}
+
+/// A chip that would filter by paid membership is never a sort choice (no shape carries one today; the bar with
+/// YouTube's "Members only" chip has its sort choices in a drop-down, and `chip_sorts` reads only those).
+fn members_chip(s: &str) -> bool {
+    let s = s.to_lowercase();
+    s.contains("member") || s.contains("спонсор") || s.contains("mitglied")
+}
+
+fn token_ok(t: &&str) -> bool {
+    (8..4096).contains(&t.len())
+}
+
+/// A chip bar's sort choices. Two shapes (live, Nov 2026): Latest / Popular / Oldest as three chips, each with its
+/// continuation; or, on channels with members-only videos, one drop-down chip holding those three in a sheet beside
+/// "Members only" and "Public" filter chips (which are not sorts and stay out).
+fn chip_sorts(bar: &Value) -> Vec<SortOpt> {
+    let chips: Vec<&Value> = arr(bar, &["chips"]).iter().filter_map(|c| c.get("chipViewModel")).collect();
+    let sheet = chips.iter().find_map(|c| {
+        let items = arr(c, &["tapCommand", "innertubeCommand", "showSheetCommand", "panelLoadingStrategy", "inlineContent", "sheetViewModel", "content", "listViewModel", "listItems"]);
+        (!items.is_empty()).then_some(items)
+    });
+    let mut out: Vec<SortOpt> = Vec::new();
+    match sheet {
+        Some(items) => {
+            for it in items.iter().filter_map(|i| i.get("listItemViewModel")) {
+                let Some(label) = text_at(it, &["title"]) else { continue };
+                let cmd = at(it, &["rendererContext", "commandContext", "onTap", "innertubeCommand"]).unwrap_or(&Value::Null);
+                let token = st(cmd, &["continuationCommand", "token"]).or_else(|| arr(cmd, &["commandExecutorCommand", "commands"]).iter().find_map(|c| st(c, &["continuationCommand", "token"])));
+                let selected = it.get("isSelected").and_then(Value::as_bool) == Some(true);
+                out.push(SortOpt { label, selected, token: token.filter(token_ok).map(String::from), params: None });
+            }
+        }
+        None => {
+            for c in chips {
+                let Some(label) = text_at(c, &["text"]).filter(|l| !members_chip(l)) else { continue };
+                let selected = c.get("selected").and_then(Value::as_bool) == Some(true);
+                let token = st(c, &["tapCommand", "innertubeCommand", "continuationCommand", "token"]);
+                out.push(SortOpt { label, selected, token: token.filter(token_ok).map(String::from), params: None });
+            }
+        }
+    }
+    sorts_done(out)
+}
+
+/// Playlists' sort menu: choices with `browse` params.
+fn menu_sorts(menu: &Value) -> Vec<SortOpt> {
+    let mut out = Vec::new();
+    for it in arr(menu, &["subMenuItems"]) {
+        let Some(label) = text_at(it, &["title"]) else { continue };
+        let params = st(it, &["navigationEndpoint", "browseEndpoint", "params"]).filter(|p| crate::route::valid_sp(p));
+        let selected = it.get("selected").and_then(Value::as_bool) == Some(true);
+        out.push(SortOpt { label, selected, token: None, params: params.map(String::from) });
+    }
+    sorts_done(out)
+}
+
+/// A choice only when there is something to choose: two or more, each reachable (the selected one needs no command).
+fn sorts_done(mut out: Vec<SortOpt>) -> Vec<SortOpt> {
+    out.retain(|o| o.selected || o.token.is_some() || o.params.is_some());
+    for o in &mut out {
+        o.label = o.label.chars().take(40).collect();
+    }
+    if out.len() < 2 { Vec::new() } else { out }
+}
+
+/// A channel tab's sort choices: from its first page, or from a sort's answer (the header slot of a reload).
+pub fn channel_sorts(v: &Value) -> Vec<SortOpt> {
+    if let Some(c) = selected_tab(v) {
+        if let Some(bar) = at(c, &["richGridRenderer", "header", "chipBarViewModel"]) {
+            return chip_sorts(bar);
+        }
+        if let Some(menu) = at(c, &["sectionListRenderer", "subMenu", "channelSubMenuRenderer", "sortSetting", "sortFilterSubMenuRenderer"]) {
+            return menu_sorts(menu);
+        }
+        return Vec::new();
+    }
+    for a in arr(v, &["onResponseReceivedActions"]) {
+        for it in arr(a, &["reloadContinuationItemsCommand", "continuationItems"]) {
+            if let Some(bar) = it.get("chipBarViewModel") {
+                return chip_sorts(bar);
+            }
+        }
+    }
+    Vec::new()
+}
+
+/// A channel's description line without the list marks channels start theirs with ("• https://…").
+fn about_line(s: &str) -> String {
+    let t = s.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, '•' | '·' | '‣' | '▪' | '▫' | '●' | '○' | '◦' | '⁃' | '∙' | '■' | '□'));
+    let t = t.strip_prefix(['-', '–', '—', '*']).filter(|r| r.starts_with(char::is_whitespace)).unwrap_or(t);
+    t.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 pub fn channel(v: &Value) -> ChannelPage {
     let mut c = ChannelPage { feed: browse(v), ..Default::default() };
+    (c.tabs, c.selected) = channel_tabs(v);
+    c.sorts = channel_sorts(v);
     let md = at(v, &["metadata", "channelMetadataRenderer"]).unwrap_or(&Value::Null);
     c.title = st(md, &["title"]).unwrap_or("").to_string();
     c.bid = st(md, &["externalId"]).filter(|b| is_safe_id(b)).map(String::from);
@@ -1261,7 +1452,10 @@ pub fn channel(v: &Value) -> ChannelPage {
                 }
             }
         }
-        c.about = text_at(vm, &["description", "descriptionPreviewViewModel", "description"]).unwrap_or_default();
+        // (A channel without a description: the preview holds only its "More about this channel" link.)
+        if st(md, &["description"]).is_some_and(|d| !d.trim().is_empty()) {
+            c.about = text_at(vm, &["description", "descriptionPreviewViewModel", "description"]).unwrap_or_default();
+        }
     } else if let Some(h) = at(v, &["header", "c4TabbedHeaderRenderer"]) {
         if c.title.is_empty() {
             c.title = st(h, &["title"]).unwrap_or("").to_string();
@@ -1276,6 +1470,7 @@ pub fn channel(v: &Value) -> ChannelPage {
     if c.about.is_empty() {
         c.about = st(md, &["description"]).unwrap_or("").lines().next().unwrap_or("").to_string();
     }
+    c.about = about_line(&c.about);
     c
 }
 
@@ -1730,5 +1925,139 @@ mod tests {
         assert!(runs.iter().any(|r| r.text == "tag" && r.link == Some(Link::Int("/hashtag/tag".into()))));
         let all: String = runs.iter().map(|r| r.text.as_str()).collect();
         assert_eq!(all, "😀 go js 0:30 tag");
+    }
+
+    // ------------------------------------------------- channel tabs (real, trimmed answers, Nov 2026)
+
+    fn ct(key: &str) -> Value<'static> {
+        fixture("channel_tabs.json").get(key).expect(key).clone().into_owned()
+    }
+
+    fn slugs(c: &ChannelPage) -> Vec<&'static str> {
+        c.tabs.iter().map(|t| t.tab.slug()).collect()
+    }
+
+    #[test]
+    fn channel_tabs_come_from_the_response() {
+        let c = channel(&ct("sky.videos"));
+        assert_eq!(slugs(&c), ["videos", "shorts", "streams", "shows", "podcasts", "playlists"], "Home, Posts and Search stay out");
+        assert_eq!(c.selected.as_deref(), Some("videos"));
+        assert_eq!(c.tabs[2].title, "Live", "YouTube's own title");
+        assert!(c.tabs.iter().all(|t| crate::route::valid_sp(&t.params)));
+        // A channel without live streams or Shorts lists none.
+        let c = channel(&ct("arthas.videos"));
+        assert_eq!(slugs(&c), ["videos", "streams", "playlists"]);
+        // Asked for a tab it lacks, YouTube answers with its Home.
+        let c = channel(&ct("beast.streams"));
+        assert_eq!(c.selected.as_deref(), Some("featured"));
+        assert_eq!(slugs(&c), ["videos", "shorts", "shows"]);
+        // Only Home and Posts: no tab the client renders.
+        let c = channel(&ct("f1.videos"));
+        assert_eq!(c.selected.as_deref(), Some("featured"));
+        assert!(c.tabs.is_empty());
+        // A kind of tab the client cannot show is not one of its tabs (Playables, Store).
+        let c = channel(&ct("veritasium.playables"));
+        assert_eq!(c.selected.as_deref(), Some("playables"));
+        assert!(!c.tabs.is_empty() && c.tabs.iter().all(|t| !matches!(t.tab.slug(), "playables" | "store" | "posts")));
+        assert!(c.feed.items.is_empty());
+    }
+
+    #[test]
+    fn channel_tab_identity_does_not_depend_on_the_words() {
+        // The same answer in Russian: the titles follow it, the tabs and sort choices stay what they are.
+        let raw = String::from_utf8(crate::util::fixture_bytes("channel_tabs.json")).unwrap();
+        let ru = raw.replace("\"title\":\"Videos\"", "\"title\":\"Видео\"").replace("\"title\":\"Live\"", "\"title\":\"Трансляции\"").replace("\"title\":\"Playlists\"", "\"title\":\"Плейлисты\"").replace("\"text\":\"Latest\"", "\"text\":\"Новые\"").replace("\"text\":\"Popular\"", "\"text\":\"Популярные\"").replace("\"text\":\"Oldest\"", "\"text\":\"Старые\"");
+        assert_ne!(ru, raw);
+        let doc = crate::json::parse(ru.as_bytes()).unwrap();
+        let c = channel(doc.get("sky.videos").unwrap());
+        assert_eq!(slugs(&c), ["videos", "shorts", "streams", "shows", "podcasts", "playlists"]);
+        assert_eq!(c.selected.as_deref(), Some("videos"));
+        let title = |slug: &str| c.tabs.iter().find(|t| t.tab.slug() == slug).map(|t| t.title.clone()).unwrap();
+        assert_eq!((title("videos").as_str(), title("streams").as_str(), title("playlists").as_str()), ("Видео", "Трансляции", "Плейлисты"));
+        assert_eq!(c.sorts.iter().map(|o| o.label.as_str()).collect::<Vec<_>>(), ["Новые", "Популярные", "Старые"]);
+        assert!(c.sorts[0].selected && c.sorts.iter().all(|o| o.token.is_some()));
+        // YouTube's Russian label for its members chip never becomes a sort.
+        assert!(members_chip("Только для спонсоров") && members_chip("Members only") && !members_chip("Популярные"));
+    }
+
+    #[test]
+    fn channel_sorts_from_both_chip_shapes() {
+        let labels = |v: &[SortOpt]| v.iter().map(|o| o.label.clone()).collect::<Vec<_>>();
+        // Three chips, each with its token.
+        let sorts = channel_sorts(&ct("sky.videos"));
+        assert_eq!(labels(&sorts), ["Latest", "Popular", "Oldest"]);
+        assert!(sorts[0].selected && !sorts[1].selected);
+        assert!(sorts.iter().all(|o| o.token.is_some() && o.params.is_none()));
+        // A channel with members-only videos: the three in a drop-down's sheet, "Members only" and "Public" stay out.
+        let sorts = channel_sorts(&ct("arthas.videos"));
+        assert_eq!(labels(&sorts), ["Latest", "Popular", "Oldest"]);
+        assert!(sorts[0].selected && sorts.iter().all(|o| o.token.is_some()));
+        // A sort's answer: the header slot says which is selected now, the body slot holds the cards.
+        for key in ["sky.videos.popular", "arthas.videos.popular"] {
+            let a = ct(key);
+            let sorts = channel_sorts(&a);
+            assert_eq!(sorts.iter().find(|o| o.selected).map(|o| o.label.as_str()), Some("Popular"), "{key}");
+            let f = continuation(&a);
+            assert!(f.items.len() >= 10 && f.cont.is_some(), "{key}: {} cards", f.items.len());
+            assert_eq!(f.stats.unknown_total(), 0, "{key}: {:?}", f.stats.unknown);
+        }
+        // Playlists' sort menu: choices with `browse` params.
+        let sorts = channel_sorts(&ct("arthas.playlists"));
+        assert_eq!(labels(&sorts), ["Date added (newest)", "Last video added"]);
+        assert!(sorts[0].selected && sorts.iter().all(|o| o.params.is_some() && o.token.is_none()));
+        let sorts = channel_sorts(&ct("arthas.playlists.last"));
+        assert_eq!(sorts.iter().find(|o| o.selected).map(|o| o.label.as_str()), Some("Last video added"));
+        // Nothing to choose: no row. A tab with no chip bar at all (Numberphile's Shorts and Live, Nov 2026).
+        assert!(channel_sorts(&ct("sky.shows")).is_empty());
+        for key in ["numberphile.shorts", "numberphile.streams"] {
+            let c = channel(&ct(key));
+            assert!(c.sorts.is_empty() && !c.feed.items.is_empty(), "{key}: {} sorts, {} cards", c.sorts.len(), c.feed.items.len());
+        }
+    }
+
+    #[test]
+    fn channel_tab_cards() {
+        // Live: live now, upcoming and past streams; none is dropped.
+        let f = channel(&ct("sky.streams")).feed;
+        let vids: Vec<&Video> = f.items.iter().filter_map(|i| if let Item::Video(v) = i { Some(v) } else { None }).collect();
+        assert!(vids.len() >= 8, "{}", vids.len());
+        assert!(vids.iter().any(|v| v.live && v.meta.contains("watching")), "a live stream");
+        let up = vids.iter().find(|v| v.duration == "Upcoming").expect("an upcoming stream, labelled by YouTube");
+        assert!(up.meta.contains("Scheduled for") && !up.live);
+        assert!(vids.iter().any(|v| !v.live && v.meta.contains("Streamed")), "a past stream");
+        assert!(f.cont.is_some());
+        // Shorts: vertical art and views.
+        let f = channel(&ct("beast.shorts")).feed;
+        let Some(Item::Video(s)) = f.items.first() else { panic!("a Short") };
+        assert!(s.short && s.art.as_deref().is_some_and(|a| a.contains("sardefault")), "{:?}", s.art);
+        assert!(s.meta.contains("views") && !s.title.is_empty());
+        assert!(f.cont.is_some());
+        // Playlists: a count and the page to open.
+        let f = channel(&ct("arthas.playlists")).feed;
+        let Some(Item::Playlist(p)) = f.items.first() else { panic!("a playlist") };
+        assert!(p.count.contains("video") && p.id.starts_with("PL"), "{p:?}");
+        assert!(f.cont.is_some());
+        // Podcasts, Courses, Releases and Shows are playlists with a count.
+        for key in ["sky.podcasts", "cc.courses", "lofi.releases", "sky.shows"] {
+            let f = channel(&ct(key)).feed;
+            let Some(Item::Playlist(p)) = f.items.first() else { panic!("{key}: {:?}", f.items.first()) };
+            assert!(!p.id.is_empty() && !p.title.is_empty() && p.thumb.is_some(), "{key}: {p:?}");
+            assert!(!p.count.is_empty(), "{key}: {p:?}");
+            assert_eq!(f.stats.unknown_total(), 0, "{key}: {:?}", f.stats.unknown);
+        }
+    }
+
+    #[test]
+    fn channel_about_loses_its_list_mark() {
+        assert_eq!(about_line("• https://t.me/x  - text"), "https://t.me/x - text");
+        assert_eq!(about_line("  \u{2022}\u{a0}· ▪ text"), "text");
+        assert_eq!(about_line("- a list"), "a list");
+        assert_eq!(about_line("-5 degrees"), "-5 degrees", "a minus sign is no list mark");
+        assert_eq!(about_line("Plain line."), "Plain line.");
+        assert_eq!(about_line(" • "), "");
+        let about = channel(&ct("arthas.videos")).about;
+        assert!(about.starts_with("https://t.me/"), "{about}");
+        assert_eq!(channel(&ct("sky.videos")).about, "The full story, first.");
+        assert_eq!(channel(&ct("f1.videos")).about, "", "no description: no line");
     }
 }

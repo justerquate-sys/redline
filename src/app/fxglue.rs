@@ -763,7 +763,7 @@ impl App {
     pub(super) fn fx_entrance(&mut self, skeleton: bool, fresh_list: bool) {
         let armed = std::mem::take(&mut self.fx.enter) && fresh_list;
         let fresh = skeleton && self.nav > 1 && !self.mo.calm && !self.fx.calm;
-        if crate::tv::on() || !(armed || fresh) || self.lay() != Lay::Grid {
+        if crate::tv::on() || !(armed || fresh) || self.lay() == Lay::Rel {
             return;
         }
         let still = bridge::reduced_motion();

@@ -67,9 +67,14 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
   to its left. The skip notice sits to the right of the action row (↑ or → from the last button), below the time
   row and captions. It follows the controls above Up next, and idle captions make room for a visible notice.
   Menu switches and seek-category labels use the same rem scale as the rest of the TV interface.
-- **Channel page**: the header (3 rem avatar, name, details), Subscribe under it on the content edge (2.25 rem tall,
-  over the first card, so ↑ from the first row reaches it; solid white, neutral once subscribed), then the grid. The
-  scrim ends above the first row as on every page; the first card keeps the default focus, so OK never subscribes by accident.
+- **Channel page**: the header (3 rem avatar, name, details) with Subscribe at its right end, on the grid's right edge (2.25 rem
+  tall; solid white, neutral once subscribed); .75 rem below it one row: tabs 2 rem tall with 21 px text and .375 rem corners
+  on the content edge, the sort chips at its right end; the grid .75 rem below. The selected tab is a quiet `#303030` surface;
+  focus steps it to `#3f3f3f` inside the white frame. The Shorts tab has **7 vertical cards per row** (9:16), Podcasts
+  square-framed cards, the others the page's five. No motion; the row does not stick: ↑ from the grid's first row lands on
+  the selected tab wherever the card is, ↑ again on Subscribe (↓ returns to the selected tab), → along the row reaches the chips,
+  and a tab opened with OK starts at its top. The scrim ends above the first row as on
+  every page; the first card keeps the default focus, so OK never subscribes by accident.
 - **Notice**: an account action YouTube refused says why top right over the page or picture (21 px, 28 rem at most,
   on the safe edge, clear of a two-line title), for 6 s; beside Comments, a menu or Save, never over their headers; More
   info has its own line for it, and it stays off the search screen.

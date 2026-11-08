@@ -3,8 +3,9 @@
 //! validated again exactly like a fresh InnerTube response and the page is
 //! re-rendered through `render.rs`, so escaping stays in one place.
 
-use crate::parse::{ChannelCard, Item, PlaylistCard, Video, anim_url};
-use crate::render::Head;
+use crate::parse::{ChannelCard, ChannelTabLink, Item, PlaylistCard, SortOpt, Video, anim_url};
+use crate::render::{ChannelNav, Head};
+use crate::route::{ChannelTab, valid_sp};
 use crate::util::{is_safe_id, is_video_id, safe_img, safe_rel_href};
 use crate::json::{self, Value as In};
 use serde::{Serialize, Serializer, ser::SerializeMap};
@@ -76,6 +77,7 @@ impl Serialize for ItemRecord<'_> {
         match self.0 {
             Item::Video(v) => {
                 opt(&mut m, "a", &v.anim)?;
+                opt(&mut m, "ar", &v.art)?;
                 opt(&mut m, "b", &v.channel_bid)?;
                 nonempty(&mut m, "c", &v.channel)?;
                 nonempty(&mut m, "d", &v.duration)?;
@@ -115,6 +117,7 @@ impl Serialize for ItemRecord<'_> {
                 m.serialize_entry("i", &p.id)?;
                 m.serialize_entry("k", "p")?;
                 nonempty(&mut m, "n", &p.count)?;
+                nonempty(&mut m, "q", p.kind)?;
                 opt(&mut m, "s", &p.thumb)?;
                 nonempty(&mut m, "t", &p.title)?;
             }
@@ -175,6 +178,7 @@ pub(crate) fn item_from(v: &In) -> Option<Item> {
                 music: v.get("u").and_then(In::as_bool).unwrap_or(false),
                 short: v.get("r").and_then(In::as_bool).unwrap_or(false),
                 members: v.get("mo").and_then(In::as_bool).unwrap_or(false),
+                art: so(v, "ar").and_then(safe_img),
             }))
         }
         "p" => {
@@ -187,6 +191,7 @@ pub(crate) fn item_from(v: &In) -> Option<Item> {
                 count: s(v, "n"),
                 thumb: so(v, "s").and_then(safe_img),
                 first_video: so(v, "f").filter(|x| is_video_id(x)).map(Into::into),
+                kind: so(v, "q").and_then(|q| crate::parse::PLAYLIST_KINDS.iter().find(|k| **k == q)).copied().unwrap_or(""),
             }))
         }
         "c" => Some(Item::Channel(ChannelCard {
@@ -211,11 +216,14 @@ impl Serialize for HeadRecord<'_> {
                 m.serialize_entry("k", "f")?;
                 m.serialize_entry("t", title)?;
             }
-            Head::Channel { title, avatar, meta, about } => {
+            Head::Channel { title, avatar, meta, about, nav } => {
                 m.serialize_entry("a", avatar)?;
                 m.serialize_entry("ab", about)?;
                 m.serialize_entry("k", "c")?;
                 m.serialize_entry("m", meta)?;
+                if !nav.path.is_empty() {
+                    m.serialize_entry("n", &nav_record(nav))?;
+                }
                 m.serialize_entry("t", title)?;
             }
             Head::Playlist { title, meta } => {
@@ -228,6 +236,49 @@ impl Serialize for HeadRecord<'_> {
     }
 }
 
+/// A channel page's tabs and sort choices (this tab's `sessionStorage`, like its continuation token).
+fn nav_record(n: &ChannelNav) -> serde_json::Value {
+    serde_json::json!({
+        "p": n.path,
+        "s": n.tab.slug(),
+        "t": n.tabs.iter().map(|t| [t.tab.slug(), t.title.as_str(), t.params.as_str()]).collect::<Vec<_>>(),
+        "o": n.sorts.iter().map(|o| serde_json::json!({"l": o.label, "s": o.selected, "c": o.token, "b": o.params})).collect::<Vec<_>>(),
+    })
+}
+
+fn nav_from(v: &In) -> ChannelNav {
+    let Some(n) = v.get("n") else { return ChannelNav::default() };
+    let tabs = n.get("t").and_then(In::as_array).map(|a| {
+        a.iter()
+            .take(12)
+            .filter_map(|t| {
+                let tab = ChannelTab::from_slug(t.get(0)?.as_str()?)?;
+                let params = t.get(2)?.as_str().filter(|p| valid_sp(p))?;
+                Some(ChannelTabLink { tab, title: t.get(1)?.as_str()?.chars().take(40).collect(), params: params.to_string() })
+            })
+            .collect()
+    });
+    let sorts = n.get("o").and_then(In::as_array).map(|a| {
+        a.iter()
+            .take(8)
+            .filter_map(|o| {
+                Some(SortOpt {
+                    label: o.get("l")?.as_str()?.chars().take(40).collect(),
+                    selected: o.get("s").and_then(In::as_bool).unwrap_or(false),
+                    token: so(o, "c").filter(|t| (8..4096).contains(&t.len())).map(String::from),
+                    params: so(o, "b").filter(|p| valid_sp(p)).map(String::from),
+                })
+            })
+            .collect()
+    });
+    ChannelNav {
+        path: so(n, "p").and_then(safe_rel_href).unwrap_or_default(),
+        tab: so(n, "s").and_then(ChannelTab::from_slug).unwrap_or_default(),
+        tabs: tabs.unwrap_or_default(),
+        sorts: sorts.unwrap_or_default(),
+    }
+}
+
 fn strings(v: &In, k: &str) -> Vec<String> {
     v.get(k).and_then(In::as_array).map(|a| a.iter().filter_map(In::as_str).take(8).map(|x| x.chars().take(TEXT_MAX).collect()).collect()).unwrap_or_default()
 }
@@ -235,7 +286,7 @@ fn strings(v: &In, k: &str) -> Vec<String> {
 fn head_from(v: &In) -> Option<Head> {
     Some(match so(v, "k")? {
         "f" => Head::Feed { title: s(v, "t") },
-        "c" => Head::Channel { title: s(v, "t"), avatar: so(v, "a").and_then(safe_img), meta: strings(v, "m"), about: s(v, "ab") },
+        "c" => Head::Channel { title: s(v, "t"), avatar: so(v, "a").and_then(safe_img), meta: strings(v, "m"), about: s(v, "ab"), nav: nav_from(v) },
         "p" => Head::Playlist { title: s(v, "t"), meta: strings(v, "m") },
         _ => return None,
     })
@@ -327,7 +378,7 @@ mod tests {
         let items: Vec<_> = (0..MAX_ITEMS + 30).map(|i| Item::Video(Video {
             id: format!("{i:011}"), title: format!("Video {i} — \"東京\"\n"), ..Default::default()
         })).collect();
-        let head = Head::Channel { title: "Channel".into(), avatar: None, meta: vec!["123 videos".into()], about: "About this channel".into() };
+        let head = Head::Channel { title: "Channel".into(), avatar: None, meta: vec!["123 videos".into()], about: "About this channel".into(), nav: Default::default() };
         for shown in [0, 1, 24, MAX_ITEMS - 1, MAX_ITEMS, MAX_ITEMS + 1] {
             for buffered in [0, 1, 24, 100] {
                 let shown_items = &items[..shown];
@@ -371,8 +422,8 @@ mod tests {
     fn compact_schema_bytes_and_escaping_stay_compatible() {
         let text = "A \"quote\", \\ slash, \n\0東京🦀";
         let items = vec![
-            Item::Video(Video { id: "abcdefghijk".into(), title: text.into(), channel: "Channel".into(), channel_href: Some(String::new()), channel_bid: Some("UCchannel".into()), meta: "1.2M views".into(), duration: "1:23".into(), live: true, progress: 42, thumb: Some("https://i.ytimg.com/one.jpg".into()), thumb2x: Some("https://i.ytimg.com/two.jpg".into()), thumb_w: 360, thumb2x_w: 720, anim: Some(String::new()), music: true, short: true, members: false }),
-            Item::Playlist(PlaylistCard { id: "PLone".into(), title: text.into(), channel: "Channel".into(), channel_href: Some("/@channel".into()), count: "12 videos".into(), thumb: Some("https://i.ytimg.com/list.jpg".into()), first_video: Some("abcdefghijk".into()) }),
+            Item::Video(Video { id: "abcdefghijk".into(), title: text.into(), channel: "Channel".into(), channel_href: Some(String::new()), channel_bid: Some("UCchannel".into()), meta: "1.2M views".into(), duration: "1:23".into(), live: true, progress: 42, thumb: Some("https://i.ytimg.com/one.jpg".into()), thumb2x: Some("https://i.ytimg.com/two.jpg".into()), thumb_w: 360, thumb2x_w: 720, anim: Some(String::new()), music: true, short: true, members: false, art: None }),
+            Item::Playlist(PlaylistCard { id: "PLone".into(), title: text.into(), channel: "Channel".into(), channel_href: Some("/@channel".into()), count: "12 videos".into(), thumb: Some("https://i.ytimg.com/list.jpg".into()), first_video: Some("abcdefghijk".into()), kind: "" }),
             Item::Channel(ChannelCard { href: "/@channel".into(), bid: Some("UCchannel".into()), title: text.into(), meta: "12 videos".into(), avatar: Some("https://yt3.ggpht.com/a.jpg".into()) }),
             Item::Video(Video::default()), Item::Playlist(PlaylistCard::default()), Item::Channel(ChannelCard::default()),
         ];
@@ -384,8 +435,8 @@ mod tests {
         ]);
         for (head, compact_head) in [
             (Head::Feed { title: text.into() }, json!({"k":"f", "t":text})),
-            (Head::Channel { title: text.into(), avatar: Some(String::new()), meta: vec![text.into()], about: text.into() }, json!({"a":"", "ab":text, "k":"c", "m":[text], "t":text})),
-            (Head::Channel { title: String::new(), avatar: None, meta: vec![], about: String::new() }, json!({"a":null, "ab":"", "k":"c", "m":[], "t":""})),
+            (Head::Channel { title: text.into(), avatar: Some(String::new()), meta: vec![text.into()], about: text.into(), nav: Default::default() }, json!({"a":"", "ab":text, "k":"c", "m":[text], "t":text})),
+            (Head::Channel { title: String::new(), avatar: None, meta: vec![], about: String::new(), nav: Default::default() }, json!({"a":null, "ab":"", "k":"c", "m":[], "t":""})),
             (Head::Playlist { title: text.into(), meta: vec![text.into()] }, json!({"k":"p", "m":[text], "t":text})),
         ] {
             let sn = Snap { url: "/".into(), head, items: items.clone(), shown: 3, cont: None, cont_ep: "browse", scroll: 19.6, at: 1000.25 };
@@ -462,5 +513,28 @@ mod tests {
         assert!(from_json("{\"v\":1}", "/").is_none());
         assert!(from_json("garbage", "/").is_none());
         assert_eq!(index_from(&index_json(&["/".into(), "/x".into()])), vec!["/".to_string(), "/x".to_string()]);
+    }
+
+    #[test]
+    fn channel_nav_round_trips_and_is_validated() {
+        use crate::parse::{ChannelTabLink, SortOpt};
+        let nav = ChannelNav {
+            path: "/@x".into(),
+            tab: ChannelTab::Streams,
+            tabs: vec![ChannelTabLink { tab: ChannelTab::Videos, title: "Videos".into(), params: "EgZ2aWRlb3M%3D".into() }, ChannelTabLink { tab: ChannelTab::Streams, title: "Live".into(), params: "EgdzdHJlYW1z".into() }],
+            sorts: vec![SortOpt { label: "Latest".into(), selected: true, token: Some("4qmFsgJkEhh".into()), params: None }, SortOpt { label: "Oldest".into(), selected: false, token: None, params: Some("EglwbGF5".into()) }],
+        };
+        let head = Head::Channel { title: "T".into(), avatar: None, meta: vec![], about: String::new(), nav: nav.clone() };
+        let json = serde_json::to_string(&HeadRecord(&head)).unwrap();
+        let back = json::parse_str(&json).and_then(|v| head_from(&v)).unwrap();
+        assert_eq!(back.nav(), Some(&nav));
+        // A snapshot from before the tabs: no row, no failure.
+        let old = json::parse_str(r#"{"k":"c","t":"T","m":[],"ab":""}"#).and_then(|v| head_from(&v)).unwrap();
+        assert_eq!(old.nav(), Some(&ChannelNav::default()));
+        // Hostile values are dropped like a response's.
+        let bad = json::parse_str(r#"{"k":"c","t":"T","n":{"p":"//evil.com","s":"posts","t":[["store","Store","x"],["videos","V","\"><script>"]],"o":[{"l":"L","c":"short"}]}}"#).and_then(|v| head_from(&v)).unwrap();
+        let n = bad.nav().unwrap();
+        assert!(n.path.is_empty() && n.tab == ChannelTab::Videos && n.tabs.is_empty());
+        assert_eq!(n.sorts[0].token, None);
     }
 }

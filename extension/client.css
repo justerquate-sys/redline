@@ -302,8 +302,38 @@ body{overscroll-behavior:none;overflow-x:clip}
 #ytc [data-flip]{z-index:3}
 .rel .c{display:grid;grid-template-columns:minmax(168px,46%) minmax(0,1fr);gap:12px;margin-bottom:12px;contain-intrinsic-size:auto 104px}
 .rel .d{padding-top:0}.rel .t{font-size:15.5px;line-height:22px;max-height:44px}.rel .th{border-radius:var(--r-ctl)}.rel .m{font-size:13.5px;line-height:19px}
-.ch{display:flex;gap:20px;align-items:center;margin-bottom:12px;min-height:96px}.av.lg{width:96px;height:96px;flex:none}
-.ch h1{margin:0 0 4px}.ch.sk>div:last-child{flex:1}.about{max-width:700px;white-space:normal}
+.ch{display:flex;gap:20px;align-items:center;margin-bottom:16px;min-height:96px}.av.lg{width:96px;height:96px;flex:none}
+.ch h1{margin:0 0 4px;overflow-wrap:anywhere}.ch.sk>div:last-child{flex:1}.about{max-width:700px;white-space:normal}
+.chn{min-width:0;flex:1}.ch .m{margin-top:0}.ch .about{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+/* Channel tabs: one row of links under the header, on the header's and the grid's left edge, stuck under the top bar
+   while the list scrolls. The selected tab has a 2 px indicator under its text: its own (u) until a pointer first
+   changes tabs, then one persistent mark that springs between tabs (bridge mark_slide, `.chk`; keys, back/forward and
+   restored pages move it at once). The row scrolls sideways when it does not fit. */
+.chb{position:sticky;top:64px;z-index:5;margin-bottom:16px;background:var(--bg);box-shadow:inset 0 -1px var(--ln)}
+.cht{overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;margin:0 -8px;padding:0 8px}
+.cht::-webkit-scrollbar{display:none}
+.chl{position:relative;display:flex;gap:24px;width:max-content;min-width:100%}
+#ytc .ct{position:relative;display:block;flex:none;height:44px;box-sizing:border-box;padding:12px 0;color:var(--mu);font-size:15px;line-height:20px;font-weight:500;white-space:nowrap;transition:color var(--d-hover) var(--e-out)}
+#ytc .ct:hover,#ytc .ct[aria-current=page]{color:var(--tx);transition-duration:0s}
+#ytc .ct>span{display:block;transition:transform var(--d-press) var(--e-out)}
+#ytc .ct:active>span{transform:scale(calc(1 - var(--pd) * var(--mv)))}
+/* (The keyboard ring is around the label, inside the row's sideways clip and the 24 px gaps.) */
+#ytc .ct:focus-visible{outline:0;animation:none}
+#ytc .ct:focus-visible>span{outline:2px solid var(--ac);outline-offset:4px;border-radius:4px;animation:ytcfocus var(--d-pop) var(--e-out)}
+.ct>u{position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--ac);border-radius:1px;visibility:hidden}
+.ct[aria-current=page]>u{visibility:visible}
+.chl[data-mk] .ct>u{visibility:hidden}
+.chk{position:absolute;left:0;top:0;width:100%;z-index:1;pointer-events:none;background:var(--ac);transition:clip-path calc(var(--d-spring) * var(--mv)) var(--spring)}
+#ytc[data-still="1"] .chk{transition:none}
+.chb.sk .ct{width:64px}.chb.sk .ct>i{display:block;height:20px;border-radius:5px;background:var(--rs)}
+/* Sort chips: the row keeps its height while a tab that has them loads. */
+.chs{position:relative;display:flex;gap:8px;margin:-4px -4px 12px;padding:4px;overflow-x:auto;scrollbar-width:none}
+.chs::-webkit-scrollbar{display:none}.chs:empty{display:none}.chs>*{flex:none}
+#ytc .chs .fx-ch.sk{width:88px;cursor:default;background:var(--rs)}#ytc .chs .fx-ch.sk:hover{background:var(--rs)}
+.grid.sh{--cols:7}
+@media (max-width:1700px){.grid.sh{--cols:6}}@media (max-width:1300px){.grid.sh{--cols:5}}@media (max-width:950px){.grid.sh{--cols:3}}@media (max-width:560px){.grid.sh{--cols:2}}
+.sh .th{aspect-ratio:9/16}.sh .c{contain-intrinsic-size:auto 400px}
+.sq .th{aspect-ratio:1/1}.sq .th>img{object-fit:contain}.sq .c{contain-intrinsic-size:auto 420px}
 .sub{margin:-8px 0 16px}
 .hero{max-width:640px;margin:14vh auto;text-align:center}
 .hero form{display:flex}.hero input{height:48px;border-right:1px solid var(--bd);border-radius:24px;padding:0 20px}
@@ -315,7 +345,7 @@ body{overscroll-behavior:none;overflow-x:clip}
 @starting-style{#ytc:not([data-still="1"]) :is(.msg,.feed>.empty){opacity:0;transform:translateY(calc(6px * var(--mv)))}}
 #ytc .msg a{color:var(--ac)}
 .empty{color:var(--mu)}
-.grid>.empty{grid-column:1/-1}
+.grid>.empty,.grid>.msg,.grid>.tvpc{grid-column:1/-1}
 #ytc-pill{position:fixed;top:76px;left:50%;transform:translateX(-50%);z-index:11}
 #ytc .pill{padding:8px 16px;border:0;border-radius:var(--r-ctl);background:var(--ac);color:var(--bg);font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.5)}
 /* "New videos" drops in from the header edge (it is written into #ytc-pill once). */
@@ -1183,7 +1213,9 @@ html[data-ytc-tv] #ytc-main{padding:calc(var(--sy) + .5rem) 2.5rem 3rem 5.75rem}
 html[data-ytc-tv] #ytc:not([data-nav=watch]) #ytc-main::before{content:"";position:fixed;z-index:6;left:0;right:0;top:0;height:var(--scrim);background:linear-gradient(var(--bg) calc(var(--scrim) - .75rem),color-mix(in srgb,var(--bg) 0%,transparent));pointer-events:none}
 /* (The scrim ends just above where each page's first row sits, the focused card's ring included.) */
 html[data-ytc-tv] #ytc-main{--scrim:4.625rem}html[data-ytc-tv] #ytc[data-nav=search] #ytc-main{--scrim:5.125rem}
-html[data-ytc-tv] #ytc-main:has(.feed>.m.sub){--scrim:5.875rem}html[data-ytc-tv] #ytc-main:has(.feed>.ch){--scrim:10.125rem}
+html[data-ytc-tv] #ytc-main:has(.feed>.m.sub){--scrim:5.875rem}html[data-ytc-tv] #ytc-main:has(.feed>.ch){--scrim:7.125rem}html[data-ytc-tv] #ytc-main:has(.feed>.chb){--scrim:9.5rem}
+/* (A channel with no description line: its first row sits 1.3125 rem higher.) */
+html[data-ytc-tv] #ytc-main:has(.feed>.ch):not(:has(.ch .about)){--scrim:5.8125rem}html[data-ytc-tv] #ytc-main:has(.feed>.chb):not(:has(.ch .about)){--scrim:8.1875rem}
 html[data-ytc-tv] #ytc .fh{min-height:2rem;margin:0 0 1rem;gap:.75rem;position:relative;z-index:7}
 html[data-ytc-tv] #ytc h1{font-size:1.375rem;line-height:2rem;font-weight:500;letter-spacing:-.01em}
 html[data-ytc-tv] #ytc .m.sub{margin:-.875rem 0 1rem;font-size:.8125rem;line-height:1.125rem;color:var(--mu);position:relative;z-index:7}
@@ -1214,14 +1246,34 @@ html[data-ytc-tv] #ytc .fx-ch{height:2rem;padding:0 1rem;border-radius:.375rem;f
 html[data-ytc-tv] #ytc .fx-ch:focus:not([aria-pressed=true]){background:var(--hv)}
 html[data-ytc-tv] #ytc .fx-note{font-size:.8125rem}
 /* Channel and playlist headers. */
-html[data-ytc-tv] #ytc .ch{gap:1rem;min-height:3rem;margin:0 0 1.25rem;position:relative;z-index:7}
+html[data-ytc-tv] #ytc .ch{gap:1rem;min-height:3rem;margin:0 0 .75rem;position:relative;z-index:7}
+html[data-ytc-tv] .feed:not(:has(>.chb))>.ch{margin-bottom:1.25rem}
+/* Channel tabs on the remote: one row under the header, the sort chips at its right end, the white focus frame, no motion.
+   The selected tab is a quiet surface. */
+html[data-ytc-tv] .feed.chp{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:1rem}
+html[data-ytc-tv] .feed.chp>:not(.chb,.chs){grid-column:1/-1}
+html[data-ytc-tv] #ytc .chb{position:relative;top:auto;z-index:7;margin:0 0 .75rem;background:none;box-shadow:none}
+html[data-ytc-tv] .cht{overflow:visible;margin:0;padding:0}
+html[data-ytc-tv] .chl{gap:.5rem;width:auto;min-width:0}
+html[data-ytc-tv] #ytc .ct{height:2rem;padding:0 .75rem;border-radius:.375rem;font-size:.875rem;line-height:2rem;transition:none}
+html[data-ytc-tv] #ytc .ct>span{transition:none}
+html[data-ytc-tv] #ytc .ct[aria-current=page]{background:#303030}
+html[data-ytc-tv] #ytc .ct:focus{outline:var(--ring) solid var(--ac);outline-offset:.1875rem;background:#3f3f3f;color:var(--tx);animation:none}
+html[data-ytc-tv] #ytc .ct:focus-visible>span{outline:0;animation:none}
+html[data-ytc-tv] .ct>u,html[data-ytc-tv] .chk{display:none}
+html[data-ytc-tv] .chb.sk .ct{width:4rem}html[data-ytc-tv] .chb.sk .ct>i{height:2rem;border-radius:.375rem}
+html[data-ytc-tv] #ytc .chs{justify-self:end;gap:.5rem;margin:0 0 .75rem;padding:0;overflow:visible;position:relative;z-index:7}
+html[data-ytc-tv] #ytc .chs .fx-ch.sk{width:5rem}
+html[data-ytc-tv] .grid.sh{--cols:7;grid-template-columns:repeat(7,minmax(0,1fr))}
+html[data-ytc-tv] .sh .c{contain-intrinsic-size:auto calc((100vw - 13.25rem) * .254 + 5.375rem)}
+html[data-ytc-tv] .sq .c{contain-intrinsic-size:auto calc((100vw - 13.25rem) * .2 + 5.375rem)}
+html[data-ytc-tv] #ytc .grid>.empty{margin:6rem 0 0;text-align:center;font-size:.9375rem;line-height:1.375rem;color:var(--mu)}
 html[data-ytc-tv] .ch .av.lg{width:3rem;height:3rem}
 html[data-ytc-tv] #ytc .ch h1{font-size:1.375rem;line-height:2rem;margin:0}
 html[data-ytc-tv] #ytc .ch .m{font-size:.8125rem;line-height:1.125rem}
 html[data-ytc-tv] #ytc .ch .about{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;white-space:normal;max-width:40rem}
-html[data-ytc-tv] #ytc .feed>h2{display:none}
-/* Subscribe on a channel page: the first stop under the header, over the first card (↑ from the first row reaches it). */
-html[data-ytc-tv] .chsub{position:relative;z-index:7;height:2.25rem;margin:-.5rem 0 1.25rem}
+/* Subscribe on a channel page: the header's right end, on the grid's right edge (↑ from the tab row reaches it). */
+html[data-ytc-tv] .chsub{flex:none;height:2.25rem}
 html[data-ytc-tv] #ytc .chsub :is(.ya-sub,.tvb){display:inline-flex;align-items:center;height:2.25rem;box-sizing:border-box;padding:0 1.125rem;border:0;border-radius:.5rem;background:var(--tx);color:var(--bg);font:500 .9375rem/1 var(--tvf);transform:none;transition:none}
 html[data-ytc-tv] #ytc .chsub .ya-sub.on{background:var(--cb);color:var(--tx)}
 html[data-ytc-tv] #ytc .chsub .ya-sub.confirm{background:color-mix(in srgb,var(--rd) 18%,var(--cb));color:var(--er)}

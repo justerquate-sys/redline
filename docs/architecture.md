@@ -246,9 +246,9 @@ continuations: "People also watched", "For you", "People also search for", "Prev
 related searches", … by title in English, Russian and German, and any video shelf that links nowhere; real
 result shelves, e.g. a channel's linked "Latest from …", and channel/playlist results stay; the debug overlay
 counts them as `recommendation shelves`), Watch (`/watch?v=…&t=…`, our own player, see below, title/channel/views/date/description/related),
-Channel (`/@handle`, `/channel/UC…`, `/c/…`, `/user/…` → Videos tab), Playlist (`/playlist?list=…`,
-including `WL`). Feeds, search, channel videos and related videos scroll infinitely. Shorts are hidden
-unless the Filters **Shorts** switch is on (then Home, Search and related only); `/shorts/ID` opens as a normal watch page. The **description** is shown as the old extension showed it (
+Channel (`/@handle`, `/channel/UC…`, `/c/…`, `/user/…`, with its tabs: see "Channel pages" below), Playlist (`/playlist?list=…`,
+including `WL`). Feeds, search, channel tabs and related videos scroll infinitely. Shorts are hidden
+unless the Filters **Shorts** switch is on (then Home, Search and related only; a channel's Shorts tab always shows its own); `/shorts/ID` opens as a normal watch page. The **description** is shown as the old extension showed it (
 `src/description.rs`): one panel 12px below the channel/actions row, capped at 760px, fully open at natural
 height, with views and date on top, then only the lines that carry a resource link (http(s)/mailto or a YouTube page,
 redirects unwrapped to the real destination), each with its own text minus hashtags; a bare link takes the short line
@@ -320,6 +320,65 @@ at" checkboxes fill and draw their check mark in (stroke-dashoffset on a persist
 Copy morphs into "✓ Copied" (one button, its label rolls up and blurs away, the check draws, the fill settles to
 the tinted done look) and back after 1.8 s. The action-row status message unfolds from the row's right corner and
 folds back into it when it expires.
+
+### Channel pages
+
+(Owner, 8 Nov 2026: "why are there no videos, live streams, playlist in a channel tab"; `src/app/changlue.rs`, `parse::channel`.)
+
+- **The tabs are YouTube's own**, from the channel response's `tabRenderer` list: title (in the page's language) and
+  `browseEndpoint.params`, in its order. A channel without live streams has no Live tab. The client shows the ones it can
+  render as cards, by their URL's last segment: `videos`, `shorts`, `streams` (Live), `shows`, `podcasts`, `courses`,
+  `releases`, `playlists`. Out: Home (`featured`; Videos is what opens first), Posts, Store, Membership, Playables
+  (`miniGameCardViewModel`) and Search; nothing that promotes paid membership. A tab YouTube lists whose answer holds
+  nothing the client can show leaves the row for this visit and the first tab opens, instead of an empty page.
+- **URLs**: `/@x`, `/@x/videos`, `/@x/streams`, `/@x/shorts`, `/@x/playlists`, … and the same under `/channel/UC…`, `/c/…`,
+  `/user/…` open that tab directly, on reload and from a pasted link; another segment (`/featured`, `/posts`) opens
+  Videos. A tab link pushes history; Back and Forward walk the tabs. A direct link asks `navigation/resolve_url` for the
+  URL, which names the channel and the tab's `params` (live, for all four URL forms, 8 Nov 2026); a bare `/channel/UC…`
+  needs no such step. Asked for a tab it does not have, YouTube answers with its Home (`featured` selected): the first tab
+  the channel has opens, in the same history entry. With no renderable tab at all (a channel with only Home and Posts):
+  the answer as it came, without a tab row.
+- **Each tab keeps its list while the channel is open.** The tab change is a navigation (`App::navigate`: history,
+  telemetry, what a page change tears down), but the header and tab row stay on the page and only the list under them
+  changes. The list on screen is set aside whole (`bridge::park`: its nodes, so decoded pictures come back with them, and its
+  `FeedState`, scroll position and stats; at most 12 lists, in memory). A tab seen before comes back from there in the
+  press, with no request, no skeleton and no flash (`unpark`); it opens at its own scroll position. A video opened from a
+  tab and Back keep them all; anywhere else (Home, Search, a playlist) lets them go, a TV has little memory to spare, and opening
+  the channel anew starts over. Pressing the tab on screen goes back to its first cards. A tab that failed is not kept: it asks
+  again when it comes back. A tab left writes no snapshot (walking one channel's tabs would push other pages' out of the six
+  kept); the tab on screen is written with the page, as any feed.
+- **A new tab** shows skeletons in its cards' shape and loads through the page prefetch (`load`): a hover or focus prefetch
+  in flight or in the page cache is adopted (hovering a tab: 70 ms, as any link), the hedge applies, and its continuations
+  follow the usual pipeline (`pump`, `CHUNK`, the preload rules). Because it goes out as a prefetch, an answer that lands after
+  the user moved on goes to the page cache for coming back, and never touches the tab on screen. A tab that fails shows the
+  reason in place of its list; the header and tabs stay, and going back to it asks again. The first tab is the channel response itself: no extra request.
+- **Sort**: Latest / Popular / Oldest from the response's own chip bar. Two shapes, both live: three chips, each with its
+  continuation token; or, on channels with members-only videos, one drop-down chip whose sheet holds the three (its
+  `commandExecutorCommand`), beside "Members only" and "Public" filter chips, which are not sorts and stay out. Playlists' sort
+  menu (`channelSubMenuRenderer`: "Date added (newest)", "Last video added") is the same row, with `browse` params. Nothing
+  is hardcoded. A sort's answer is a reload (`reloadContinuationItemsCommand`: header slot and body slot); the old list is
+  set aside under its label, so going back is instant, a late answer is ignored (`generation`), a failed one puts the old list
+  and chip back. The URL does not change (YouTube's does not either). Tokens stay in memory and in this tab's snapshot.
+- **Cards** follow `Surface::Other` as before, with two exceptions by tab. The Shorts tab shows its Shorts whatever the
+  Shorts switch says (`changlue::admit_tab`: there they are ordinary cards, vertical, `sardefault` art, `Lay::Shorts`, seven to
+  two per row), opening in the normal player. Live: YouTube's own badges, `LIVE` (`THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE`) and
+  `Upcoming` (a default-style badge, in the page's language) with "Scheduled for …"; nothing filters them here. Playlist
+  cards keep YouTube's count badge, open `/playlist?list=…`, drop the byline (every card is this channel's; YouTube's first row
+  is the word "Playlist" linked to the channel) and name their kind (Playlist, Podcast, Course, Release, Show). Shows are
+  `gridShowRenderer`, Courses and Releases `playlistRenderer`, Podcasts square-framed `lockupViewModel`s (YouTube's art is
+  mostly 240×240; the others are letterboxed, never cropped).
+- **Look (unslop, on this page only)**: one left edge for the header, tab text, chips and grid; a 4 px spacing grid; three text
+  roles (name, secondary line, tab label); no heading above the grid, since the tabs say it. The description line loses
+  a channel's own list mark and doubled spaces (`parse::about_line`) and is at most two lines; a channel with no
+  description has no line. The tab row sticks under the top bar while the list scrolls, so the next tab is a press away, and
+  a new list opens with the row where it is. Its 2 px indicator is the selected tab's own until a pointer changes tabs, then
+  one persistent mark (`bridge::mark_slide`, `.chk`) that springs to the new tab: state first, motion on top. Keys,
+  back/forward and restored pages move it at once. Keyboard: Tab reaches the row, ←/→ walk it, ↓ goes to the chips and the
+  cards, ↑ from the first row of cards comes back. Narrow windows: the row and chips scroll sideways, the page does not, and the row keeps its selected tab in view.
+- **Measured** (e2e fixture, public build, 8 Nov 2026): press → a loaded tab final in the DOM 0.8–1.0 ms (p50 per run, n = 16,
+  18–27 cards), no long animation frame in the one run that recorded them; a hover-prefetched tab (parsed and written in the
+  press) 0.9–1.2 ms (n = 3, 10 cards). Live (signed out, real channels, home connection): a new tab 253–436 ms click → cards, a
+  new sort 244–359 ms, a loaded tab or sort no request at all.
 
 ### Speed
 
@@ -1164,7 +1223,7 @@ the URL's `t`, and whether it was paused). A held OK is one press: the bridge ma
 auto-repeat (`on_click` bit 64) and on TV only typing and the exact-speed steps take it (`tv::repeats`); a press within 400 ms
 of "Unsubscribe?" does not confirm it. **Subscribe** shares
 `Actions::subs`, the confirming second press and the rollback with the desktop button: `tv_row_sub` in the row,
-`tv_channel` on the channel page (`#ytc-chsub`; it points `acts` at that channel, the channel id coming from the route or
+`tv_channel` on the channel page (`#ytc-chsub`, the header's right end; it points `acts` at that channel, the channel id coming from the route or
 `App::channels`), the More info button. **Audio** is its own menu (`ui::audio_menu`, `p-menu audio`); on TV the Captions
 menu never has tabs. `set_audio` writes, per video in memory, the track (`formats::remember_audio`) and, for a dub, its language (`p.al`,
 the id's tag: `en-US.4` → `en-US`); choosing a video's original clears `p.al`, because it means "no dubs": a language
@@ -1228,7 +1287,8 @@ created. Importing twice is harmless (the second run merges into the same record
 | `bridge.js` | Generic primitives only: replace the document, set/append HTML/text by id, attributes, CSS variables, history, `location.assign`, scroll, fetch (bytes back to Rust, optional init options; `progress: 1` also reports headers and bytes so far), abort, `chrome.storage`, timers, IntersectionObserver, postMessage, fullscreen, element size, `fade_imgs` (images still loading fade in when they land; cached ones are never hidden); media objects by numeric handle (bind a `<video>` and forward its events, `MediaSource`, `addSourceBuffer`, `appendBuffer`, `remove`, `changeType`, `buffered`, get/set/call properties, `isTypeSupported`); delegated click/dblclick/submit/pointerover/pointermove/keydown/input/drag/popstate/pagehide; voice: microphone → 16 kHz PCM chunks with a level custom property, a WebSocket relayed by the background worker (a stored secret appended there), a held bare key, contextmenu on `[data-ctx]`, secrets (only whether one is set; saved straight from an input). No YouTube or player knowledge: every decision is in Rust. |
 | `rules.json` | Static DNR. YouTube's site bundles are not blocked (YouTube's service worker fetches them outside the page frame, so a block broke the native fallback; `window.stop()` keeps them from running on client pages). `allowAllRequests` for `yt-native=1` and the native paths at priority 2; rule 20 (priority 1) adds a script-free CSP to Home's own document (read by the client, never run); block `log_event`, `/pagead/`, `csi_204` and doubleclick (from youtube.com) at priority 3, so telemetry stays blocked even on native pages; rule 33 lets Redline's own "shown" batches (`log_event?alt=json&prettyPrint=false`) through; rule 50 sets `Access-Control-Allow-Origin: *` on googlevideo responses to youtube.com, because googlevideo randomly redirects chunk requests to another node and the redirected request carries `Origin: null`. `/s/player/` and `/api/stats/` are never blocked. `background.js` handles auto-update, debug-center delivery and the voice socket relay. |
 | `client.css` | The whole look (graphite/white/red tokens, layout, player), injected by the manifest (no flash). 15 KB (4.7 KB gzip). |
-| `src/route.rs` | URL → page. |
+| `src/route.rs` | URL → page, a channel's tab included (`ChannelTab`). |
+| `src/app/changlue.rs` | Channel pages: the tab row, one list per tab and sort set aside whole, new tabs through the page prefetch, sort chips (see "Channel pages"). |
 | `src/config.rs` | Replaces the stopped page's `ytcfg`: client version + visitor data from `/sw.js_data` (2.7 KB, the endpoint YouTube's own service worker uses), cached in `chrome.storage.local` key `ytcConfigV1` for 24 h; fallback version `2.20261030.01.00`; session index `au` (default 0); SAPISID cookies → `SAPISIDHASH`/`SAPISID1PHASH`/`SAPISID3PHASH`. |
 | `src/api.rs` | InnerTube bodies and headers (`X-Youtube-Client-Name/Version`, `X-Origin`, `X-Goog-AuthUser`, `X-Goog-Visitor-Id`, `Authorization`). Same-origin `fetch`, cookies included by the browser. |
 | `src/parse.rs` | **All** response parsing: `videoRenderer`, `compactVideoRenderer`, `gridVideoRenderer`, `playlistVideoRenderer`, `lockupViewModel` (video/playlist/podcast/album/course), `channelRenderer`, legacy playlist renderers, `continuationItemRenderer`/`continuationItemViewModel`, watch primary/secondary info, attributed descriptions (UTF-16 offsets, redirect links unwrapped, only http(s) kept), channel/playlist headers. A walker descends only through known containers; Shorts (`shortsLockupViewModel`, `reelItemRenderer`, Short `videoRenderer`/`lockupViewModel`, Shorts shelves) become video items marked `short` and are counted; ads are dropped and counted; unknown renderers are counted, never fatal. |

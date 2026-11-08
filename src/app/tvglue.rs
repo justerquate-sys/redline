@@ -31,8 +31,9 @@ const TRAPS: &str = "#ytc-tvabout.on,#ytc-tvsign.on,#ytc-keys.on,#ytc-imp.on,#yt
 const OPEN: &str = "#ytc-tvsign.on,#ytc-keys.on,#ytc-imp.on,#ytc-player.menu #ytc-menu,.open[id^=ytc-fx-],#ytc [aria-expanded=true]:not(#ytc-q),#ytc-chap.open";
 /// Panels the remote's search and voice keys never open the recognizer over.
 const PANELS: &str = "#ytc-tvsign.on,#ytc-tvabout.on,#ytc-keys.on,#ytc-imp.on,#ytc-player.menu #ytc-menu,.open[id^=ytc-fx-],#ytc-save-p.on,#ytc-share-p.on,#ytc-tvinfo.on,#ytc-comments.on";
-/// What `spatial_rects` marks: 1 = a card of the page's grid (rows keep one vertical place), 2 = the rail.
-const MARKS: &str = "#ytc-list a.t|#ytc-side *";
+/// What `spatial_rects` marks: 1 = a card of the page's grid (rows keep one vertical place), 2 = the rail,
+/// 3 = a channel's tab, 4 = its sort chip, 5 = its Subscribe button.
+const MARKS: &str = "#ytc-list a.t|#ytc-side *|#ytc-cht a|#ytc-chs button|#ytc-chsub button";
 /// A card's stop is measured by the card's own box: an off-screen card (`content-visibility:auto`) needs no layout
 /// for it, and every card's title link sits at the same place in its card, so rows line up as before.
 const CARD: &str = ".c";
@@ -829,6 +830,14 @@ impl App {
         }
     }
 
+    /// Another tab of the channel on screen: its history entry is as far from a video as this one (Back walks the
+    /// tabs, then returns to the video).
+    pub(super) fn tv_tab_opened(&mut self) {
+        if tv::on() {
+            self.tv.next_from_watch = self.tv.history.from_watch();
+        }
+    }
+
     /// A navigation took place (`self.url` is the new page): the history mirror, and what a video returned to takes back.
     pub(super) fn tv_navigated(&mut self, pop: bool) {
         if !tv::on() {
@@ -847,7 +856,7 @@ impl App {
     }
 
     /// This channel page's id (from the route, or learned with the page) and title: its Subscribe button.
-    fn tv_channel_paint(&mut self) {
+    pub(super) fn tv_channel_paint(&mut self) {
         let Route::Channel { key, .. } = &self.route else { return };
         let id = match key {
             crate::route::ChannelKey::Id(id) => Some(id.clone()),
@@ -1334,6 +1343,18 @@ impl App {
         let pick = if marks[c] == 2 && matches!(d, Dir::Up | Dir::Down) {
             let only: Vec<tv::Rect> = rects.iter().zip(&marks).map(|(r, m)| if *m == 2 { *r } else { tv::Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 } }).collect();
             tv::pick(rects[c], &only, d, Some(c))
+        } else if matches!(marks[c], 3 | 4) && matches!(d, Dir::Left | Dir::Right) {
+            // A channel's tabs and sort chips are one row: ←/→ stay on it (← from its start reaches the rail).
+            let only: Vec<tv::Rect> = rects.iter().zip(&marks).map(|(r, m)| if matches!(m, 3 | 4) { *r } else { tv::Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 } }).collect();
+            tv::pick(rects[c], &only, d, Some(c)).or_else(|| if d == Dir::Left { tv::pick(rects[c], &rects, d, Some(c)) } else { None })
+        } else if matches!(marks[c], 3 | 4) && d == Dir::Up {
+            // ↑ from that row is Subscribe, at the far right of the header; never the rail beside it.
+            marks.iter().position(|m| *m == 5)
+        } else if matches!(marks[c], 3 | 4 | 5) && d == Dir::Down {
+            // ↓ from that row is its cards. While there are none (a tab loading, an empty one) the focus stays: a rail
+            // tile would be the only stop lying lower.
+            let only: Vec<tv::Rect> = rects.iter().zip(&marks).map(|(r, m)| if *m != 2 { *r } else { tv::Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 } }).collect();
+            tv::pick(rects[c], &only, d, Some(c))
         } else {
             tv::pick(rects[c], &rects, d, Some(c))
         };
@@ -1359,6 +1380,14 @@ impl App {
             return true;
         }
         if in_rail && marks[i] != 2 && bridge::focus_load("content") {
+            return true;
+        }
+        // A channel's row: ↑ from the first row of cards and ↓ from Subscribe land on the selected tab, wherever they
+        // start. (The sort chips are → along the row. On a tab without chips nothing lies over the last columns but
+        // Subscribe, which ↑ must not reach in one press: one more OK would subscribe.)
+        let over_cards = matches!(marks[i], 3 | 4) || (marks[i] == 5 && marks.contains(&3));
+        if (d == Dir::Up && marks[c] == 1 && over_cards) || (d == Dir::Down && marks[c] == 5 && matches!(marks[i], 3 | 4)) {
+            bridge::focus_sel(crate::render::CH_TABS, "[aria-current=page]");
             return true;
         }
         let y = if marks[i] == 1 { tv::row_scroll(&rects, &marks, c, i) } else { -1.0 };

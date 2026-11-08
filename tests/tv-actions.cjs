@@ -98,7 +98,7 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
     } finally { await tvClose(tv); }
   });
 
-  await step('TV Subscribe (960×540 and 1920×1080): on the channel page under the header and in the player row; one state on every surface; a second OK confirms unsubscribing; refused: back with a readable notice; signed out → Sign in; the account\'s own state shows', async () => {
+  await step('TV Subscribe (960×540 and 1920×1080): on the channel page at the header\'s right end and in the player row; one state on every surface; a second OK confirms unsubscribing; refused: back with a readable notice; signed out → Sign in; the account\'s own state shows', async () => {
     const tv = await tvOpen();
     let account = null;
     await tv.route(/\/youtubei\/v1\/(next|browse)/, async route => {
@@ -114,10 +114,13 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         await tvGo(tv, 'signed', `https://www.youtube.com/channel/${CH}`);
         await tv.waitForFunction(() => document.activeElement?.matches('#ytc-list a.t'), null, { timeout: 8000 });
         await tv.waitForSelector('#ytc-sub-b');
-        const place = await tv.evaluate(() => { const h = document.querySelector('.feed>.ch').getBoundingClientRect(), b = document.getElementById('ytc-sub-b').getBoundingClientRect(), c = document.querySelector('#ytc-list .c').getBoundingClientRect(); return { under: b.top >= h.bottom, over: b.bottom <= c.top, x: Math.abs(b.left - c.left) }; });
-        assert.ok(place.under && place.over && place.x <= 1, `under the header, over the first card: ${JSON.stringify(place)}`);
+        const place = await tv.evaluate(() => { const h = document.querySelector('.feed>.ch').getBoundingClientRect(), b = document.getElementById('ytc-sub-b').getBoundingClientRect(), c = document.querySelectorAll('#ytc-list .c')[4].getBoundingClientRect(), rem = parseFloat(getComputedStyle(document.documentElement).fontSize); return { inHeader: b.top >= h.top - 1 && b.bottom <= h.bottom + 1, right: Math.abs(b.right - c.right), above: b.bottom <= c.top, rem: b.height / rem }; });
+        assert.ok(place.inHeader && place.right <= 1 && place.above && Math.abs(place.rem - 2.25) < 0.05, `at the header's right end, on the grid's right edge: ${JSON.stringify(place)}`);
+        // ↑ from the first card: the channel's selected tab; once more: Subscribe.
         await tv.keyboard.press('ArrowUp');
-        assert.equal(await tv.evaluate(() => document.activeElement.id), 'ytc-sub-b', '↑ from the first card');
+        assert.equal(await tv.evaluate(() => document.activeElement.id), 'ytc-ct-videos', '↑ from the first card');
+        await tv.keyboard.press('ArrowUp');
+        assert.equal(await tv.evaluate(() => document.activeElement.id), 'ytc-sub-b', '↑ from the tab row');
         assert.deepEqual(await tvAudit(tv, `channel subscribe ${W}`), []);
         await tvShot(tv, 'channel-subscribe');
         // (The scrim leaves the first row's ring alone.)
@@ -159,6 +162,8 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         await tvGo(tv, 'code', `https://www.youtube.com/channel/${CH}`);
         await tv.waitForFunction(() => document.activeElement?.matches('#ytc-list a.t'), null, { timeout: 8000 });
         await tv.waitForSelector('#ytc-chsub [data-act=tv-signin]');
+        await tv.keyboard.press('ArrowUp');
+        assert.equal(await tv.evaluate(() => document.activeElement.id), 'ytc-ct-videos', '↑ from the first card: the selected tab');
         await tv.keyboard.press('ArrowUp');
         assert.equal(await tv.evaluate(() => document.activeElement.dataset.act), 'tv-signin');
         assert.equal(await tv.evaluate(() => document.activeElement.textContent), 'Subscribe');
@@ -664,6 +669,16 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
       const href = await tv.evaluate(() => document.querySelector('#ytc-tvch .tvch').getAttribute('href'));
       await toChannel();
       assert.deepEqual(await back(tv), { handled: false, exit: false }, 'opened from the video: Back leaves it');
+      // A tab of that channel: as far from the video, so Back walks the tabs and then returns to it.
+      await tv.focus('#ytc-ct-streams');
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => location.pathname.endsWith('/streams') && document.querySelector('#ytc-ct-streams[aria-current=page]') && document.querySelector('#ytc-list .c:not(.sk)'), null, { timeout: 8000 });
+      await tv.focus('#ytc-list a.t');
+      assert.deepEqual(await back(tv), { handled: false, exit: false }, 'a tab of a channel opened from the video: Back steps back');
+      await tv.goBack({ waitUntil: 'commit' });
+      await tv.waitForFunction(h => location.pathname === h && document.querySelector('#ytc-list .c:not(.sk)'), href, { timeout: 8000 });
+      await tv.focus('#ytc-list a.t');
+      assert.deepEqual(await back(tv), { handled: false, exit: false }, 'and that entry still leads to the video');
       // Home by the rail, then a link to the same channel: another history entry.
       await tv.focus('#ytc-side .rl[data-nav=home]');
       await tv.keyboard.press('Enter');

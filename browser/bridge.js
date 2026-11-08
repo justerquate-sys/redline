@@ -252,6 +252,12 @@ const YTC = (() => {
       xs[i].focus({ preventScroll: true }); xs[i].scrollIntoView({ block: 'nearest' });
       return true;
     },
+    grid_row(id, sel) {
+      const el = byId(id), cur = d.activeElement && d.activeElement.closest && d.activeElement.closest(sel);
+      if (!el || !cur || !el.contains(cur)) return -1;
+      const t = el.querySelector(sel).getBoundingClientRect().top, y = cur.getBoundingClientRect().top;
+      return Math.abs(y - t) < 2 ? 0 : 1;
+    },
     focus(id) { const el = byId(id); if (el) { el.focus(); if (el.select) el.select(); } },
     // hrefs of the `link` descendants of the `sel` elements inside `id` that intersect the viewport (document
     // order, at most `max`). Only the `sel` boxes are measured: measuring inside a content-visibility:auto box
@@ -1095,6 +1101,13 @@ const YTC = (() => {
       const a = el.getBoundingClientRect(), r = x.getBoundingClientRect();
       if (r.top < a.top) el.scrollTop += r.top - a.top - 4; else if (r.bottom > a.bottom) el.scrollTop += r.bottom - a.bottom + 4;
     },
+    scroll_keep_x(id, sel) {
+      requestAnimationFrame(() => {
+        const el = byId(id), x = el && el.querySelector(sel); if (!x || el.scrollWidth <= el.clientWidth) return;
+        const a = el.getBoundingClientRect(), r = x.getBoundingClientRect(), pad = parseFloat(getComputedStyle(el).paddingLeft) || 0;
+        if (r.left < a.left + pad) el.scrollLeft += r.left - a.left - pad; else if (r.right > a.right - pad) el.scrollLeft += r.right - a.right + pad;
+      });
+    },
     // Rubber band: `id` moves `dy` px and eases back over `ms` (a compositor transform; nothing waits for it).
     band(id, dy, ms) {
       const el = byId(id); if (!el) return;
@@ -1145,12 +1158,18 @@ const YTC = (() => {
         if (!m) { m = d.createElement('i'); m.className = cls; m.setAttribute('aria-hidden', 'true'); s.prepend(m); }
         const x = YTC._pill_box(s, t), H = Math.max(s.scrollHeight, x[1] + x[3]);
         m.style.height = H + 'px';
-        const clip = `inset(${x[1]}px ${s.clientWidth - x[0] - x[2]}px ${H - x[1] - x[3]}px ${x[0]}px round ${getComputedStyle(t).borderTopLeftRadius})`;
+        // (The right inset is measured from the left edge: the mark is as wide as its scope, which a resized window changes.)
+        const clip = `inset(${x[1]}px calc(100% - ${x[0] + x[2]}px) ${H - x[1] - x[3]}px ${x[0]}px round ${getComputedStyle(t).borderTopLeftRadius})`;
         if (!slide || !s.dataset.mk) { m.style.transition = 'none'; m.style.clipPath = clip; getComputedStyle(m).clipPath; m.style.transition = ''; }
         else m.style.clipPath = clip;
         s.dataset.mk = '1';
       });
     },
+    // An element's children taken out of the page and kept whole under a key (a list set aside while another shows).
+    _parked: new Map(),
+    park(id, key) { const el = byId(id); if (!el) return; const f = d.createDocumentFragment(); while (el.firstChild) f.append(el.firstChild); YTC._parked.set(key, f); },
+    unpark(id, key) { const el = byId(id), f = YTC._parked.get(key); if (!el || !f) return false; YTC._parked.delete(key); el.replaceChildren(f); return true; },
+    park_drop(key) { if (key) YTC._parked.delete(key); else YTC._parked.clear(); },
     // Restarts the CSS animations of `id` and its descendants (a one-shot effect on a persistent element: a pulse).
     replay(id) { const el = byId(id); if (el) for (const a of el.getAnimations({ subtree: true })) { a.cancel(); a.play(); } },
     // (box morph internals) The viewport box `el` paints now: its own box, or a running morph's clipped surface.
