@@ -53,11 +53,16 @@ pub const RATE_LIMIT_WAIT_MS: u32 = 60_000;
 /// It refuses the request (403, 400): one retry only.
 pub const REFUSED_WAIT_MS: u32 = 4000;
 
+/// The player service's HTTP status in a failure reason.
+fn service_status(reason: &str) -> Option<u32> {
+    reason.strip_prefix("VISIONOS player HTTP ")?.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
+}
+
 /// How a failure reason is retried. `played`: the failed player had shown a picture. YouTube's
 /// `ERROR` during a refresh of a video that was playing seconds ago may be a passing one (one retry;
 /// the new player's answer at its start is the verdict). The bot check is never retried.
 pub fn retries(reason: &str, played: bool) -> Retries {
-    if let Some(code) = reason.strip_prefix("VISIONOS player HTTP ").and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|c| c.parse::<u32>().ok()) {
+    if let Some(code) = service_status(reason) {
         return match code {
             429 => Retries::Once(RATE_LIMIT_WAIT_MS),
             400 | 403 => Retries::Once(REFUSED_WAIT_MS),
@@ -95,9 +100,18 @@ pub struct Auto {
     last_return: f64,
     /// The player running now is a return's one retry: it gets no chain of its own unless it played.
     returning: bool,
+    /// When the player service last said "too many requests".
+    limited: Option<f64>,
 }
 
 impl Auto {
+    /// A player failed at `now` for `reason`.
+    pub fn failed(&mut self, reason: &str, now: f64) {
+        if service_status(reason) == Some(429) {
+            self.limited = Some(now);
+        }
+    }
+
     /// The wait before the next automatic Try again after a failure at `now`; None: the panel.
     /// `played`: the failed player had shown a picture; `how`: `retries(reason, played)`.
     pub fn delay(&mut self, now: f64, played: bool, how: Retries) -> Option<u32> {
@@ -124,7 +138,10 @@ impl Auto {
     /// Whether coming back to the panel at `now` retries once more. `away_ms`: how long a window
     /// that only got the focus back was without it (None: the tab became visible).
     pub fn may_return(&self, now: f64, away_ms: Option<f64>) -> bool {
-        self.returns < RETURN_MAX && (self.returns == 0 || now - self.last_return >= RETURN_GAP_MS) && away_ms.is_none_or(|ms| ms >= RETURN_AWAY_MS)
+        self.returns < RETURN_MAX
+            && (self.returns == 0 || now - self.last_return >= RETURN_GAP_MS)
+            && away_ms.is_none_or(|ms| ms >= RETURN_AWAY_MS)
+            && self.limited.is_none_or(|at| now - at >= f64::from(RATE_LIMIT_WAIT_MS))
     }
 
     pub fn returned(&mut self, now: f64) {
@@ -632,6 +649,20 @@ mod tests {
         assert_eq!(b.delay(100.0, false, Retries::Once(REFUSED_WAIT_MS)), None);
         assert_eq!(b.delay(AUTO_WINDOW_MS + 1.0, false, Retries::Once(REFUSED_WAIT_MS)), Some(REFUSED_WAIT_MS), "the window slid");
         assert_eq!(Auto::default().delay(0.0, true, Retries::Never), None);
+    }
+
+    #[test]
+    fn a_return_to_the_tab_respects_the_rate_limit() {
+        let mut a = Auto::default();
+        assert!(a.may_return(1000.0, None));
+        a.failed("VISIONOS player HTTP 500", 1000.0);
+        assert!(a.may_return(1000.0, None), "only 429 holds a return back");
+        a.failed("VISIONOS player HTTP 429", 1000.0);
+        assert!(!a.may_return(1000.0, None), "just refused");
+        assert!(!a.may_return(1000.0 + f64::from(RATE_LIMIT_WAIT_MS) - 1.0, None));
+        assert!(a.may_return(1000.0 + f64::from(RATE_LIMIT_WAIT_MS), None), "a minute later");
+        a.failed("VISIONOS player HTTP 429 (while stuck: x)", 90_000.0);
+        assert!(!a.may_return(90_001.0, Some(RETURN_AWAY_MS)), "the focus path too");
     }
 
     #[test]

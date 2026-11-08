@@ -3148,8 +3148,14 @@ impl App {
     fn clear_failed(&mut self) {
         self.auto_wait = None;
         self.focus_wait = None;
-        if let Some(id) = self.player_failed.take().and_then(|f| f.frame) {
-            bridge::held_drop(&id);
+        if let Some(mut f) = self.player_failed.take() {
+            if let Some(id) = f.frame.take() {
+                bridge::held_drop(&id);
+            }
+            // Left during a wait: the viewing session ends here.
+            if let Some(s) = f.carry.session.take() {
+                s.end();
+            }
         }
     }
 
@@ -3223,11 +3229,15 @@ impl App {
                     let (mut carry, played, frame) = p.failed_state();
                     let (v, list) = (p.v.clone(), p.list.clone());
                     self.bw = p.bw;
-                    let how = player::fail::retries(&reason, played);
+                    let mut how = player::fail::retries(&reason, played);
+                    // (`ytc-test-shortlimit`, localStorage, tests only: the 60 s of a 429 are 2 s.)
+                    if how == player::fail::Retries::Once(player::fail::RATE_LIMIT_WAIT_MS) && bridge::local_flag("ytc-test-shortlimit") {
+                        how = player::fail::Retries::Once(2000);
+                    }
                     let retriable = how != player::fail::Retries::Never;
+                    self.auto.failed(&reason, bridge::now());
                     // (`ytc-test-noautotry`, localStorage, tests only: no automatic retry.)
                     let delay = if bridge::local_flag("ytc-test-noautotry") { None } else { self.auto.delay(bridge::now(), played, how) };
-                    p.last_ping(delay.is_none());
                     if !player::own::quiet(&reason) {
                         self.incident(if delay.is_some() { "player-retry" } else { "player-failed" }, &reason, Some(p.report()));
                     }
@@ -3235,7 +3245,10 @@ impl App {
                     match delay {
                         Some(ms) => self.auto_retry_wait(PlayerFailed { v, t, list, carry, retriable, frame }, &reason, ms),
                         None => {
-                            carry.session = None;
+                            // The viewing session ends with the panel (or the reload).
+                            if let Some(s) = carry.session.take() {
+                                s.end();
+                            }
                             // The retries are used up, and the connection isn't the reason: a tab running old code reloads.
                             if retriable && !player::fail::network_like(&reason) && self.stale_reload(&v, t, list.as_deref(), carry.paused, frame.as_deref()) {
                                 return;
@@ -3441,6 +3454,12 @@ impl App {
             (None, Some(p)) => (p.v.clone(), p.resume_at(), p.list.clone(), p.carry(), None),
             (None, None) => return false,
         };
+        // Pressed during a wait: that viewing session ends here, whatever comes next.
+        if !keep {
+            if let Some(s) = carry.session.take() {
+                s.end();
+            }
+        }
         if !matches!(&self.route, Route::Watch { v: rv, .. } if *rv == v) {
             if let Some(id) = frame {
                 bridge::held_drop(&id);
@@ -3460,9 +3479,8 @@ impl App {
             return true;
         }
         if !keep {
-            // Pressed: it plays, in a new viewing session, and every route is tried again.
+            // Pressed: it plays, and every route is tried again.
             carry.paused = false;
-            carry.session = None;
             self.vision_block_until = 0.0;
         }
         self.retry_start = Some(RetryStart { t: t.max(0.0), carry, frame });

@@ -895,7 +895,8 @@ what Try again would fix; `fail::permanent`, `fail::Auto`, `App::after_player`'s
 `Own::fail`). A reason that isn't permanent shows no panel: the app does what Try again does (a new player, VISIONOS asked
 afresh, though the bot-check block stays: only a pressed Try again lifts it) by itself, **after 1 s, then 4 s, then 10 s; at most 3 within a sliding 5 min and 9 while the video stays open** (a new
 navigation starts over), at the same position and play/pause state, audio track and speed, in the same viewing session (the same `cpn`, no second
-`playback` ping; `final` only when the panel shows). The player service's refusals are not hammered (`fail::retries`): `VISIONOS player HTTP 429` gets one retry
+`playback` ping; the failed player's last watchtime ping waits, with its position: it goes as usual at the next player's first frame, or as `final` when the panel shows, the
+viewer leaves or presses a button; a player without a first frame reports nothing of its own). The player service's refusals are not hammered (`fail::retries`): `VISIONOS player HTTP 429` gets one retry
 a minute later, 403 and 400 one after 4 s, none if others went out in the window; `VISIONOS ERROR` during a refresh of a video that has played gets one (the
 new player's answer at its start is the verdict). Media errors (live and post-live ones too, which have
 no recovery in place), stalls ("no first frame", "stalled for"), index and googlevideo failures and "VISIONOS player" without an
@@ -913,7 +914,7 @@ kept in `ytcPlayerLogV1` (debug overlay) and is a `player-retry` incident in dev
 *Back at the panel* (`Auto::may_return`, `App::panel_return`): the tab shown again, or the window focused after at least 60 s
 without it (300 ms later, and not if that press was on the panel), retries once more when the reason isn't permanent, keeping position, play/pause, audio track
 and speed, and the panel is gone if it works.
-One retry per return (never two within 5 s, a return fires both events), at most 3 while the video stays open, and a return's
+One retry per return (never two within 5 s, a return fires both events), at most 3 while the video stays open, none within 60 s of a 429, and a return's
 retry that fails before a picture goes back to the panel without a chain of its own.
 *A stale tab* (`bridge::ext_gone`, `App::stale_reload`). Reloading or updating the extension leaves open tabs running the old
 content script, for as long as they navigate inside the page: its `chrome.runtime.id` is gone and `chrome.*` calls throw (cheapest

@@ -197,6 +197,21 @@ pub struct Viewing {
     sent: f64,
     schedule: Option<Schedule>,
     tracking: Option<Tracking>,
+    /// The failed player's last watchtime ping, not sent yet: (going on, final). The next player
+    /// sends the first at its first frame; a session that ends before that, the second.
+    last: Option<(String, String)>,
+    /// The pings' headers (`ping_headers`).
+    headers: String,
+}
+
+impl Viewing {
+    /// The session ends without another picture: its final ping, with the position it had.
+    pub fn end(mut self) {
+        if let Some((_, last)) = self.last.take() {
+            let headers = if self.headers.len() > 2 { self.headers.as_str() } else { "{}" };
+            bridge::fetch_opts(next_id(), "GET", &last, "", headers, "{\"keepalive\":true}");
+        }
+    }
 }
 
 /// Failure reasons that are expected, not bugs (no incident; the panel still shows).
@@ -548,7 +563,7 @@ pub struct Own {
     rate: f64,
     /// When this viewing session began (`ping_now`; an automatic retry keeps it).
     rt0: f64,
-    /// The watchtime ping of a failure, not sent yet: (going on, final) (`last_ping`).
+    /// The watchtime ping of a failure, not sent yet (`Viewing::last`).
     last_pings: Option<(String, String)>,
     /// Starts without playing (an automatic Try again of a paused video). Before the first frame
     /// `paused` is true anyway; this says it is meant.
@@ -2657,6 +2672,10 @@ impl Own {
                     let ms = now - self.nav_start;
                     self.first_frame = Some(ms);
                     self.media_ok(now);
+                    // The viewing session goes on: what the failed player had not reported yet.
+                    if let Some((on, _)) = self.last_pings.take() {
+                        self.ping(on, false);
+                    }
                     bridge::mark("ytcFirstFrame");
                     if self.poster.is_some() {
                         // The canvas shows the same picture: it goes once the video has presented it
@@ -2710,7 +2729,7 @@ impl Own {
                 self.paused = true;
                 self.report_position(now, false);
                 self.rec.close();
-                if self.playback_sent > 0.0 {
+                if self.playback_sent > 0.0 && self.first_frame.is_some() {
                     self.send_watchtime(false);
                 }
             }
@@ -3038,7 +3057,8 @@ impl Own {
             bridge::media_call(self.ms, "endOfStream");
             self.note("stuck at the end: end of stream signalled".into());
         }
-        if self.playback_sent > 0.0 {
+        // (A carried session's flush waits for this player's first frame: nothing was played before it.)
+        if self.playback_sent > 0.0 && self.first_frame.is_some() {
             let rt = (now - self.playback_sent) / 1000.0;
             if self.schedule.as_mut().is_some_and(|s| s.due(rt)) {
                 self.send_watchtime(false);
@@ -3588,7 +3608,7 @@ impl Own {
     fn ping_now(&self) -> stats::Now {
         let now = bridge::now();
         stats::Now {
-            cmt: self.time(),
+            cmt: self.resume_at(),
             rt: (now - self.rt0) / 1000.0,
             lact: now - self.last_input,
             fs: self.fs,
@@ -4876,7 +4896,12 @@ impl Own {
 
     /// Where a new player for this video would start (the playing position, or the start).
     pub fn resume_at(&self) -> f64 {
-        if self.first_frame.is_some() { self.time() } else { self.start }
+        // (Before the first frame the element knows nothing; one that lost its media reads 0.)
+        if self.first_frame.is_none() {
+            return self.start;
+        }
+        let t = self.time();
+        if t > 0.0 { t } else { self.play_t.max(self.start) }
     }
 
     /// Final watchtime ping (keepalive), abort requests, release the media.
@@ -4885,8 +4910,13 @@ impl Own {
         self.tel_end(None);
         let t = if self.first_frame.is_some() { self.time() } else { self.start };
         if self.playback_sent > 0.0 && !self.failed {
-            self.rec.close();
-            self.send_watchtime(true);
+            if self.first_frame.is_some() {
+                self.rec.close();
+                self.send_watchtime(true);
+            } else if let Some((_, last)) = self.last_pings.take() {
+                // Left while a retried player loads: the failed player's position, not this empty one.
+                self.ping(last, true);
+            }
         }
         self.release();
         t
@@ -4922,20 +4952,13 @@ impl Own {
             Some(s) => format!("{reason} (while stuck: {})", s.why),
             None => reason,
         };
-        // (An element that lost its media reads 0: the last position played.)
-        let now_t = self.time();
-        let t = if self.first_frame.is_none() {
-            self.start
-        } else if now_t > 0.0 {
-            now_t
-        } else {
-            self.play_t.max(self.start)
-        };
+        let t = self.resume_at();
         self.tel_end(Some(&reason));
         self.note(format!("FAILED: {reason}"));
         self.el_snap = Some(self.element_state());
-        // What comes next decides whether this viewing session ends (`last_ping`).
-        if self.playback_sent > 0.0 {
+        // What comes next decides whether this viewing session ends (`Viewing::last`). Before a first
+        // frame this player has nothing to add: the last player's stays.
+        if self.playback_sent > 0.0 && self.first_frame.is_some() {
             self.rec.close();
             if let Some(t) = self.tracking.clone() {
                 let n = self.ping_now();
@@ -4959,7 +4982,7 @@ impl Own {
     /// places or drops it).
     pub fn failed_state(&mut self) -> (Carry, bool, Option<String>) {
         let played = self.first_frame.is_some();
-        let viewing = (self.playback_sent > 0.0).then(|| Viewing { cpn: self.cpn.clone(), rt0: self.rt0, sent: self.playback_sent, schedule: self.schedule.take(), tracking: self.tracking.clone() });
+        let viewing = (self.playback_sent > 0.0).then(|| Viewing { cpn: self.cpn.clone(), rt0: self.rt0, sent: self.playback_sent, schedule: self.schedule.take(), tracking: self.tracking.clone(), last: self.last_pings.take(), headers: self.ping_headers.clone() });
         let carry = Carry { paused: if played { self.paused } else { self.start_paused }, session: viewing, ..self.carry() };
         (carry, played, self.fail_frame.take())
     }
@@ -4982,14 +5005,7 @@ impl Own {
             self.playback_sent = s.sent;
             self.schedule = s.schedule;
             self.tracking = s.tracking;
-        }
-    }
-
-    /// The failure's last watchtime ping: `end`, the viewing session is over (the panel), else an
-    /// automatic retry goes on with it.
-    pub fn last_ping(&mut self, end: bool) {
-        if let Some((on, last)) = self.last_pings.take() {
-            self.ping(if end { last } else { on }, end);
+            self.last_pings = s.last;
         }
     }
 

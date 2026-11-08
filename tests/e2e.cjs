@@ -240,7 +240,7 @@ const MIDERR = { go: false, held: [] };
 // broken…: every answer of every player has its first video cluster refused, until the video is in MENDED.
 const MENDED = new Set();
 // dublen…: the first response's later segments wait until DUBLEN.open.
-const DUBLEN = { open: false };
+const DUBLEN = { open: false, gone: false };
 const midRelease = () => { MIDERR.go = true; for (const p of MIDERR.held.splice(0)) Promise.resolve().then(() => googlevideo(p.route, p.url)).catch(() => {}); };
 const failures = { gone: false };
 // Stuck episodes (stalls are not failures): googlevideo requests of these videos are
@@ -268,7 +268,7 @@ function visionFixture(v) {
   const gen = (playerGen.get(v) || 0) + 1;
   playerGen.set(v, gen);
   // YouTube's ERROR on a refresh mid-video: errormid001 only that answer, errormid002 from then on.
-  if ((v === 'errormid001' && gen === 2) || (v === 'errormid002' && gen >= 2)) return { playabilityStatus: { status: 'ERROR', reason: 'Something went wrong (e2e)' } };
+  if ((v === 'errormid001' && gen === 2) || ((v === 'errormid002' || v === 'errormid003') && gen >= 2)) return { playabilityStatus: { status: 'ERROR', reason: 'Something went wrong (e2e)' } };
   const fmts = v.startsWith('av1fault') ? [...media.formats, ...media.formats.filter(f => AV1_OF[f.itag]).map(f => ({ ...f, itag: AV1_OF[f.itag], mimeType: 'video/webm; codecs="av01.0.05M.08"', fps: 60 }))] : media.formats;
   let adaptiveFormats = fmts.map(f => ({ ...f, url: `${GV}?expire=${expireFor(v, gen)}&ei=E2E&ip=0.0.0.0&id=o-fixture&mn=sn-fixture%2Csn-fixture2&fvip=1&itag=${f.itag}&source=youtube&v=${v}&gen=${gen}&mime=${encodeURIComponent(f.mimeType.split(';')[0])}&clen=${f.contentLength}&c=VISIONOS` }));
   // An auto-dubbed video (dubaudio…): the audio format twice, the dub listed first, its file with other offsets.
@@ -387,6 +387,7 @@ function googlevideo(route, url) {
     if (later && v === 'staleurl001' && gen === 1) return new Promise(() => {});
     if (later && v === 'staleurl002' && gen === 1) return new Promise(() => {});
     if (later && v.startsWith('dubaudio') && gen === 1) return new Promise(() => {});
+    if (later && v === 'dublen00009' && gen === 1 && DUBLEN.gone && url.searchParams.get('lang')) return route.fulfill({ status: 403, headers: cors, body: '' });
     if (later && v.startsWith('dublen') && gen === 1 && !DUBLEN.open) return new Promise(() => {});
     if (later && v.startsWith('errormid') && gen === 1) {
       if (!MIDERR.go) return new Promise(() => MIDERR.held.push({ route, url }));
@@ -687,6 +688,8 @@ async function handle(route) {
     // A hung player request: the first VISIONOS request for this video never answers (the hedge must).
     // The player service refusing or failing: vis429http…, vis403http…, vis500http….
     if (ep === 'player' && /^vis\d{3}http/.test(body.videoId) && body.context?.client?.clientName === 'VISIONOS') return route.fulfill({ status: +body.videoId.slice(3, 6), contentType: 'application/json', body: '{}' });
+    // advspeed002: the retried player's answer never comes.
+    if (ep === 'player' && body.videoId === 'advspeed002' && body.context?.client?.clientName === 'VISIONOS' && (playerGen.get('advspeed002') || 0) >= 2) return new Promise(() => {});
     if (ep === 'player' && body.videoId === 'vishang0001' && body.context?.client?.clientName === 'VISIONOS' && !FX.visHung) { FX.visHung = true; return new Promise(() => {}); }
     if (ep === 'player' && FX.bot) log.api.at(-1).done = Date.now(); // answered now (the recovery tests order calls by it)
     if (ep === 'player' && FX.bot && body.context?.client?.clientName === 'VISIONOS' && botChecked(body, req.headers())) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(BOT) });
@@ -4165,6 +4168,53 @@ chrome.runtime.onMessage.addListener(m => {
     assert.ok(stats(st1, w).some(u => /[?&]final=1/.test(u)), 'final with the panel');
     MIDERR.go = false;
     await page.evaluate(() => localStorage.removeItem('ytc-test-noautotry'));
+    // The position a ping reports (`cmt`): never 0 for a session that was at t0. How a carried session ends:
+    const wt = (from, v) => stats(from, v).filter(u => u.includes('/watchtime')).map(u => { const q = new URL(u).searchParams; return { cmt: +q.get('cmt'), fin: q.get('final') === '1', st: q.get('st') }; });
+    const at = async (v, from) => {
+      MIDERR.go = false;
+      await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+      await firstFrameAt(3);
+      for (let i = 0; i < 60 && !stats(from, v).some(u => u.includes('/playback')); i++) await page.waitForTimeout(50);
+      return (await vel()).t;
+    };
+    const leave = q => page.evaluate(q => { history.pushState(null, '', `/results?search_query=${q}`); dispatchEvent(new PopStateEvent('popstate')); }, q);
+    const finals = (from, v, t0, why) => {
+      const list = wt(from, v);
+      assert.equal(list.filter(x => x.fin).length, 1, `${why}: one final ping: ` + JSON.stringify(list));
+      for (const x of list) assert.ok(x.cmt >= t0 - 1, `${why}: cmt ${x.cmt} at ${t0}: ` + JSON.stringify(list));
+    };
+    // The retried player's answer is a verdict: it fails at its start.
+    let st = log.stats.length, t0 = await at('errormid003', st);
+    midRelease();
+    await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 20000 });
+    await page.waitForTimeout(400);
+    finals(st, 'errormid003', t0, 'a retried player that fails at its start');
+    // Left while the retried player loads.
+    st = log.stats.length; t0 = await at('advspeed002', st);
+    midRelease();
+    for (let i = 0; i < 300 && visCalls('advspeed002').length < 3; i++) await page.waitForTimeout(50);
+    await page.waitForTimeout(300);
+    await leave('left+while+it+loads');
+    await page.waitForTimeout(500);
+    finals(st, 'advspeed002', t0, 'left while the retried player loads');
+    // Left during the wait: 1 s; a pressed Try again during the wait: the old session ends, once.
+    st = log.stats.length; t0 = await at('advspeed003', st);
+    let inc0 = incidents.length;
+    midRelease();
+    for (let i = 0; i < 400 && !kindsOf(inc0).includes('player-retry'); i++) await page.waitForTimeout(5);
+    await leave('left+during+the+wait');
+    await page.waitForTimeout(800);
+    finals(st, 'advspeed003', t0, 'left during the wait');
+    st = log.stats.length; t0 = await at('advspeed004', st);
+    inc0 = incidents.length;
+    const n = visCalls('advspeed004').length;
+    midRelease();
+    for (let i = 0; i < 400 && !kindsOf(inc0).includes('player-retry'); i++) await page.waitForTimeout(5);
+    await page.evaluate(() => document.querySelector('#ytc-player .pstuck [data-act="pf-retry"]').click());
+    await page.waitForTimeout(600);
+    assert.ok(visCalls('advspeed004').length > n, 'a new player');
+    finals(st, 'advspeed004', t0, 'Try again pressed during the wait');
+    MIDERR.go = false;
   }, true));
 
   await step('own player: during an automatic Try again\'s wait, pause and play (k, Space, the button) decide how the next player starts; its status buttons work', () => noHedge(async () => {
@@ -4286,6 +4336,52 @@ chrome.runtime.onMessage.addListener(m => {
     await page.waitForTimeout(500);
     assert.equal(visCalls(v).length - n0, 2, 'no further refresh');
   }, true));
+
+  await step('own player: a kept old URL that runs out gets a new player and a new index; no panel', () => noHedge(async () => {
+    const v = 'dublen00009', n0 = visCalls(v).length;
+    DUBLEN.open = false; DUBLEN.gone = false;
+    await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+    await panelWatch();
+    await firstFrameAt(1.5);
+    await page.evaluate(() => document.getElementById('ytc-video').pause());
+    await page.waitForTimeout(3500);
+    DUBLEN.gone = true;
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    for (let i = 0; i < 50 && visCalls(v).length - n0 < 2; i++) await page.waitForTimeout(100);
+    // (The old URL's 403 comes right after the wake: the new player, paused like the last one, may already be there.)
+    for (let i = 0; i < 400 && !log.gv.some(g => g.v === v && g.gen >= 3 && g.lang); i++) await page.waitForTimeout(50);
+    assert.ok(log.gv.some(g => g.v === v && g.gen >= 3 && g.lang), 'the new URLs reach the audio track');
+    assert.ok(log.gv.filter(g => g.v === v && g.gen >= 3 && g.lang).every(g => g.lang === 'ru'), 'its own track');
+    await waitT(() => document.getElementById('ytc-video')?.readyState >= 2, null, 10000);
+    const t0 = (await vel()).t;
+    await page.evaluate(() => { document.getElementById('ytc-video').play().catch(() => {}); });
+    await waitT(t => document.getElementById('ytc-video')?.currentTime > t + 1, t0, 10000);
+    assert.equal(await panelSeen(), 0, 'no panel');
+  }, true));
+
+  await step('own player: 429 waits its minute with the calm status, one retry, then the panel; a return respects the limit; leaving cancels', () => noHedge(async () => {
+    await page.evaluate(() => localStorage.setItem('ytc-test-shortlimit', '1'));
+    try {
+      const v = 'vis429http2', n0 = visCalls(v).length;
+      await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+      await page.waitForTimeout(1000);
+      assert.equal(visCalls(v).length - n0, 1, 'no second call in the wait');
+      assert.equal(await page.locator('#ytc-player.stuck').count(), 1, 'the calm status');
+      assert.equal(await page.locator('.pfail').count(), 0);
+      await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 8000 });
+      assert.equal(visCalls(v).length - n0, 2, 'one retry');
+      assert.ok((await page.textContent('.pfr')).endsWith(` · 1 automatic Try again · ${VER}`), await page.textContent('.pfr'));
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await page.waitForTimeout(600);
+      assert.equal(visCalls(v).length - n0, 2, 'a return within the minute asks nothing');
+      const w = 'vis429http3', m0 = visCalls(w).length;
+      await page.goto(`https://www.youtube.com/watch?v=${w}`, { waitUntil: 'commit' });
+      await page.waitForTimeout(800);
+      await page.evaluate(() => { history.pushState(null, '', '/results?search_query=left+the+limit'); dispatchEvent(new PopStateEvent('popstate')); });
+      await page.waitForTimeout(2500);
+      assert.equal(visCalls(w).length - m0, 1, 'cancelled');
+    } finally { await page.evaluate(() => localStorage.removeItem('ytc-test-shortlimit')).catch(() => {}); }
+  }));
 
   await step('failure panel: the window focused after long without it retries, 300 ms later; a press on the panel wins', () => noHedge(async () => {
     const v = 'broken00006';
