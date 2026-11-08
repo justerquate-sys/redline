@@ -1128,6 +1128,14 @@ clear and submission reuse the shared suggestion/prefetch/request logic. Back fi
 the query, then closes Search; a physical keyboard remains usable. The bridge's `data-key-input` opt-in forwards
 keyboard events from controls; Rust decides how they edit text or activate controls.
 
+With TV app 0.6.0 the search screen also has a mic control (`app/tvglue.rs`, shown while `shell_info` reports
+`caps.voice`), which opens Android's speech recognizer; that needs no audio permission and no socket, unlike the
+desktop's dictation (`#ytc-mic`, which stays as it is and never shows on TV). What it hears, a search or a link another
+app hands the app (validated in `tv/core/src/incoming.rs`), waits in the shell; a `ytc-wake` event tells the page to
+fetch it (`shell_events`), and every boot does so too. tv/README.md has the details, including what only a real TV can
+confirm. The update check reaches each release file by two routes, so it survives an outage of GitHub's website
+(tv/README.md "Updates").
+
 The TV player exposes Comments and More info as remote-operated side panels (`app/tvwatch.rs`). Comments uses
 the existing anonymous WEB parsing, sorting, replies and continuation state, and fetches only after explicit
 opening. Closing retains that state in memory. More info restores its content after Back/Forward, with the

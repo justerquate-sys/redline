@@ -10,6 +10,11 @@
 //! The app runs the newest verified bundle it has: the cached download or the copy built into the
 //! APK (a new APK brings a newer built-in copy, so a stale cache never wins over it). Offline it
 //! runs what it has.
+//!
+//! Every release file has two routes (GitHub's website can answer 504 for a repository while its API is fine,
+//! 8 Nov 2026): the asset's `browser_download_url` and the release API's asset `url` (`Accept:
+//! application/octet-stream`, redirects followed, no auth). Whichever route delivered the bytes, they pass the same
+//! signature and hash checks. See [`Routes`] for how one check uses them, and what it costs.
 
 use crate::net::Http;
 use base64::Engine;
@@ -166,10 +171,19 @@ pub fn choose(cached: Option<Bundle>, builtin: Bundle) -> Bundle {
     }
 }
 
-/// Download URLs of the newest GitHub release that carries the TV files: `GET
+/// The two routes to one release file.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Asset {
+    /// `browser_download_url` (github.com).
+    pub web: String,
+    /// The release API's asset `url` (api.github.com, counts against its rate limit), when the answer has one.
+    pub api: Option<String>,
+}
+
+/// The files of the newest GitHub release that carries the TV files: `GET
 /// /repos/{owner}/{repo}/releases` lists them newest first (a release without them, e.g. a
 /// desktop-only one, is skipped); a single release object is read as it is.
-pub fn assets(answer: &serde_json::Value) -> BTreeMap<String, String> {
+pub fn assets(answer: &serde_json::Value) -> BTreeMap<String, Asset> {
     let release = match answer.as_array() {
         Some(list) => match list
             .iter()
@@ -184,14 +198,175 @@ pub fn assets(answer: &serde_json::Value) -> BTreeMap<String, String> {
     assets_of(release)
 }
 
-fn assets_of(release: &serde_json::Value) -> BTreeMap<String, String> {
+fn assets_of(release: &serde_json::Value) -> BTreeMap<String, Asset> {
     release
         .get("assets")
         .and_then(|a| a.as_array())
         .into_iter()
         .flatten()
-        .filter_map(|a| Some((a.get("name")?.as_str()?.to_string(), a.get("browser_download_url")?.as_str()?.to_string())))
+        .filter_map(|a| {
+            let web = a.get("browser_download_url")?.as_str()?.to_string();
+            let api = a.get("url").and_then(|u| u.as_str()).map(String::from);
+            Some((a.get("name")?.as_str()?.to_string(), Asset { web, api }))
+        })
         .collect()
+}
+
+/// Why a check or download failed: `reason` says it in words with the technical part in brackets (no URLs), `wait_secs`
+/// is how long GitHub asked to be left alone (a rate limit), 0 when it did not.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Failure {
+    pub reason: String,
+    pub wait_secs: u64,
+}
+
+impl From<String> for Failure {
+    fn from(reason: String) -> Failure {
+        Failure { reason, wait_secs: 0 }
+    }
+}
+
+impl From<&str> for Failure {
+    fn from(reason: &str) -> Failure {
+        reason.to_string().into()
+    }
+}
+
+/// Route failures one check accepts before it gives up (and tries again later). Only a route that flips between
+/// working and not working gets this far; otherwise the first file settles which route the rest use.
+pub const MAX_ROUTE_FAILURES: u32 = 4;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Via {
+    Web,
+    Api,
+}
+
+impl Via {
+    fn other(self) -> Via {
+        if self == Via::Web { Via::Api } else { Via::Web }
+    }
+
+    fn name(self) -> &'static str {
+        if self == Via::Web { "download" } else { "API" }
+    }
+}
+
+/// One failed try.
+struct Miss {
+    what: String,
+    status: Option<u16>,
+    /// A rate limit: how long it lasts (0 = not said).
+    limit: Option<u64>,
+    /// Another route may help: a 5xx, a rate limit, a transport error. (A 404 does not: the file is not there.)
+    other_route: bool,
+}
+
+/// The seconds a rate-limit answer asks to wait, or None when `a` is not one: 429, or GitHub's 403 with its signs
+/// (no requests left, `Retry-After`, or "rate limit" in the message).
+fn rate_limit(a: &crate::net::Answer) -> Option<u64> {
+    let signs = a.limit_remaining == Some(0) || a.retry_after.is_some() || String::from_utf8_lossy(&a.body).to_ascii_lowercase().contains("rate limit");
+    if a.status != 429 && !(a.status == 403 && signs) {
+        return None;
+    }
+    // (The limit starts over within the hour: a reset further off than that is this TV's clock.)
+    let now = (crate::now_ms() / 1000.0) as u64;
+    Some(a.retry_after.or(a.limit_reset.map(|r| r.saturating_sub(now).min(3600))).unwrap_or(0))
+}
+
+fn miss(via: Via, r: Result<crate::net::Answer, String>) -> Result<Vec<u8>, Miss> {
+    let a = match r {
+        Ok(a) if a.status == 200 => return Ok(a.body),
+        Ok(a) => a,
+        Err(e) => return Err(Miss { what: format!("{} {e}", via.name()), status: None, limit: None, other_route: true }),
+    };
+    let limit = rate_limit(&a);
+    Err(Miss { what: format!("{} HTTP {}", via.name(), a.status), status: Some(a.status), limit, other_route: limit.is_some() || a.status >= 500 })
+}
+
+/// All the tries for `name` failed: in words, with the technical part in brackets.
+fn describe(name: &str, misses: &[Miss]) -> Failure {
+    let parts = misses.iter().map(|m| m.what.as_str()).collect::<Vec<_>>().join(", ");
+    if let Some(wait) = misses.iter().filter_map(|m| m.limit).max() {
+        let resets = if wait > 0 { format!(", resets in {} min", wait.div_ceil(60)) } else { String::new() };
+        return Failure { reason: format!("GitHub's rate limit was reached ({name}: {parts}{resets})"), wait_secs: wait };
+    }
+    if misses.iter().any(|m| m.status.is_some_and(|s| s >= 500)) {
+        format!("GitHub isn't answering ({name}: {parts})").into()
+    } else if misses.iter().all(|m| m.status.is_none()) {
+        format!("No connection to GitHub ({name}: {parts})").into()
+    } else if let [only] = misses {
+        // One route, and the file is not there: "<name>: HTTP 404".
+        format!("{name}: HTTP {}", only.status.unwrap_or(0)).into()
+    } else {
+        format!("{name}: {parts}").into()
+    }
+}
+
+/// How one check reaches a release's files, at most one failed try per route and file:
+///
+/// - Normal case: every file from `browser_download_url`, which does not touch the API's rate limit (60 requests an
+///   hour per IP unauthenticated). A check costs one API request, the release lookup, as it always did.
+/// - A try that fails with a 5xx, a 429/rate-limit answer or a transport error goes straight to the other route (no
+///   retry of the same route: a failing website takes about 11 s per file and a release has about 10), and that
+///   other route comes first for the rest of this check. The next check starts with the download route again.
+/// - Worst case in API requests: the lookup and one per file, 10 for a release of 9 files; 3 when already up to date
+///   (lookup, manifest, signature). Worst case in all requests: those plus [`MAX_ROUTE_FAILURES`].
+#[derive(Debug)]
+struct Routes {
+    first: Via,
+    failures: u32,
+}
+
+impl Routes {
+    fn new() -> Routes {
+        Routes { first: Via::Web, failures: 0 }
+    }
+
+    /// `name`'s bytes, through `get(url, headers)`.
+    fn fetch(&mut self, name: &str, asset: &Asset, get: &mut dyn FnMut(&str, &[(&str, &str)]) -> Result<crate::net::Answer, String>) -> Result<Vec<u8>, Failure> {
+        let mut via = if asset.api.is_some() { self.first } else { Via::Web };
+        let mut misses: Vec<Miss> = Vec::new();
+        loop {
+            let got = match (via, &asset.api) {
+                (Via::Api, Some(url)) => get(url, &[("Accept", "application/octet-stream")]),
+                _ => get(&asset.web, &[]),
+            };
+            let m = match miss(via, got) {
+                Ok(bytes) => return Ok(bytes),
+                Err(m) => m,
+            };
+            let other_route = m.other_route;
+            misses.push(m);
+            if !other_route {
+                return Err(describe(name, &misses));
+            }
+            self.failures += 1;
+            if asset.api.is_some() {
+                self.first = via.other();
+            }
+            if misses.len() == 2 || asset.api.is_none() || self.failures >= MAX_ROUTE_FAILURES {
+                return Err(describe(name, &misses));
+            }
+            via = via.other();
+        }
+    }
+}
+
+/// The automatic checks, without a failure: every 6 hours.
+pub const CHECK_EVERY_MS: f64 = 6.0 * 3_600_000.0;
+
+/// Milliseconds until the next automatic check after `fails` failed checks in a row (0 = the last one worked): sooner
+/// after a failure (5 min, 15 min, 1 h), then back to the schedule; never before a rate limit's `wait_secs` is over
+/// (at most 2 h: a wrong header must not stop the updates).
+pub fn next_check_ms(fails: u32, wait_secs: u64) -> f64 {
+    let step = match fails {
+        1 => 5.0 * 60_000.0,
+        2 => 15.0 * 60_000.0,
+        3 => 3_600_000.0,
+        _ => CHECK_EVERY_MS,
+    };
+    step.max(wait_secs.min(2 * 3600) as f64 * 1000.0)
 }
 
 /// A newer shell (APK) the release offers.
@@ -199,6 +374,8 @@ fn assets_of(release: &serde_json::Value) -> BTreeMap<String, String> {
 pub struct ApkOffer {
     pub apk: Apk,
     pub url: String,
+    /// The second route (see [`Asset`]).
+    pub api_url: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -213,19 +390,17 @@ pub struct Outcome {
 
 /// Checks the latest release at `api` and installs a newer bundle into `cache` (written to a
 /// sibling directory first, swapped in only when complete and verified).
-pub fn check(http: &Http, api: &str, key: &[u8; 32], cache: &Path, current_seq: u64, shell_code: u32) -> Result<Outcome, String> {
-    let rel = http.get(api, &[("Accept", "application/vnd.github+json")])?;
+pub fn check(http: &Http, api: &str, key: &[u8; 32], cache: &Path, current_seq: u64, shell_code: u32) -> Result<Outcome, Failure> {
+    // (The lookup has no second route: there is no list of releases without the API.)
+    let rel = http.get(api, &[("Accept", "application/vnd.github+json")]).map_err(|e| format!("No connection to GitHub (release lookup: {e})"))?;
     if rel.status != 200 {
-        return Err(format!("release lookup: HTTP {}", rel.status));
+        return Err(describe("release lookup", &[Miss { what: format!("HTTP {}", rel.status), status: Some(rel.status), limit: rate_limit(&rel), other_route: false }]));
     }
     let urls = assets(&rel.json().ok_or("release lookup: not JSON")?);
-    let get = |name: &str| -> Result<Vec<u8>, String> {
-        let url = urls.get(name).ok_or_else(|| format!("release has no {name}"))?;
-        let a = http.get(url, &[])?;
-        if a.status != 200 {
-            return Err(format!("{name}: HTTP {}", a.status));
-        }
-        Ok(a.body)
+    let routes = std::cell::RefCell::new(Routes::new());
+    let get = |name: &str| -> Result<Vec<u8>, Failure> {
+        let asset = urls.get(name).ok_or_else(|| format!("release has no {name}"))?;
+        routes.borrow_mut().fetch(name, asset, &mut |url, headers| http.get(url, headers))
     };
     let mbytes = get(MANIFEST)?;
     let sig = String::from_utf8(get(SIG)?).map_err(|_| "signature is not text")?;
@@ -233,10 +408,11 @@ pub fn check(http: &Http, api: &str, key: &[u8; 32], cache: &Path, current_seq: 
     let mut out = Outcome::default();
     if let Some(apk) = &m.apk {
         if apk.version_code > shell_code {
-            if let Some(url) = urls.get(&apk.file) {
+            if let Some(a) = urls.get(&apk.file) {
                 out.apk = Some(ApkOffer {
                     apk: apk.clone(),
-                    url: url.clone(),
+                    url: a.web.clone(),
+                    api_url: a.api.clone(),
                 });
             }
         }
@@ -290,19 +466,23 @@ pub fn download_apk(http: &Http, offer: &ApkOffer, dir: &Path) -> Result<PathBuf
     download_apk_progress(http, offer, dir, &mut |_, _| {})
 }
 
-/// `download_apk` reporting `on(got, total)` while it downloads (total from the signed manifest).
+/// `download_apk` reporting `on(got, total)` while it downloads (total from the signed manifest). When the other route
+/// has to take over, the count starts again at 0. The hash check is the same for both routes.
 pub fn download_apk_progress(http: &Http, offer: &ApkOffer, dir: &Path, on: &mut dyn FnMut(u64, u64)) -> Result<PathBuf, String> {
     let size = offer.apk.size;
-    let a = http.get_progress(&offer.url, &mut |got, total| on(got, if size > 0 { size } else { total }))?;
-    if a.status != 200 {
-        return Err(format!("APK: HTTP {}", a.status));
-    }
-    if a.body.len() as u64 != offer.apk.size || sha256_hex(&a.body) != offer.apk.sha256 {
+    let asset = Asset { web: offer.url.clone(), api: offer.api_url.clone() };
+    let body = Routes::new()
+        .fetch("APK", &asset, &mut |url, headers| {
+            on(0, size);
+            http.get_progress(url, headers, &mut |got, total| on(got, if size > 0 { size } else { total }))
+        })
+        .map_err(|f| f.reason)?;
+    if body.len() as u64 != offer.apk.size || sha256_hex(&body) != offer.apk.sha256 {
         return Err("APK: hash mismatch".into());
     }
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let p = dir.join("update.apk");
-    crate::write_atomic(&p, &a.body).map_err(|e| e.to_string())?;
+    crate::write_atomic(&p, &body).map_err(|e| e.to_string())?;
     Ok(p)
 }
 

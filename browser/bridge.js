@@ -668,12 +668,13 @@ const YTC = (() => {
     // on_back answers 0 = not handled (the shell goes back), 1 = handled, 2 = leave the app: YTC_EXIT tells a
     // shell that knows it (older shells read only the boolean and go back as before).
     // The same from any script world (a test, a shell that cannot reach this one): a `ytc-back` event on the
-    // document, answered in <html data-ytc-back>.
+    // document, answered in <html data-ytc-back>. A `ytc-wake` event: the shell has news for the page (on_shell_wake).
     back_hook() {
       late = true;
       const back = () => { const r = call('on_back'); globalThis.YTC_EXIT = r === 2; return r; };
       globalThis.YTC_BACK = () => back() === 1;
       d.addEventListener('ytc-back', () => { d.documentElement.dataset.ytcBack = String(back()); });
+      d.addEventListener('ytc-wake', () => call('on_shell_wake'));
     },
     // Spatial navigation (the decision is Rust's, tv::pick): rects of the visible `sel` elements (minus `skip`)
     // inside the innermost open `scope` element around the focus (else the last open one, else the document),

@@ -1234,6 +1234,11 @@ html[data-ytc-tv] #ytc #ytc-tvquery:focus{background:var(--cb);outline:var(--rin
 html[data-ytc-tv] #ytc-tvquery svg{display:block;width:1.0625rem;height:1.0625rem;flex:none;fill:none;stroke:var(--mu);stroke-width:1.9;stroke-linecap:round}
 html[data-ytc-tv] #ytc-tvquery span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 html[data-ytc-tv] #ytc-tvquery .tvquery-edit{flex:none;margin-left:auto;font-size:.8125rem;line-height:1;color:var(--mu)}
+html[data-ytc-tv] #ytc-tvmic{display:none}
+html[data-ytc-tv][data-ytc-tvmic] #ytc[data-tvq="1"] #ytc-tvquery{grid-row:1;width:calc(100% - 3.125rem)}
+html[data-ytc-tv][data-ytc-tvmic] #ytc[data-tvq="1"] #ytc-tvmic{grid-column:1/-1;grid-row:1;justify-self:end;display:flex;align-items:center;justify-content:center;width:2.5rem;height:2.5rem;box-sizing:border-box;margin:0;padding:0;border:.0625rem solid var(--bd);border-radius:50%;background:var(--rs);color:var(--tx);transform:none;transition:none;cursor:default}
+html[data-ytc-tv][data-ytc-tvmic] #ytc[data-tvq="1"] #ytc-tvmic:focus{background:var(--cb);outline:var(--ring) solid var(--ac);outline-offset:-.0625rem}
+html[data-ytc-tv] #ytc-tvmic svg{display:block;width:1.1875rem;height:1.1875rem;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 html[data-ytc-tv] #ytc-tvk{display:none;grid-column:1;grid-row:2;min-width:0}
 html[data-ytc-tv] #ytc[data-tvq="1"] #ytc-tvk.on{display:block}
 html[data-ytc-tv] .tvk-keys{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.375rem}
@@ -1523,3 +1528,5 @@ html[data-ytc-tv] .tvup.on{opacity:1;visibility:visible;transform:none;transitio
 html[data-ytc-tv] #ytc .tvup .tvb{height:1.75rem;padding:0 .875rem;font-size:.8125rem}
 html[data-ytc-tv] #ytc .tvup .tvb:focus{outline-offset:.0625rem}
 html[data-ytc-tv] #ytc[data-nav=watch] .tvup,html[data-ytc-tv] #ytc[data-tvq="1"] .tvup{display:none}
+html[data-ytc-tv] .tvnote{position:fixed;z-index:26;bottom:calc(var(--sy) + .25rem);right:2.5rem;display:none;align-items:center;height:2.5rem;box-sizing:border-box;padding:0 1rem;border-radius:.5rem;background:var(--pn);border:.0625rem solid var(--ln);font-size:.875rem;font-weight:500;color:var(--tx)}
+html[data-ytc-tv] .tvnote.on{display:flex}

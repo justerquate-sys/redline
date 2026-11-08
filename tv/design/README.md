@@ -38,6 +38,12 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
   and Search use the same focus frame. Back first collapses the keyboard, then closes Search. Results keep the
   query on top (↑ reaches it). Edit opens the keyboard again; a physical keyboard can also type. Search opens
   above the playing video and its drawers too, then returns to the originating focus when closed.
+  **Mic control** (app 0.6.0, only while the shell reports a recognizer): a round 2.5 rem icon button (1.1875 rem
+  outline mic, the desktop's drawing and stroke) at the right end of the query's row, .625 rem from the query, which
+  gives up that room; on the search screen only, not on the results. → from the query, ↓ returns to the keys or the list;
+  the same steady white frame (inside the box: it sits on the safe edge) and no animation. Its notices (no match, not
+  available) sit bottom right in a 2.5 rem panel at 21 px for 4 s, over nothing that takes the focus; closing the
+  recognizer says nothing. Android's recognizer draws its own screen over the app.
 - **Player**: full screen at once. The overlay (any key; hidden 4 s after the last one while playing): title
   1.375 rem (33 px) and channel (22.5 px white, the name across the row's width, never cut while it fits) top-left over
   a scrim at least .82 opaque down past the channel row (10:1 over a white frame, measured), on the same left edge (2.5 rem) as the time row (elapsed · chapter · remaining, 19.5 px), the bar (4 px, 6 px
@@ -59,7 +65,8 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
   right edge as the steps are from the left (`src/qr.rs`), Back first and focused.
 
 - **About & updates**: full screen like Sign in: App and Interface versions, the last check and its result,
-  one status card (up to date / update ready / app available with its download progress / the reason it failed)
+  one status card (up to date / update ready / app available with its download progress / the reason it failed, in
+  words on top and the technical part under them, "Trying again automatically." while the app does)
   and its action focused (Check for updates, Update now, Install update, Retry). While an update is ready a small
   notice sits top right on the pages (never over a video) until the screen was opened.
 

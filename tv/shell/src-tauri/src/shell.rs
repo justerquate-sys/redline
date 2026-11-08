@@ -7,9 +7,11 @@
 //! | `auth_poll`    | `{"state": "pending"/"done"/"denied"/"expired"/"error", ...}`           |
 //! | `auth_signout` | `{}`                                                                    |
 //! | `store_get/set/remove` | chrome.storage.local                                            |
-//! | `shell_info`   | shell version, bundle in use, update state                              |
+//! | `shell_info`   | shell version, bundle in use, update state, what this shell can do (`caps`: `voice`: a speech recognizer is there) |
 //! | `shell_check`  | checks for updates now, then answers like `shell_info`                  |
 //! | `shell_install`| downloads, verifies and installs the offered APK (in the background; `shell_info` reports `downloading` with `got`/`total`, then `installing`) |
+//! | `voice_start`  | opens Android's speech recognizer: `{"started": bool}`; what it heard arrives through `shell_events` |
+//! | `shell_events` | `{"events": [...]}`, taken once: `{"kind":"voice","state":"text","text"}` (or `state` `cancel`/`none`/`error`/`missing`), `{"kind":"search","q"}`, `{"kind":"open","path"}` |
 //! | `tel_info`     | speed telemetry: `{"on", "url", "dev", "queued", "sent", "error"}` (`dev`: the bundle has its telemetry variant) |
 //! | `tel_set`      | `{"on"?, "url"?}` → like `tel_info`, plus `"reload": true` when the page must load again (the script changed) |
 //! | `tel_find`     | looks for a debug center on the network (`--lan`): `{"url"}`                                      |
@@ -18,10 +20,14 @@
 //! | `ready_drop`   | deletes it (something personalizing happened, or the page used its own copy)                     |
 //! | `tel_send`     | `{"perf": <batch>}` / `{"incident": <report>}` from the shim; kept for the debug center while on, else dropped |
 //!
-//! Updates: at launch and every 6 hours the latest GitHub release is checked (`lumen_tv_core::release`);
-//! a newer verified bundle is cached and handed to the WebView (`host::bundle_ready`), a newer APK is
-//! offered to the page (`shell_info`'s `offer`): the client shows an "Update ready" notice and its About &
-//! updates screen installs it (`shell_install`).
+//! Updates: at launch and every 6 hours the latest GitHub release is checked (`lumen_tv_core::release`), sooner after
+//! a failed check (5 min, 15 min, 1 h; `update.retry_at` says when); a newer verified bundle is cached and handed to the
+//! WebView (`host::bundle_ready`), a newer APK is offered to the page (`shell_info`'s `offer`): the client shows an
+//! "Update ready" notice and its About & updates screen installs it (`shell_install`).
+//!
+//! Shell → page: what the page must hear of (a recognised search, a link another app opened) waits in a short queue,
+//! and Kotlin tells the page to come and ask (`shell_events`). Nothing from outside is ever written into a script, and
+//! a page that starts later (a cold start from a link) finds it there.
 //!
 //! Telemetry (`lumen_tv_core::tel`): off unless the owner turns it on (About & updates → Developer; debug builds:
 //! `"telemetry": "<url>"` in `files/dev.json`). While on, the page runs the bundle's telemetry variant and its
@@ -30,9 +36,11 @@
 use crate::host;
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::sync::{Condvar, Mutex, OnceLock, RwLock};
+use std::collections::VecDeque;
+use std::sync::{Condvar, Mutex, OnceLock, RwLock, TryLockError};
 use std::time::Duration;
 use lumen_tv_core::auth::{Account, Endpoints};
+use lumen_tv_core::incoming::{self, Incoming};
 use lumen_tv_core::net::Http;
 use lumen_tv_core::readystore;
 use lumen_tv_core::release::{self, ApkOffer, Bundle};
@@ -49,7 +57,11 @@ const REPO: &str = match option_env!("LUMEN_TV_REPO") {
     Some(r) => r,
     None => "justerquate-sys/redline",
 };
-const CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
+/// The APK download: minutes on a slow TV, but a route that does not answer gives way to the other one soon.
+const APK_TOTAL: Duration = Duration::from_secs(20 * 60);
+const APK_ANSWER: Duration = Duration::from_secs(30);
+/// Events waiting for the page: the newest few (a page too old to ask for them must not grow this).
+const EVENTS_KEPT: usize = 4;
 
 /// The client bundle built into this APK (`./build.sh --tv` writes it).
 fn builtin() -> Bundle {
@@ -81,16 +93,29 @@ pub struct Shell {
     dir: PathBuf,
     key: [u8; 32],
     http: Http,
+    apk_http: Http,
     api: String,
     account: Mutex<Account>,
     store: Mutex<Store>,
     bundle: RwLock<(Bundle, Rules)>,
     offer: Mutex<Option<ApkOffer>>,
     status: Mutex<Value>,
+    /// One check at a time (the update thread, the About & updates screen).
+    checking: Mutex<()>,
+    schedule: Mutex<Schedule>,
+    events: Mutex<VecDeque<Value>>,
     tel: Mutex<Tel>,
     tel_wake: Condvar,
     tel_http: Http,
     ready: Mutex<ReadySlot>,
+}
+
+/// The automatic checks: failed ones in a row, and when the next one is due (epoch ms). The one update thread reads it,
+/// so whatever a check finds only moves this one time.
+#[derive(Default)]
+struct Schedule {
+    fails: u32,
+    next_at: f64,
 }
 
 /// The ready Home response kept from the last run: read (and deleted from disk) once, at launch.
@@ -194,12 +219,16 @@ pub fn init(dir: PathBuf) {
         dir,
         key,
         http: Http::new(Duration::from_secs(30)),
+        apk_http: Http::download(APK_TOTAL, APK_ANSWER),
         api,
         account: Mutex::new(account),
         store: Mutex::new(store),
         bundle: RwLock::new((bundle, rules)),
         offer: Mutex::new(None),
         status: Mutex::new(status),
+        checking: Mutex::new(()),
+        schedule: Mutex::new(Schedule::default()),
+        events: Mutex::new(VecDeque::new()),
         tel: Mutex::new(t),
         tel_wake: Condvar::new(),
         tel_http: Http::new(Duration::from_secs(5)),
@@ -339,8 +368,10 @@ impl Shell {
                 let b = self.bundle.read().unwrap();
                 let (v, code) = version();
                 let offer = self.offer.lock().unwrap().as_ref().map(|o| json!({"version": o.apk.version, "version_code": o.apk.version_code, "size": o.apk.size}));
-                Ok(json!({"version": v, "version_code": code, "bundle": {"seq": b.0.seq, "client": b.0.client, "source": b.0.source}, "update": *self.status.lock().unwrap(), "offer": offer, "repo": REPO}).to_string())
+                Ok(json!({"version": v, "version_code": code, "bundle": {"seq": b.0.seq, "client": b.0.client, "source": b.0.source}, "update": *self.status.lock().unwrap(), "offer": offer, "repo": REPO, "caps": {"voice": host::voice_available()}}).to_string())
             }
+            "voice_start" => Ok(json!({"started": host::voice_start()}).to_string()),
+            "shell_events" => Ok(json!({"events": self.events.lock().unwrap().drain(..).collect::<Vec<_>>()}).to_string()),
             // Checks for updates now (the client's About & updates screen; tests). No dialog: the screen
             // shows what it found.
             "shell_check" => {
@@ -418,8 +449,54 @@ impl Shell {
         }
     }
 
-    /// One update check (blocking; the update thread, or the About & updates screen).
+    fn push_event(&self, e: Value) {
+        let mut q = self.events.lock().unwrap();
+        if q.len() >= EVENTS_KEPT {
+            q.pop_front();
+        }
+        q.push_back(e);
+    }
+
+    /// An intent the activity received (a search, a link), validated here; anything else is dropped.
+    pub fn incoming(&self, action: &str, data: &str, query: &str) {
+        match incoming::parse(action, data, query) {
+            Some(Incoming::Search(q)) => self.push_event(json!({"kind": "search", "q": q})),
+            Some(Incoming::Open(path)) => self.push_event(json!({"kind": "open", "path": path})),
+            None => log::info!("incoming: nothing usable in {action}"),
+        }
+    }
+
+    /// The speech recognizer's answer: `state` is `text` (with `text`), `cancel`, `none`, `error` or `missing`.
+    pub fn voice_result(&self, state: &str, text: &str) {
+        let e = match (state, incoming::clean_query(text)) {
+            ("text", Some(t)) => json!({"kind": "voice", "state": "text", "text": t}),
+            ("text", None) | ("none", _) => json!({"kind": "voice", "state": "none"}),
+            ("cancel", _) => json!({"kind": "voice", "state": "cancel"}),
+            ("missing", _) => json!({"kind": "voice", "state": "missing"}),
+            _ => json!({"kind": "voice", "state": "error"}),
+        };
+        self.push_event(e);
+    }
+
+    /// Notes how a check ended; the time of the next automatic one.
+    fn reschedule(&self, failed: Option<u64>) -> f64 {
+        let mut s = self.schedule.lock().unwrap();
+        s.fails = if failed.is_some() { s.fails + 1 } else { 0 };
+        s.next_at = now() + release::next_check_ms(s.fails, failed.unwrap_or(0));
+        s.next_at
+    }
+
+    /// One update check (blocking; the update thread, or the About & updates screen). A check already running answers
+    /// for both: this one waits for its end, and adds no requests.
     pub fn check(&self) {
+        let _one = match self.checking.try_lock() {
+            Ok(g) => g,
+            Err(TryLockError::Poisoned(e)) => e.into_inner(),
+            Err(TryLockError::WouldBlock) => {
+                drop(self.checking.lock());
+                return;
+            }
+        };
         let seq = self.bundle.read().unwrap().0.seq;
         let code = version().1;
         *self.status.lock().unwrap() = json!({"state": "checking", "at": now()});
@@ -437,12 +514,26 @@ impl Shell {
                     st["apk"] = json!({"version": o.apk.version, "version_code": o.apk.version_code});
                     *self.offer.lock().unwrap() = Some(o.clone());
                 }
+                self.reschedule(None);
                 *self.status.lock().unwrap() = st;
             }
             Err(e) => {
-                log::warn!("update check: {e}");
-                *self.status.lock().unwrap() = json!({"state": "failed", "at": now(), "error": e});
+                log::warn!("update check: {}", e.reason);
+                let retry_at = self.reschedule(Some(e.wait_secs));
+                *self.status.lock().unwrap() = json!({"state": "failed", "at": now(), "error": e.reason, "retry_at": retry_at});
             }
+        }
+    }
+
+    /// The update thread's rest: until the next check is due. It looks again every minute: a check from the screen may
+    /// have moved it, and a sleeping TV stops this clock, not the wall clock.
+    fn until_next_check(&self) {
+        loop {
+            let left = self.schedule.lock().unwrap().next_at - now();
+            if left <= 0.0 {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(left.min(60_000.0) as u64));
         }
     }
 
@@ -452,14 +543,14 @@ impl Shell {
         let apk = json!({"version": o.apk.version, "version_code": o.apk.version_code});
         let mut last = 0u64;
         let mut on = |got: u64, total: u64| {
-            // (A status write per 1 % at most.)
-            if total == 0 || got == total || (got - last) * 100 >= total {
+            // (A status write per 1 % at most. A count that starts again: the other download route took over.)
+            if total == 0 || got == total || got < last || (got - last) * 100 >= total {
                 last = got;
                 *self.status.lock().unwrap() = json!({"state": "downloading", "at": now(), "got": got, "total": total, "apk": apk});
             }
         };
         on(0, o.apk.size);
-        match release::download_apk_progress(&self.http, &o, &self.dir.join("updates"), &mut on) {
+        match release::download_apk_progress(&self.apk_http, &o, &self.dir.join("updates"), &mut on) {
             Ok(p) => {
                 *self.status.lock().unwrap() = json!({"state": "installing", "at": now(), "apk": apk});
                 host::install_apk(&p.to_string_lossy());
@@ -472,15 +563,15 @@ impl Shell {
     }
 }
 
-/// The update thread: a check shortly after launch (the first page goes first), then every 6 hours.
+/// The update thread: a check shortly after launch (the first page goes first), then every 6 hours, sooner after a
+/// failure (`release::next_check_ms`). One thread and one due time: retries never stack, and none of this touches a
+/// running page (a new bundle goes live when the app comes back to the foreground; the notice stays off videos).
 pub fn spawn_updates() {
     std::thread::spawn(|| {
         std::thread::sleep(Duration::from_secs(8));
-        loop {
-            if let Some(s) = get() {
-                s.check();
-            }
-            std::thread::sleep(CHECK_EVERY);
+        while let Some(s) = get() {
+            s.check();
+            s.until_next_check();
         }
     });
 }

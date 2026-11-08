@@ -1,8 +1,8 @@
 //! The shell's bridge to Android (JNI). Kotlin calls in (`app.lumen.tv.Native`: init, the
 //! document-start script, the user agent, request rules, update accepted); Rust calls out to the
 //! `app.lumen.tv.Host` object Kotlin handed over at init (Keystore sealing, bundle swap, script
-//! change, update package installer). Off Android every call-out is a no-op (`seal` → None: nothing is
-//! kept).
+//! change, update package installer, the speech recognizer). Off Android every call-out is a no-op (`seal` →
+//! None: nothing is kept).
 
 #[cfg(target_os = "android")]
 mod imp {
@@ -75,6 +75,20 @@ mod imp {
         void_call("installApk", Some(path));
     }
 
+    fn bool_call(name: &str) -> bool {
+        with_host(|env, h| env.call_method(h, name, "()Z", &[])?.z()).unwrap_or(false)
+    }
+
+    /// Android has a speech recognizer for us.
+    pub fn voice_available() -> bool {
+        bool_call("voiceAvailable")
+    }
+
+    /// Opens it (its answer comes back through `Native.voiceResult`); false when there is none.
+    pub fn voice_start() -> bool {
+        bool_call("voiceStart")
+    }
+
     fn string(env: &mut JNIEnv, s: &JString) -> String {
         env.get_string(s).map(Into::into).unwrap_or_default()
     }
@@ -133,6 +147,23 @@ mod imp {
         jstr(&mut env, lumen_tv_core::rules::CLIENT_DOCUMENT)
     }
 
+    /// An intent for the page: validated in `lumen_tv_core::incoming`, kept for `shell_events`.
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_app_lumen_tv_Native_incoming(mut env: JNIEnv, _c: JClass, action: JString, data: JString, query: JString) {
+        let (action, data, query) = (string(&mut env, &action), string(&mut env, &data), string(&mut env, &query));
+        if let Some(s) = crate::shell::get() {
+            s.incoming(&action, &data, &query);
+        }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_app_lumen_tv_Native_voiceResult(mut env: JNIEnv, _c: JClass, state: JString, text: JString) {
+        let (state, text) = (string(&mut env, &state), string(&mut env, &text));
+        if let Some(s) = crate::shell::get() {
+            s.voice_result(&state, &text);
+        }
+    }
+
     #[unsafe(no_mangle)]
     pub extern "system" fn Java_app_lumen_tv_Native_acceptUpdate(_env: JNIEnv, _c: JClass) {
         if let Some(s) = crate::shell::get() {
@@ -152,6 +183,12 @@ mod imp {
     pub fn bundle_ready() {}
     pub fn script_changed() {}
     pub fn install_apk(_: &str) {}
+    pub fn voice_available() -> bool {
+        false
+    }
+    pub fn voice_start() -> bool {
+        false
+    }
 }
 
-pub use imp::{bundle_ready, install_apk, open, script_changed, seal};
+pub use imp::{bundle_ready, install_apk, open, script_changed, seal, voice_available, voice_start};

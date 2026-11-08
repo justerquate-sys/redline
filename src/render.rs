@@ -820,7 +820,7 @@ pub fn tv_about(info: Option<&crate::tv::ShellInfo>, running: u64, running_clien
         Some(V::Downloading(p)) => ("busy", match p { Some(p) => format!("Downloading the update… {p} %"), None => "Downloading the update…".into() }, "Android's installer opens when it is complete.".into(), vec![]),
         Some(V::Installing) => ("busy", "Opening Android's installer…".into(), "Choose Install, then Open. (The first time, Android asks to allow installs from this app: allow it, then come back.)".into(), vec![("tv-install", "Install again", true)]),
         Some(V::NeedsApp) => ("", "A new version needs a newer app".into(), "It will be offered here as soon as it is published.".into(), vec![("tv-check", "Check again", true)]),
-        Some(V::Failed(e)) => ("err", crate::tv::update_error(e).into(), e.clone(), vec![("tv-check", "Retry", true)]),
+        Some(V::Failed(e)) => ("err", crate::tv::update_error(e, info.is_some_and(|i| i.retrying)), e.clone(), vec![("tv-check", "Retry", true)]),
     };
     out.push_str(&format!("<div class=\"tvus {cls}\" role=\"status\" aria-live=\"polite\"><b>"));
     esc_into(&mut out, &head);

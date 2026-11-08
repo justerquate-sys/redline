@@ -7,6 +7,10 @@ pub const MAX_CHARS: usize = 500;
 pub const ID: &str = "ytc-tvk";
 pub const QUERY: &str = "ytc-tvquery";
 pub const LABEL: &str = "ytc-tvquery-text";
+/// The mic control beside the query; shown only while the shell has a recognizer (`html[data-ytc-tvmic]`), and never on
+/// the desktop extension (whose own `#ytc-mic` is another thing altogether).
+pub const MIC: &str = "ytc-tvmic";
+pub const MIC_ROOT: &str = "data-ytc-tvmic";
 const LETTERS: &str = "abcdefghijklmnopqrstuvwxyz'-.,";
 const SYMBOLS: &str = "0123456789@#&+!?/():;\"=_[]%€$£";
 
@@ -115,6 +119,7 @@ pub fn query(q: &str) -> String {
     );
     esc_into(&mut out, if q.is_empty() { "Search videos" } else { q });
     out.push_str("</span><span class=\"tvquery-edit\" aria-hidden=\"true\">Edit</span></button>");
+    out.push_str(&format!("<button id=\"{MIC}\" class=\"tvmic\" type=\"button\" data-act=\"tv-mic\" aria-label=\"Voice search\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"9\" y=\"3\" width=\"6\" height=\"11.5\" rx=\"3\"/><path d=\"M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21\"/></svg></button>"));
     out
 }
 

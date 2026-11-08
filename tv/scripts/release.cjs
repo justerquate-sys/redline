@@ -14,9 +14,13 @@
 //                                                sign another bundle/APK (tests; APK_VERSION and
 //                                                APK_VERSION_CODE override the APK's version)
 //   node tv/scripts/release.cjs --serve 8765     serve tv/out/release/ as a fake GitHub API
-//                                                (GET /repos/<any>/<any>/releases, /dl/<file>) for
-//                                                testing the app's update check (debug builds read
-//                                                files/dev.json, see docs)
+//                                                (GET /repos/<any>/<any>/releases, /dl/<file> and the API's
+//                                                /repos/<any>/<any>/releases/assets/<id>) for testing the
+//                                                app's update check (debug builds read files/dev.json, see docs)
+//      --fail-dl [status]                        /dl/ answers this (default 504), as GitHub's website did on
+//                                                8 Nov 2026; the API asset route still delivers
+//      --limit-api                               the API asset route answers GitHub's rate-limit 403
+//      --fail-api                                the API asset route answers 502 (both routes down)
 // Environment: GITHUB_TOKEN (contents:write on the repo), LUMEN_TV_REPO=owner/name (default
 // justerquate-sys/redline, the repository's name since the rename from justerquate-sys/lumen; apps built before
 // 0.5.0 have "lumen" compiled in and reach the same releases through GitHub's redirect for renamed repositories,
@@ -39,15 +43,32 @@ const LATEST_APK = 'lumen-tv.apk';
 
 function serve(port) {
   const http = require('node:http');
+  const failDl = has('--fail-dl') ? (/^\d+$/.test(opt('--fail-dl') || '') ? +opt('--fail-dl') : 504) : 0, limitApi = has('--limit-api');
   http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x'), host = req.headers.host;
-    console.log(req.method, url.pathname);
-    if (/^\/repos\/[^/]+\/[^/]+\/releases(\/latest)?$/.test(url.pathname)) {
-      const names = fs.readdirSync(outDir);
-      const rel = { tag_name: 'lumen-tv-local', draft: false, assets: names.map(n => ({ name: n, browser_download_url: `http://${host}/dl/${n}` })) };
+    console.log(req.method, url.pathname, req.headers.authorization ? 'WITH AUTH' : '');
+    const octets = f => { res.writeHead(200, { 'content-type': 'application/octet-stream' }); return fs.createReadStream(f).pipe(res); };
+    // Asset ids: the file's place in the listing.
+    const names = fs.readdirSync(outDir);
+    const list = /^(\/repos\/[^/]+\/[^/]+\/releases)(\/latest)?$/.exec(url.pathname);
+    if (list) {
+      const rel = { tag_name: 'lumen-tv-local', draft: false, assets: names.map((n, i) => ({ id: i + 1, name: n, url: `http://${host}${list[1]}/assets/${i + 1}`, browser_download_url: `http://${host}/dl/${n}` })) };
       res.writeHead(200, { 'content-type': 'application/json' });
-      return res.end(JSON.stringify(url.pathname.endsWith('/latest') ? rel : [rel]));
+      return res.end(JSON.stringify(list[2] ? rel : [rel]));
     }
+    // The API's asset route: the file only with this Accept (else its description), like GitHub's.
+    const a = /^\/repos\/[^/]+\/[^/]+\/releases\/assets\/(\d+)$/.exec(url.pathname), asset = a && names[+a[1] - 1];
+    if (asset) {
+      if (has('--fail-api')) { res.writeHead(502); return res.end(); }
+      if (limitApi) {
+        res.writeHead(403, { 'content-type': 'application/json', 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 1800) });
+        return res.end('{"message":"API rate limit exceeded"}');
+      }
+      if (/application\/octet-stream/.test(req.headers.accept || '')) return octets(path.join(outDir, asset));
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ id: +a[1], name: asset }));
+    }
+    if (failDl && url.pathname.startsWith('/dl/')) { res.writeHead(failDl); return res.end(); }
     const m = /^\/dl\/([\w.-]+)$/.exec(url.pathname), f = m && path.join(outDir, m[1]);
     if (f && fs.existsSync(f)) { res.writeHead(200, { 'content-type': 'application/octet-stream' }); return fs.createReadStream(f).pipe(res); }
     res.writeHead(404); res.end();

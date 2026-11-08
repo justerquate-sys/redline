@@ -300,7 +300,7 @@ fn update_from_a_fake_release() {
 
     // A tampered file: nothing installed, the cache stays empty.
     state.lock().unwrap().2 = true;
-    assert!(release::check(&h, &api, &pk, &cache, 100, 1).unwrap_err().contains("hash mismatch"));
+    assert!(release::check(&h, &api, &pk, &cache, 100, 1).unwrap_err().reason.contains("hash mismatch"));
     assert!(release::load_cached(&cache, &pk).is_none());
     state.lock().unwrap().2 = false;
 
@@ -522,7 +522,7 @@ fn format_two_needs_the_new_app() {
     assert_eq!(old.apk.expect("the APK is offered").apk.version_code, 3000);
     // A tampered Wasm: refused.
     *tamper.lock().unwrap() = true;
-    assert!(release::check(&http(), &api, &pk, &cache, 100, 3000).unwrap_err().contains("hash mismatch"));
+    assert!(release::check(&http(), &api, &pk, &cache, 100, 3000).unwrap_err().reason.contains("hash mismatch"));
     *tamper.lock().unwrap() = false;
     // The 0.3.0 app: installed, the Wasm kept as bytes, cached and re-verified.
     let new = release::check(&http(), &api, &pk, &cache, 100, 3000).unwrap();
@@ -535,4 +535,322 @@ fn format_two_needs_the_new_app() {
     std::fs::write(cache.join(release::WASM_FILE), b"x").unwrap();
     assert!(release::load_cached(&cache, &pk).is_none());
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---- The two routes to a release's files (GitHub's website answering 504 while its API works, 8 Nov 2026).
+
+/// What a route answers for a file (None = it serves the file): status, extra header lines for the mock.
+type Answering = Arc<dyn Fn(&str) -> Option<(u16, &'static str)> + Send + Sync>;
+
+fn always(status: u16) -> Answering {
+    Arc::new(move |_| Some((status, "")))
+}
+
+fn serves() -> Answering {
+    Arc::new(|_| None)
+}
+
+/// A fake GitHub: `/repos/o/r/releases`, `/dl/<file>` (the website), `/api/<file>` (the release API's asset route).
+/// The APK is offered to a shell older than it.
+struct FakeGitHub {
+    m: mock::Mock,
+    api: String,
+    dir: std::path::PathBuf,
+    pk: [u8; 32],
+}
+
+const APK: &[u8] = b"PK-fake-apk-with-some-length";
+
+fn route_files() -> Vec<(&'static str, Vec<u8>)> {
+    vec![
+        ("content.js", b"console.log('v2')".to_vec()),
+        ("client.css", b"a{}".to_vec()),
+        ("native.css", b"b{}".to_vec()),
+        ("rules.json", b"[]".to_vec()),
+    ]
+}
+
+/// `bad_api`: what the API route delivers wrongly ("sig": a signature of other bytes, a file name: changed bytes).
+fn fake_github(tag: &str, web: Answering, api: Answering, bad_api: &'static str) -> FakeGitHub {
+    let files = route_files();
+    let refs: Vec<(&str, &[u8])> = files.iter().map(|(n, b)| (*n, b.as_slice())).collect();
+    let man = manifest(200, &refs, 1, Some(("lumen-tv-0.2.0.apk", APK, 2)));
+    let base = Arc::new(Mutex::new(String::new()));
+    let b2 = base.clone();
+    let m = mock::start(Arc::new(move |_m, path, _b| {
+        let b = b2.lock().unwrap().clone();
+        if path == "/repos/o/r/releases" {
+            let mut names = vec!["lumen-tv-manifest.json", "lumen-tv-manifest.json.sig", "lumen-tv-0.2.0.apk"];
+            names.extend(files.iter().map(|f| f.0));
+            let assets: Vec<Value> = names.iter().map(|n| json!({"name": n, "url": format!("{b}/api/{n}"), "browser_download_url": format!("{b}/dl/{n}")})).collect();
+            return (200, "application/json".to_string(), json!([{"tag_name": "tv-200", "assets": assets}]).to_string().into_bytes());
+        }
+        let (route, name) = path[1..].split_once('/').unwrap_or(("", ""));
+        let fail = if route == "api" { api(name) } else { web(name) };
+        if let Some((status, headers)) = fail {
+            // (The mock writes the content type as it is: an extra header line goes along with it.)
+            return (status, format!("text/plain{headers}"), b"not this time".to_vec());
+        }
+        let wrong = route == "api" && bad_api == name;
+        let wrong_sig = route == "api" && bad_api == "sig" && name == release::SIG;
+        let mut bytes = match name {
+            release::MANIFEST => man.clone(),
+            release::SIG if wrong_sig => sign(b"other bytes").into_bytes(),
+            release::SIG => sign(&man).into_bytes(),
+            "lumen-tv-0.2.0.apk" => APK.to_vec(),
+            n => files.iter().find(|(f, _)| *f == n).map(|x| x.1.clone()).unwrap_or_default(),
+        };
+        if wrong {
+            bytes.push(b'!');
+        }
+        (if bytes.is_empty() { 404 } else { 200 }, "application/octet-stream".to_string(), bytes)
+    }));
+    *base.lock().unwrap() = m.base.clone();
+    let dir = std::env::temp_dir().join(format!("lumen-tv-routes-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let api = format!("{}/repos/o/r/releases", m.base);
+    FakeGitHub { m, api, dir, pk: key().verifying_key().to_bytes() }
+}
+
+impl FakeGitHub {
+    fn check(&self) -> Result<release::Outcome, release::Failure> {
+        release::check(&http(), &self.api, &self.pk, &self.dir.join("bundle"), 100, 1)
+    }
+
+    /// Paths asked for, in order.
+    fn asked(&self) -> Vec<String> {
+        self.m.log.lock().unwrap().iter().map(|l| l.1.clone()).collect()
+    }
+
+    fn count(&self, prefix: &str) -> usize {
+        self.asked().iter().filter(|p| p.starts_with(prefix)).count()
+    }
+
+    fn cached(&self) -> Option<Bundle> {
+        release::load_cached(&self.dir.join("bundle"), &self.pk)
+    }
+}
+
+impl Drop for FakeGitHub {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// The normal case: one API request (the lookup), every file from the website: what a check always cost.
+#[test]
+fn a_normal_check_costs_one_api_request() {
+    let g = fake_github("normal", serves(), always(500), "");
+    let out = g.check().unwrap();
+    assert_eq!(out.bundle.unwrap().seq, 200);
+    assert_eq!(g.count("/repos/"), 1);
+    assert_eq!(g.count("/api/"), 0, "the API's rate limit is left alone");
+    assert_eq!(g.count("/dl/"), 6);
+    assert!(g.m.heads.lock().unwrap().iter().all(|(_, h)| !h.contains("authorization")), "no auth, ever");
+    // The offer carries both routes.
+    let offer = out.apk.unwrap();
+    assert!(offer.url.ends_with("/dl/lumen-tv-0.2.0.apk") && offer.api_url.unwrap().ends_with("/api/lumen-tv-0.2.0.apk"));
+}
+
+/// The first route answers 504: the API route delivers, and after the first failure it comes first for the rest of
+/// the check, so the failing route costs its 11 s once.
+#[test]
+fn a_failing_website_falls_over_to_the_api_once() {
+    let g = fake_github("fallback", always(504), serves(), "");
+    let b = g.check().unwrap().bundle.expect("installed through the API route");
+    assert_eq!((b.seq, b.file("content.js")), (200, "console.log('v2')"));
+    assert!(g.cached().is_some_and(|c| c.seq == 200), "verified and cached like any other");
+    assert_eq!(g.asked()[..3], ["/repos/o/r/releases".to_string(), format!("/dl/{}", release::MANIFEST), format!("/api/{}", release::MANIFEST)]);
+    assert_eq!(g.count("/dl/"), 1, "the failing route is asked once in this check");
+    assert_eq!(g.count("/api/"), 6, "manifest, signature, four files: each once");
+    let heads = g.m.heads.lock().unwrap();
+    for (path, h) in heads.iter().filter(|(p, _)| p.starts_with("/api/")) {
+        assert!(h.contains("accept: application/octet-stream"), "{path}: {h}");
+    }
+    assert!(heads.iter().all(|(_, h)| !h.contains("authorization")), "no auth, ever");
+    drop(heads);
+    // The next check starts with the website again (it may be back), then up to date: 3 API requests at most.
+    let g2 = g.m.log.lock().unwrap().len();
+    release::check(&http(), &g.api, &g.pk, &g.dir.join("bundle"), 200, 2).unwrap();
+    let asked = g.asked();
+    assert_eq!(asked[g2..], ["/repos/o/r/releases".to_string(), format!("/dl/{}", release::MANIFEST), format!("/api/{}", release::MANIFEST), format!("/api/{}", release::SIG)]);
+}
+
+/// The first route's failure can be anything of its kind: a 429 from the website, a connection that fails.
+#[test]
+fn a_rate_limited_or_unreachable_first_route_falls_over_too() {
+    let g = fake_github("429", always(429), serves(), "");
+    assert!(g.check().unwrap().bundle.is_some());
+    assert_eq!(g.count("/dl/"), 1);
+    // A closed port for the website's URLs.
+    let g = fake_github("refused", serves(), serves(), "");
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+    let asset = release::Asset { web: format!("http://{closed}/x"), api: Some(format!("{}/api/lumen-tv-0.2.0.apk", g.m.base)) };
+    let offer = release::ApkOffer { apk: apk_entry(), url: asset.web, api_url: asset.api };
+    let p = release::download_apk(&http(), &offer, &g.dir).unwrap();
+    assert_eq!(std::fs::read(p).unwrap(), APK);
+    // Nothing reachable: said in words, nothing written.
+    let offer = release::ApkOffer { apk: apk_entry(), url: format!("http://{closed}/x"), api_url: Some(format!("http://{closed}/y")) };
+    let e = release::download_apk(&http(), &offer, &g.dir.join("none")).unwrap_err();
+    assert!(e.starts_with("No connection to GitHub (APK: download "), "{e}");
+    assert!(!e.contains("127.0.0.1"), "no addresses in the reason: {e}");
+    assert!(!g.dir.join("none").exists());
+}
+
+fn apk_entry() -> release::Apk {
+    release::Apk { version_code: 2, version: "0.2.0".into(), file: "lumen-tv-0.2.0.apk".into(), sha256: release::sha256_hex(APK), size: APK.len() as u64 }
+}
+
+/// Both routes fail: a reason in words with the technical part, the check stops there (no more requests), and the
+/// bundle already cached stays.
+#[test]
+fn both_routes_failing_says_so_in_words() {
+    let g = fake_github("both", always(504), always(502), "");
+    let e = g.check().unwrap_err();
+    assert_eq!(e.reason, format!("GitHub isn't answering ({}: download HTTP 504, API HTTP 502)", release::MANIFEST));
+    assert_eq!(e.wait_secs, 0);
+    assert_eq!(g.asked().len(), 3, "the lookup and one try per route");
+    assert!(g.cached().is_none());
+}
+
+/// A route that flips between working and not working cannot drag a check out: at most MAX_ROUTE_FAILURES failed tries.
+#[test]
+fn a_flapping_route_ends_the_check_early() {
+    let names = [release::MANIFEST, release::SIG, "content.js", "client.css", "native.css", "rules.json"];
+    let web: Answering = Arc::new(move |n| (names.iter().position(|x| *x == n).unwrap() % 2 == 0).then_some((504, "")));
+    let api: Answering = Arc::new(move |n| (names.iter().position(|x| *x == n).unwrap() % 2 == 1).then_some((503, "")));
+    let g = fake_github("flap", web, api, "");
+    let e = g.check().unwrap_err();
+    assert!(e.reason.starts_with("GitHub isn't answering"), "{}", e.reason);
+    // Manifest, signature and content.js arrived on their second try; client.css's failed try was the fourth.
+    assert_eq!(g.count("/dl/") + g.count("/api/"), 3 + release::MAX_ROUTE_FAILURES as usize, "{:?}", g.asked());
+    assert!(g.cached().is_none());
+}
+
+/// A file that is simply not there is not an outage: the other route is not asked.
+#[test]
+fn a_missing_file_does_not_try_the_other_route() {
+    let g = fake_github("404", always(404), serves(), "");
+    assert_eq!(g.check().unwrap_err().reason, format!("{}: HTTP 404", release::MANIFEST));
+    assert_eq!(g.count("/api/"), 0);
+}
+
+/// The fallback route is no way around the signature or the hashes.
+#[test]
+fn the_fallback_route_passes_the_same_checks() {
+    let g = fake_github("badsig", always(504), serves(), "sig");
+    let e = g.check().unwrap_err();
+    assert!(e.reason.contains("signature"), "{}", e.reason);
+    assert!(g.cached().is_none(), "nothing installed");
+    assert!(!g.dir.join("bundle.new").join("content.js").exists(), "no file was even fetched");
+
+    let g = fake_github("badman", always(504), serves(), release::MANIFEST);
+    assert!(g.check().unwrap_err().reason.contains("signature"));
+    assert!(g.cached().is_none());
+
+    let g = fake_github("badfile", always(504), serves(), "client.css");
+    let e = g.check().unwrap_err();
+    assert_eq!(e.reason, "client.css: hash mismatch");
+    assert!(g.cached().is_none());
+
+    // The APK: the hash in the signed manifest decides, whichever route delivered it.
+    let g = fake_github("badapk", always(504), serves(), "lumen-tv-0.2.0.apk");
+    let offer = g.check().unwrap().apk.unwrap();
+    let e = release::download_apk(&http(), &offer, &g.dir.join("apk")).unwrap_err();
+    assert_eq!(e, "APK: hash mismatch");
+    assert!(!g.dir.join("apk").join("update.apk").exists());
+}
+
+/// The APK download's second route, with its progress starting over and ending at the signed size.
+#[test]
+fn the_apk_falls_over_with_its_progress() {
+    let g = fake_github("apk", always(504), serves(), "");
+    let offer = g.check().unwrap().apk.unwrap();
+    let mut seen = Vec::new();
+    let p = release::download_apk_progress(&http(), &offer, &g.dir, &mut |got, total| seen.push((got, total))).unwrap();
+    assert_eq!(std::fs::read(p).unwrap(), APK);
+    let size = APK.len() as u64;
+    assert_eq!(seen.first(), Some(&(0, size)));
+    assert_eq!(seen.last(), Some(&(size, size)));
+    assert!(seen.iter().all(|(got, total)| got <= total && *total == size), "the error answer's body is no progress: {seen:?}");
+    assert!(g.m.heads.lock().unwrap().iter().any(|(p, h)| p == "/api/lumen-tv-0.2.0.apk" && h.contains("accept: application/octet-stream")));
+    // Both failing.
+    let g2 = fake_github("apk2", serves(), serves(), "");
+    let bad = release::ApkOffer { apk: apk_entry(), url: format!("{}/dl/gone", g.m.base), api_url: Some(format!("{}/dl/gone", g2.m.base)) };
+    let e = release::download_apk(&http(), &bad, &g.dir.join("x")).unwrap_err();
+    assert!(e.starts_with("GitHub isn't answering (APK: download HTTP 504, API HTTP 404"), "{e}");
+}
+
+/// GitHub's rate limit: a readable reason, how long it lasts, and what the next automatic check makes of it.
+#[test]
+fn a_rate_limit_is_said_in_words() {
+    let reset = (lumen_tv_core::now_ms() / 1000.0) as u64 + 600;
+    let header: &'static str = Box::leak(format!("\r\nX-RateLimit-Remaining: 0\r\nX-RateLimit-Reset: {reset}").into_boxed_str());
+    // The lookup itself (it has no second route).
+    let m = mock::start(Arc::new(move |_, _, _| (403, format!("application/json{header}"), br#"{"message":"API rate limit exceeded"}"#.to_vec())));
+    let pk = key().verifying_key().to_bytes();
+    let e = release::check(&http(), &format!("{}/repos/o/r/releases", m.base), &pk, std::path::Path::new("/nonexistent"), 100, 1).unwrap_err();
+    assert!(e.reason.starts_with("GitHub's rate limit was reached (release lookup: HTTP 403, resets in "), "{}", e.reason);
+    assert!((595..=600).contains(&e.wait_secs), "{}", e.wait_secs);
+    assert!(release::next_check_ms(1, e.wait_secs) >= 595_000.0, "not before it is over");
+    // A TV whose clock is days behind: the reset is within the hour whatever it thinks.
+    let far: &'static str = Box::leak(format!("\r\nX-RateLimit-Remaining: 0\r\nX-RateLimit-Reset: {}", reset + 500_000).into_boxed_str());
+    let g = fake_github("clock", always(504), Arc::new(move |_| Some((403, far))), "");
+    let e = g.check().unwrap_err();
+    assert_eq!(e.wait_secs, 3600);
+    assert!(e.reason.contains("resets in 60 min"), "{}", e.reason);
+    // Website down, API out of requests.
+    let api: Answering = Arc::new(move |_| Some((403, header)));
+    let g = fake_github("limit", always(504), api, "");
+    let e = g.check().unwrap_err();
+    assert!(e.reason.starts_with(&format!("GitHub's rate limit was reached ({}: download HTTP 504, API HTTP 403, resets in ", release::MANIFEST)), "{}", e.reason);
+    // Another way of saying it: 429 with Retry-After.
+    let api: Answering = Arc::new(|_| Some((429, "\r\nRetry-After: 120")));
+    let g = fake_github("after", always(504), api, "");
+    let e = g.check().unwrap_err();
+    assert_eq!(e.wait_secs, 120);
+    assert!(e.reason.contains("resets in 2 min"), "{}", e.reason);
+    // A 403 that is no rate limit stays what it is, and sends nobody to the other route.
+    let g = fake_github("forbidden", always(403), serves(), "");
+    assert_eq!(g.check().unwrap_err().reason, format!("{}: HTTP 403", release::MANIFEST));
+    assert_eq!(g.count("/api/"), 0);
+    // A rate-limited API after the website failed once: back to the website for the rest.
+    let flip = Arc::new(AtomicU32::new(0));
+    let f2 = flip.clone();
+    let web: Answering = Arc::new(move |_| (f2.fetch_add(1, Ordering::SeqCst) == 0).then_some((504, "")));
+    let api: Answering = Arc::new(move |n| (n != release::MANIFEST).then_some((403, header)));
+    let g = fake_github("back", web, api, "");
+    assert!(g.check().unwrap().bundle.is_some());
+    assert_eq!((g.count("/api/"), g.count("/dl/")), (2, 6), "{:?}", g.asked());
+}
+
+/// When the automatic check runs next.
+#[test]
+fn failed_checks_retry_sooner_then_return_to_the_schedule() {
+    const MIN: f64 = 60_000.0;
+    let at = |fails| release::next_check_ms(fails, 0) / MIN;
+    assert_eq!((at(0), at(1), at(2), at(3), at(4), at(9)), (360.0, 5.0, 15.0, 60.0, 360.0, 360.0));
+    assert_eq!(release::next_check_ms(1, 1800) / MIN, 30.0, "a rate limit outlasts the step");
+    assert_eq!(release::next_check_ms(3, 1800) / MIN, 60.0);
+    assert_eq!(release::next_check_ms(1, 86_400) / MIN, 120.0, "at most 2 h, whatever a header says");
+}
+
+/// By hand and rarely, against the real GitHub (`cargo test --locked --test core -- --ignored real_github`): the API
+/// route, without the website, delivers the signed files of the latest release, and the compiled-in key accepts them.
+#[test]
+#[ignore]
+fn real_github_delivers_the_signed_manifest_through_the_api() {
+    let h = Http::new(Duration::from_secs(30));
+    let rel = h.get("https://api.github.com/repos/justerquate-sys/redline/releases?per_page=10", &[("Accept", "application/vnd.github+json")]).unwrap();
+    assert_eq!(rel.status, 200);
+    let assets = release::assets(&rel.json().unwrap());
+    let get = |name: &str| {
+        let a = h.get(assets[name].api.as_ref().expect("the asset's API url"), &[("Accept", "application/octet-stream")]).unwrap();
+        assert_eq!(a.status, 200, "{name}");
+        a.body
+    };
+    let key = release::parse_key(include_str!("../../keys/release.pub")).unwrap();
+    let m = release::verify_manifest(&get(release::MANIFEST), &String::from_utf8(get(release::SIG)).unwrap(), &key).unwrap();
+    release::check_file(&m, "rules.json", &get("rules.json")).unwrap();
 }

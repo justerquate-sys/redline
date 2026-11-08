@@ -105,7 +105,7 @@ impl App {
         }
         if let Some(dir) = tv::dir(key) {
             self.tv.keyboard.typed = false;
-            if dir == tv::Dir::Down && bridge::any("#ytc-tvquery:focus") {
+            if dir == tv::Dir::Down && bridge::any("#ytc-tvquery:focus,#ytc-tvmic:focus") {
                 if bridge::any("#ytc[data-tvk='1']") {
                     bridge::focus_sel(ID, ".tvk-keys button");
                 } else {

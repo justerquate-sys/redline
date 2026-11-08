@@ -220,11 +220,12 @@ It talks only to these services:
 | **SponsorBlock** (`sponsor.ajay.app`) | When a video starts, unless SponsorSkip is off | Only the first 4 characters of a hash of the video id: the answer covers ~150 videos and yours is picked on your computer. No cookies, nothing reported back. Switched off, nothing is sent. |
 | **Deepgram** (`api.deepgram.com`) | Only while you dictate a voice search, and only if you saved a key | Your microphone audio for that search and your key. The key never enters the YouTube page. |
 | **Google sign-in** (`oauth2.googleapis.com`), TV app only | While the sign-in code is shown, and to refresh or revoke the TV's access | YouTube's TV device sign-in. The tokens stay on the TV, sealed with the Android Keystore. |
-| **GitHub** (`api.github.com`, release downloads), TV app only | At launch and every 6 hours | A request for this repository's releases and, when there is a newer one, its files. Nothing about you. |
+| **GitHub** (`api.github.com`, release downloads), TV app only | At launch and every 6 hours, sooner after a failed check | A request for this repository's releases and, when there is a newer one, its files. Nothing about you. |
 
 The extension's permissions: `storage`, `declarativeNetRequest` (the fixed rules in
 [`extension/rules.json`](extension/rules.json)) and host access to youtube.com, googlevideo.com, SponsorBlock and
-Deepgram only. The full rules are in
+Deepgram only. The TV app's voice search uses the TV's own speech recognizer: Redline gets the text, never the audio,
+and has no microphone permission. The full rules are in
 [CONTRIBUTING.md](CONTRIBUTING.md#privacy-rules-binding).
 
 ## FAQ

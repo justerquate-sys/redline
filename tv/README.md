@@ -47,6 +47,7 @@ is open, then goes to the rail, then back (on Home it leaves the app). ← from 
 the built-in keyboard opens at once, with letters, numbers/symbols, Space, Delete, Clear and Search, all operated
 with the remote. Back closes the keyboard onto the query control; ↓ then walks recent searches and suggestions,
 and OK on the query reopens the keyboard. A physical keyboard can type too. Another Back returns to the page.
+With app 0.6.0 and a speech recognizer on the TV, a mic control sits to the right of the query (see *Voice search*).
 A video
 plays full screen at once; any key shows the controls (they hide 4 s after the last key while playing): ←/→ on the
 bar seek 10 s (faster while held, with the storyboard frame), OK plays/pauses, ↓ goes to the buttons (captions,
@@ -78,8 +79,8 @@ repository may ever be created under the old name `lumen` (that would end the re
   manifest and opens Android's installer (`shell_install`; the first time Android asks to allow installs from
   this app: allow it and press Back, the install goes on). Choose *Update*, then *Open*. Downloader is only ever
   needed for the very first install.
-- **Retry** after a failed check, with the reason (no connection, GitHub's rate limit, a signature that does not
-  verify).
+- **Retry** after a failed check, with the reason in words (no connection, GitHub not answering, GitHub's rate limit,
+  a signature that does not verify) and the technical part under it.
 
 The automatic checks stay: at launch and every 6 hours the app reads the repository's releases, takes the newest
 one carrying `lumen-tv-manifest.json`, checks its ed25519 signature against the public key compiled into the app
@@ -88,15 +89,113 @@ ready* notice appears at the top right of the pages (never over a video; the rai
 button opens About & updates. A new interface also goes live by itself the next time the app comes back to the
 foreground (never mid-video). Offline, the app runs what it has; a broken or tampered download is ignored.
 
+**When GitHub's website is down (app 0.6.0).** On 8 Nov 2026 `github.com/<repo>/releases/download/…` answered 504 after
+about 11 s for most files of this repository, while `api.github.com` answered at once. So every release file has two
+routes (`tv/core/src/release.rs`, `Routes`):
+
+- First its `browser_download_url`. If that fails (a 5xx, a 429 or rate-limit answer, a transport error), then the
+  release API's asset `url` with `Accept: application/octet-stream` (redirects followed, no auth). A file that is simply
+  not there (404) is not an outage: no second route, and a bad signature or hash ends the check whichever route
+  delivered the bytes.
+- There is no retry of the same route. Once a route failed, the other comes first for the rest of that check, so the
+  failing website costs its 11 s once. The next check starts with the website again. The release lookup has no second
+  route (it is the API).
+- After 4 failed tries a check gives up (a route that keeps flipping cannot drag it out), and the APK download
+  (`shell_install`, also with both routes) has its own 20-minute limit but gives up on a route that gives no answer in
+  30 s; its progress starts over when the second route takes over.
+- A failed check tries again sooner: after 5 min, 15 min and 1 h, then back to every 6 hours (one thread, one due time:
+  a check from the screen moves it, nothing stacks). It waits out a rate limit's reset when GitHub names one, up to 2 h.
+  None of this touches a running page: the rules above about videos hold for a retry too.
+
+What a check costs in unauthenticated API requests (60 an hour per IP):
+
+| Check | Normal (website works) | Website down |
+|---|---|---|
+| Already up to date | 1 (the lookup) | 3 (lookup, manifest, signature) |
+| New interface (9 files with the telemetry variant) | 1 | 10 (lookup and each file once) |
+| The APK download | 0 | 1 |
+
+All requests, worst case, for one check: the lookup, 9 files and 4 failed tries, 14. The worst hour on one TV (every
+check failing on the very last file) is 3 checks at 10 API requests: launch, +5 min, +20 min; other devices behind the
+same IP share the limit, and an app restart is one more check.
+
 An app from before this screen (0.1.0 builds of 2 Nov 2026) cannot install from it: it offers a new app in its own
 dialog once (*Install*); after that update everything is one click here.
 
 Testing the flow on the emulator: a debug build reads `files/dev.json`; `node tv/scripts/release.cjs --dry-run
---no-build` signs `tv/out/release/` (`LUMEN_TV_KEY=<test key>`, `--apk <file>`, `SEQ`, `APK_VERSION`), `node
-tv/scripts/release.cjs --serve 8775` serves it as a fake GitHub, and
+--no-build` signs `tv/out/release/` (`LUMEN_TV_KEY=<test key>`, `--bundle <dir>` with a higher `seq`, `--apk <file>`,
+`APK_VERSION`, `APK_VERSION_CODE`), `node tv/scripts/release.cjs --serve 8775` serves it as a fake GitHub (`--fail-dl
+[status]`: its website answers 504, its API asset route still delivers; `--limit-api`: that route answers the rate-limit
+403; `--fail-api`: it answers 502), and
 `echo '{"release_api":"http://10.0.2.2:8775/repos/o/r/releases"}' | adb shell "run-as app.lumen.tv sh -c 'cat > files/dev.json'"`
 points the app at it. (A throwaway key needs a test build with its public key in `tv/keys/release.pub`; never
-commit that.)
+commit that. macOS's own `openssl` has no ed25519: `crypto.generateKeyPairSync('ed25519')` in Node does.)
+
+## Voice search
+
+Since app 0.6.0, on the search screen: **→ from the query reaches the mic control**, and OK opens Android's speech
+recognizer (`RecognizerIntent.ACTION_RECOGNIZE_SPEECH`, web-search model, the TV's language). The app asks for no
+microphone permission: the system's recognizer listens, with the remote's mic, and hands back text. That text runs the
+search as if it was typed. The audio never passes through Redline; it goes wherever the TV's own recognizer sends it.
+
+- **The control shows only when it can work**: the shell reports `caps.voice` in `shell_info`, true when Android finds a
+  recognizer (which the manifest's `queries` makes possible on Android 11+). A bundle with the mic runs on shell 0.5.0,
+  which reports no `caps`: no mic there, and `min_shell` is not raised for it.
+- **Which recognizer**: Android TV images list two for this intent, the Google app's (`com.google.android.katniss`)
+  and the text-to-speech engine's, and an open intent would stop at Android's "Complete action using" dialog (seen on
+  the emulator). So the app names one: the Google app's, else any other than text-to-speech.
+- **A cancel** says nothing, **no match** or an error gives a short notice for 4 s; the focus returns to the mic. A
+  recognizer that went away hides the control. A playing video pauses while the recognizer listens and goes on if
+  nothing came of it.
+- **The search and voice keys** (`KEYCODE_SEARCH`, `KEYCODE_VOICE_ASSIST`), if the system delivers them to the app, open the
+  recognizer from anywhere except over an open panel. With no recognizer the system keeps these keys.
+
+Shell → page: Kotlin hands what happened to Rust, which keeps it in a short queue; a `ytc-wake` event tells the page to
+ask (`shell_events`), and a page that starts later asks when it boots. Text from outside is never written into a
+script.
+
+## Search and links from other apps
+
+The activity takes these (`onCreate`, `onNewIntent`), validated in Rust (`tv/core/src/incoming.rs`):
+
+- **`android.intent.action.SEARCH`, `com.google.android.gms.actions.SEARCH_ACTION`** with the extra `query`: runs the search.
+- **`ACTION_VIEW`** for `https` links on `youtube.com`, `www.youtube.com`, `m.youtube.com` and `youtu.be`: `/watch?v=`,
+  `/shorts/`, `/live/`, `/embed/`, `/v/`, `youtu.be/<id>`, `/playlist?list=`, `/channel/UC…`, `/@handle`, `/c/`, `/user/`
+  (non-ASCII handles, percent-encoded in a link, are not taken). The video, playlist or channel opens in the app; Back
+  returns to the page before it while the app was already in use. After a cold start from a link Back leaves the app,
+  to where the link came from (the WebView skips a history entry pushed without a key press). The link is read into its parts (a video id, a list, a start time, a channel or a
+  handle, each checked), the page gets a path rebuilt from those parts, and its routes read it again; anything else is
+  dropped and no URL ever reaches the WebView as it came.
+
+The activity is exported (it always was: it is the launcher entry), so any app on the TV can send it anything; the
+checks above are why that is fine. It declares no `autoVerify`: Android offers it for these links beside YouTube's own
+app, or not at all, as the TV's settings decide. The launcher entry and banner are unchanged.
+
+```sh
+adb shell am start -n app.lumen.tv/.MainActivity -a android.intent.action.SEARCH -e query "lofi"
+adb shell am start -n app.lumen.tv/.MainActivity -a com.google.android.gms.actions.SEARCH_ACTION -e query "lofi"
+adb shell am start -n app.lumen.tv/.MainActivity -a android.intent.action.VIEW -d "https://youtu.be/-Bxc4gJluC0"
+adb shell am start -n app.lumen.tv/.MainActivity -a android.intent.action.VIEW -d "https://www.youtube.com/@YouTube"
+```
+
+What the emulator showed (`sdk_google_atv64_amati_arm64`, Android 16, `input keyevent`, 8 Nov 2026): the Google app's
+recognizer opens from the mic control and Back from it returns to the mic; with no microphone there it never hears
+anything, so a stand-in recognizer app supplied the answers (text, no match, an error, a cancel). `KEYCODE_SEARCH` reaches
+the app. `KEYCODE_VOICE_ASSIST` and `KEYCODE_ASSIST` do not: the system opens the Google app's own search over the
+app. For YouTube links Android lists the YouTube app, this app and a browser stub.
+
+**What only a real TV can confirm:**
+
+1. That Google TV's recognizer listens to the remote's mic for an app and hands the text back: press the mic control, say
+   something. To see what is there: `adb shell cmd package query-activities --brief -a android.speech.action.RECOGNIZE_SPEECH`.
+2. Whether the remote's mic button reaches the app at all, or the system's assistant takes it (the likely answer, going by the
+   emulator). A debug build logs every key (code, name, scan code, device), window focus and pause; a release build logs
+   only the two voice keys it received. Both: `adb logcat -s LumenTV`, then press the remote's mic and search buttons.
+   No `key …` or `voice key …` line and a `window focus: false` means the system kept the button, and the mic control is
+   the way in. Without the app: `adb shell getevent -lt` shows what the remote sends.
+3. Whether the system hands the app anything by itself: `adb shell cmd package query-activities --brief -a
+   android.intent.action.VIEW -c android.intent.category.BROWSABLE -d https://youtu.be/-Bxc4gJluC0`, and the `am start`
+   lines above without `-n`. Google TV's own search has no documented reason to choose this app over YouTube's.
 
 ## Build
 
@@ -292,15 +391,17 @@ tv/
   shell/src-tauri/        the Tauri app (Rust)
     src/lib.rs            window on https://www.youtube.com, the page's one command `ytc`
     src/shell.rs          state: account, storage, bundle in use, update thread, telemetry delivery
-    src/host.rs           JNI: Kotlin → Rust (init, script, user agent, request rules) and
-                          Rust → Kotlin (Keystore seal/open, bundle swap, update dialog, installer)
+    src/host.rs           JNI: Kotlin → Rust (init, script, user agent, request rules, intents, recognizer answers)
+                          and Rust → Kotlin (Keystore seal/open, bundle swap, update dialog, installer, recognizer)
     src/script.rs         the document-start script: shim + client bundle; the desktop user agent
     gen/android/…/app/lumen/tv/MainActivity.kt, Host.kt
                           what Android forces into Kotlin: activity hooks (Back first to the client,
-                          media keys, swappable document-start script), Keystore AES-GCM, the
-                          WebViewClient wrapper applying the rules, the update dialog and installer
+                          media and voice keys, swappable document-start script, incoming intents), the speech
+                          recognizer, Keystore AES-GCM, the WebViewClient wrapper applying the rules, the
+                          update dialog and installer
   core/                   the shell's logic without Tauri/Android, tested on the host:
-    release.rs            signed manifest, verified cache, GitHub release lookup, APK download
+    release.rs            signed manifest, verified cache, GitHub release lookup, the two routes to a file, APK download
+    incoming.rs           searches and links other apps hand the app, validated
     auth.rs               OAuth device flow of YouTube's TV client, refresh, revoke
     rules.rs              extension/rules.json (declarativeNetRequest subset) for the WebView; the client's own
                           pages (served the shell's document)
@@ -329,7 +430,7 @@ layout at every resolution, rem = 1/80 of the width). Design reference: `tv/desi
 | content script at document_start (+ `client.css`/`native.css`) | `WebViewCompat.addDocumentStartJavaScript` for `https://www.youtube.com`, shim + bundle |
 | `chrome.storage.local` | shell command → `files/storage.json` |
 | declarativeNetRequest (`rules.json`) | `Interceptor.shouldInterceptRequest` → `rules.rs` (block; googlevideo fetched natively with `Access-Control-Allow-Origin: *`) |
-| background.js: incidents, dev reload, voice socket relay | off on TV (no mic); incidents and speed telemetry only while the owner turned telemetry on (`tel.rs`) |
+| background.js: incidents, dev reload, voice socket relay | off on TV (voice search uses Android's recognizer: *Voice search*); incidents and speed telemetry only while the owner turned telemetry on (`tel.rs`) |
 | YouTube's page as the document the content script stops | the shell's own document for the client's pages (`rules::client_page`) |
 | browser cookies (Google sign-in) | YouTube TV device sign-in; `TVHTML5` + `Authorization: Bearer` for account calls |
 

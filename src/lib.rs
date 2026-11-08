@@ -108,6 +108,12 @@ pub fn on_shell(seq: u32, ok: bool, json: &str) {
     app::with(|a| a.on_shell(seq, ok, json));
 }
 
+/// The app shell has something for the page (it then asks: `shell_events`).
+#[wasm_bindgen]
+pub fn on_shell_wake() {
+    app::with(|a| a.on_shell_wake());
+}
+
 /// The app shell's Back button: 0 = not handled (the shell goes back), 1 = handled by the client,
 /// 2 = leave the app.
 #[wasm_bindgen]

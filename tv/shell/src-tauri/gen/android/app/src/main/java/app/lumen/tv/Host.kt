@@ -41,11 +41,15 @@ object Native {
   @JvmStatic external fun wasm(): ByteArray
   /** The owner said yes to a shell update: download, verify, then [Host.installApk]. */
   @JvmStatic external fun acceptUpdate()
+  /** An intent's action, URI and `query` extra ("" when absent): validated in Rust, kept for the page (`shell_events`). */
+  @JvmStatic external fun incoming(action: String, data: String, query: String)
+  /** The speech recognizer's answer: `state` is text, cancel, none, error or missing. */
+  @JvmStatic external fun voiceResult(state: String, text: String)
 }
 
 /**
- * What Rust asks of Android: the Keystore, the bundle swap and the package installer. Called from
- * Rust threads; UI work hops to the main thread.
+ * What Rust asks of Android: the Keystore, the bundle swap, the package installer and the speech recognizer.
+ * Called from Rust threads; UI work hops to the main thread.
  */
 class Host(activity: MainActivity) {
   private val ref = WeakReference(activity)
@@ -89,6 +93,17 @@ class Host(activity: MainActivity) {
     val done = java.util.concurrent.CountDownLatch(1)
     a.runOnUiThread { try { a.reinstallScript() } finally { done.countDown() } }
     done.await(2, java.util.concurrent.TimeUnit.SECONDS)
+  }
+
+  /** Android has a speech recognizer for us (the client shows its mic control only then). */
+  fun voiceAvailable(): Boolean = ref.get()?.voiceAvailable() ?: false
+
+  /** Opens the recognizer; its answer goes to [Native.voiceResult]. False when there is none. */
+  fun voiceStart(): Boolean {
+    val a = ref.get() ?: return false
+    if (!a.voiceAvailable()) return false
+    a.runOnUiThread { a.startVoice() }
+    return true
   }
 
   /** A downloaded APK waiting for the owner to allow installs from this app. */

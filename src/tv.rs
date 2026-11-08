@@ -290,6 +290,10 @@ pub struct ShellInfo {
     pub apk: Option<String>,
     /// The release's interface needs a newer app first.
     pub needs_shell: bool,
+    /// The shell tries a failed check again by itself (`update.retry_at`; shells before 0.6.0 do not).
+    pub retrying: bool,
+    /// The shell can open a speech recognizer (`caps.voice`: shell 0.6.0+, and the TV has one).
+    pub voice: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -330,6 +334,8 @@ pub fn parse_shell_info(json: &str) -> Option<ShellInfo> {
         at: num("at"),
         apk: apk.filter(|a| !a.is_empty()),
         needs_shell: u.and_then(|u| u.get("needs_shell")).and_then(|x| x.as_bool()).unwrap_or(false),
+        retrying: num("retry_at") > 0.0,
+        voice: v.get("caps").and_then(|c| c.get("voice")).and_then(|x| x.as_bool()).unwrap_or(false),
     })
 }
 
@@ -372,21 +378,33 @@ pub fn update_view(i: &ShellInfo, running: u64) -> UpdateView {
     }
 }
 
-/// A failed check in words (the raw reason stays under it).
-pub fn update_error(e: &str) -> &'static str {
+/// A server error in a reason: `HTTP 5xx`.
+fn server_error(e: &str) -> Option<&str> {
+    let i = e.find("HTTP 5")?;
+    let code = e.get(i..i + 8)?;
+    code[5..].bytes().all(|b| b.is_ascii_digit()).then_some(code)
+}
+
+/// A failed check in words (the raw reason stays under it). `retrying`: the shell tries again by itself.
+pub fn update_error(e: &str, retrying: bool) -> String {
+    const AGAIN: &str = "Trying again automatically.";
     let l = e.to_ascii_lowercase();
-    if l.contains("403") || l.contains("429") || l.contains("rate limit") {
-        "GitHub's limit for update checks was reached. Try again in an hour."
+    if l.contains("http 403") || l.contains("http 429") || l.contains("rate limit") {
+        format!("GitHub's limit for update checks was reached. {}", if retrying { AGAIN } else { "Try again in an hour." })
     } else if l.contains("signature") || l.contains("hash mismatch") || l.contains("verify") {
-        "The download did not pass Redline's signature check, so nothing was installed."
+        "The download did not pass Redline's signature check, so nothing was installed.".into()
+    } else if let Some(code) = server_error(e) {
+        format!("GitHub isn't answering right now ({code}). {}", if retrying { AGAIN } else { "Try again in a few minutes." })
     } else if l.contains("dns") || l.contains("connect") || l.contains("resolve") || l.contains("timed out") || l.contains("timeout") || l.contains("network") || l.contains("io:") {
-        "No connection to GitHub. Check the TV's network and try again."
+        format!("No connection to GitHub. {}", if retrying { AGAIN } else { "Check the TV's network and try again." })
     } else if l.contains("apk") || l.contains("larger than") || l.contains("body") {
-        "The app update could not be downloaded. Try again."
+        "The app update could not be downloaded. Try again.".into()
     } else if l.contains("unknown command") {
-        "This app installs app updates from its own update dialog (it appears after a check, once a new app is published); the next one installs from here."
+        "This app installs app updates from its own update dialog (it appears after a check, once a new app is published); the next one installs from here.".into()
+    } else if retrying {
+        format!("The update check did not work. {AGAIN}")
     } else {
-        "The update check did not work."
+        "The update check did not work.".into()
     }
 }
 
@@ -399,6 +417,63 @@ pub fn ago(at: f64, now: f64) -> String {
         60..=2879 => format!("{} h ago", m / 60),
         _ => format!("{} days ago", m / 1440),
     }
+}
+
+// ------------------------------------------------------------- what the shell hands the page
+
+/// The key the shell sends for the remote's search and voice keys (`KEYCODE_SEARCH`, `KEYCODE_VOICE_ASSIST`).
+pub const VOICE_KEY: &str = "BrowserSearch";
+
+/// One of the shell's `shell_events` (shell.rs): what the speech recognizer heard, a search or a link from outside.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ShellEvent {
+    Heard(String),
+    /// The recognizer closed with nothing to search for.
+    VoiceEnd(VoiceEnd),
+    Search(String),
+    /// A path on this site, re-read with the routes before anything opens it.
+    Open(String),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum VoiceEnd {
+    Cancel,
+    NoMatch,
+    Failed,
+    /// No recognizer after all.
+    Missing,
+}
+
+impl VoiceEnd {
+    /// The calm notice it deserves ("" = none: the owner closed it).
+    pub fn note(self) -> &'static str {
+        match self {
+            VoiceEnd::Cancel => "",
+            VoiceEnd::NoMatch => "Didn't catch that. Press the mic to try again.",
+            VoiceEnd::Failed => "Voice search didn't work this time.",
+            VoiceEnd::Missing => "Voice search isn't available on this TV.",
+        }
+    }
+}
+
+pub fn parse_shell_events(json: &str) -> Vec<ShellEvent> {
+    let Some(v) = crate::json::parse_str(json) else { return Vec::new() };
+    let Some(list) = v.get("events").and_then(|e| e.as_array()) else { return Vec::new() };
+    let text = |e: &crate::json::Value, k: &str| e.get(k).and_then(|x| x.as_str()).map(String::from);
+    list.iter()
+        .filter_map(|e| match e.get("kind")?.as_str()? {
+            "voice" => Some(match e.get("state")?.as_str()? {
+                "text" => ShellEvent::Heard(text(e, "text")?),
+                "cancel" => ShellEvent::VoiceEnd(VoiceEnd::Cancel),
+                "none" => ShellEvent::VoiceEnd(VoiceEnd::NoMatch),
+                "missing" => ShellEvent::VoiceEnd(VoiceEnd::Missing),
+                _ => ShellEvent::VoiceEnd(VoiceEnd::Failed),
+            }),
+            "search" => Some(ShellEvent::Search(text(e, "q")?)),
+            "open" => Some(ShellEvent::Open(text(e, "path")?)),
+            _ => None,
+        })
+        .collect()
 }
 
 // ------------------------------------------------------------- device sign-in
@@ -542,11 +617,11 @@ mod tests {
         assert_eq!(d.state, UpdateState::Downloading(512, 2048));
         let f = parse_shell_info(r#"{"version":"0.1.0","bundle":{"seq":1,"client":"x","source":"builtin"},"update":{"state":"failed","at":5,"error":"release lookup: HTTP 403"}}"#).unwrap();
         assert_eq!(f.state, UpdateState::Failed("release lookup: HTTP 403".into()));
-        assert!(update_error("release lookup: HTTP 403").contains("limit"));
-        assert!(update_error("manifest signature does not verify").contains("signature"));
-        assert!(update_error("io: failed to lookup address (dns error)").contains("connection"));
-        assert!(update_error("APK: hash mismatch").contains("signature"));
-        assert!(update_error("APK: HTTP 404").contains("could not be downloaded"));
+        assert!(update_error("release lookup: HTTP 403", false).contains("limit"));
+        assert!(update_error("manifest signature does not verify", false).contains("signature"));
+        assert!(update_error("io: failed to lookup address (dns error)", false).contains("connection"));
+        assert!(update_error("APK: hash mismatch", false).contains("signature"));
+        assert!(update_error("APK: HTTP 404", false).contains("could not be downloaded"));
         // An old shell (no offer key, idle) and a broken answer.
         let o = parse_shell_info(r#"{"version":"0.1.0","bundle":{"seq":7,"client":"0.8.7","source":"builtin"},"update":{"state":"idle"}}"#).unwrap();
         assert_eq!((&o.state, &o.apk), (&UpdateState::Idle, &None));
@@ -563,6 +638,51 @@ mod tests {
         assert_eq!(ago(0.0, 5.0 * 60_000.0), "5 min ago");
         assert_eq!(ago(0.0, 3.0 * 3_600_000.0), "3 h ago");
         assert_eq!(ago(0.0, 3.0 * 86_400_000.0), "3 days ago");
+    }
+
+    #[test]
+    fn update_failures_in_words() {
+        // The reasons shells give: 0.6.0 (the first), and from before it (no second route, no retries).
+        let down = "GitHub isn't answering (lumen-tv-manifest.json: download HTTP 504, API HTTP 502)";
+        assert_eq!(update_error(down, true), "GitHub isn't answering right now (HTTP 504). Trying again automatically.");
+        assert_eq!(update_error("lumen-tv-manifest.json: HTTP 504", false), "GitHub isn't answering right now (HTTP 504). Try again in a few minutes.");
+        assert_eq!(update_error("release lookup: HTTP 502", true), "GitHub isn't answering right now (HTTP 502). Trying again automatically.");
+        let limit = "GitHub's rate limit was reached (release lookup: HTTP 403, resets in 23 min)";
+        assert_eq!(update_error(limit, true), "GitHub's limit for update checks was reached. Trying again automatically.");
+        assert_eq!(update_error(limit, false), "GitHub's limit for update checks was reached. Try again in an hour.");
+        assert_eq!(update_error("GitHub's rate limit was reached (x: download HTTP 504, API HTTP 429)", true), "GitHub's limit for update checks was reached. Trying again automatically.");
+        assert_eq!(update_error("No connection to GitHub (release lookup: io: refused)", true), "No connection to GitHub. Trying again automatically.");
+        assert_eq!(update_error("No connection to GitHub (x: download timeout, API timeout)", false), "No connection to GitHub. Check the TV's network and try again.");
+        assert_eq!(update_error("GitHub isn't answering (x: download timeout: global, API HTTP 503)", true), "GitHub isn't answering right now (HTTP 503). Trying again automatically.");
+        assert_eq!(update_error("APK: GitHub isn't answering", false), "The app update could not be downloaded. Try again.");
+        assert!(update_error("signature does not match the release key", true).contains("nothing was installed"), "a bad signature stays what it is");
+        assert_eq!(update_error("release has no x", true), "The update check did not work. Trying again automatically.");
+        assert_eq!(update_error("HTTP 5", true), "The update check did not work. Trying again automatically.", "no code to name");
+        // What a retrying shell says, and an older one.
+        let f = parse_shell_info(r#"{"version":"0.6.0","bundle":{"seq":1,"client":"x","source":"builtin"},"update":{"state":"failed","at":5,"error":"x","retry_at":600},"caps":{"voice":true}}"#).unwrap();
+        assert!(f.retrying && f.voice);
+        let o = parse_shell_info(r#"{"version":"0.5.0","bundle":{"seq":1,"client":"x","source":"builtin"},"update":{"state":"failed","at":5,"error":"x"}}"#).unwrap();
+        assert!(!o.retrying && !o.voice, "a shell before 0.6.0 has no mic and no retries");
+    }
+
+    #[test]
+    fn what_the_shell_hands_the_page() {
+        assert_eq!(
+            parse_shell_events(r#"{"events":[{"kind":"voice","state":"text","text":"lo fi"},{"kind":"voice","state":"cancel"},{"kind":"voice","state":"none"},{"kind":"voice","state":"missing"},{"kind":"voice","state":"error"},{"kind":"search","q":"rain"},{"kind":"open","path":"/watch?v=dQw4w9WgXcQ"},{"kind":"new"},{"kind":"voice","state":"text"}]}"#),
+            vec![
+                ShellEvent::Heard("lo fi".into()),
+                ShellEvent::VoiceEnd(VoiceEnd::Cancel),
+                ShellEvent::VoiceEnd(VoiceEnd::NoMatch),
+                ShellEvent::VoiceEnd(VoiceEnd::Missing),
+                ShellEvent::VoiceEnd(VoiceEnd::Failed),
+                ShellEvent::Search("rain".into()),
+                ShellEvent::Open("/watch?v=dQw4w9WgXcQ".into()),
+            ]
+        );
+        assert_eq!(parse_shell_events("null"), vec![]);
+        assert_eq!(parse_shell_events("\"unknown command shell_events\""), vec![]);
+        assert_eq!(VoiceEnd::Cancel.note(), "", "closing it needs no words");
+        assert!(!VoiceEnd::NoMatch.note().is_empty());
     }
 
     #[test]

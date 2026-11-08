@@ -11,7 +11,7 @@
 //! - Account: the device sign-in panel (`#ytc-tvsign`) and the access token from the shell, mirrored
 //!   in this tab's sessionStorage; a cold start holds the first page until the shell answered.
 
-use super::{App, Timer};
+use super::{App, Mode, Timer};
 use crate::api::Req;
 use crate::bridge;
 use crate::render::MAIN;
@@ -29,6 +29,8 @@ const SKIP: &str = ".c a:not(.t),.c button,#ytc-player *,#ytc-player,#ytc-mic,.q
 const TRAPS: &str = "#ytc-tvabout.on,#ytc-tvsign.on,#ytc-keys.on,#ytc-imp.on,#ytc-player.menu #ytc-menu,.open[id^=ytc-fx-],#ytc-save-p.on,#ytc-share-p.on,#ytc[data-tvq='1'] #ytc-top,#ytc-tvinfo.on";
 /// Something is open that Escape closes (Back then means Escape).
 const OPEN: &str = "#ytc-tvsign.on,#ytc-keys.on,#ytc-imp.on,#ytc-player.menu #ytc-menu,.open[id^=ytc-fx-],#ytc [aria-expanded=true]:not(#ytc-q),#ytc-chap.open";
+/// Panels the remote's search and voice keys never open the recognizer over.
+const PANELS: &str = "#ytc-tvsign.on,#ytc-tvabout.on,#ytc-keys.on,#ytc-imp.on,#ytc-player.menu #ytc-menu,.open[id^=ytc-fx-],#ytc-save-p.on,#ytc-share-p.on,#ytc-tvinfo.on,#ytc-comments.on";
 /// What `spatial_rects` marks: 1 = a card of the page's grid (rows keep one vertical place), 2 = the rail.
 const MARKS: &str = "#ytc-list a.t|#ytc-side *";
 /// A card's stop is measured by the card's own box: an off-screen card (`content-visibility:auto`) needs no layout
@@ -63,6 +65,9 @@ pub(super) fn scrub_step(n: u32) -> f64 {
 /// About & updates: the screen, and the small notice when an update is ready.
 const ABOUT: &str = "ytc-tvabout";
 const NOTICE: &str = "ytc-tvup";
+/// A short line about voice search (bottom right), this long.
+const NOTE: &str = "ytc-tvnote";
+const NOTE_MS: f64 = 4000.0;
 /// How often the page asks the shell whether its own check (launch + every 6 h) found something; the
 /// first look shortly after the shell's launch check.
 const UPDATES_FIRST_MS: u32 = 20_000;
@@ -88,6 +93,10 @@ enum Call {
     TelFind,
     /// The ready Home response the shell kept from the last run (a cold start asks once, with the token).
     ReadyTake,
+    /// `voice_start`: the speech recognizer opens.
+    VoiceStart,
+    /// `shell_events`: what waits for the page in the shell.
+    Events,
 }
 
 /// About & updates → Developer: the address field's form, and the flag that reopens the screen after the page
@@ -141,6 +150,12 @@ pub(super) struct Tv {
     dev_taps: u32,
     dev_note: String,
     dev_err: bool,
+    /// Voice search: the shell has a recognizer; it was opened with the mic control (the focus returns there); it paused
+    /// a playing video (which goes on when nothing was heard); when the notice goes (epoch ms, 0 = none).
+    voice: bool,
+    voice_mic: bool,
+    voice_resume: bool,
+    note_until: f64,
 }
 
 impl Tv {
@@ -185,7 +200,11 @@ impl App {
             bridge::timer(id, HOLD_MS);
         }
         bridge::append("ytc", &format!("<div id=\"{ABOUT}\" class=\"tvs\" role=\"dialog\" aria-modal=\"true\" aria-label=\"About and updates\"></div><div id=\"{NOTICE}\" class=\"tvup\" role=\"status\"><span>Update ready</span><button type=\"button\" class=\"tvb\" data-act=\"tv-about\">See update</button></div>"));
+        bridge::append("ytc", &format!("<div id=\"{NOTE}\" class=\"tvnote\" role=\"status\"></div>"));
         self.tv_call("shell_info", "null", Call::Info { boot: true });
+        if !self.tv.hold {
+            self.on_shell_wake();
+        }
         let id = self.timer(Timer::TvUpdates { fast: false });
         bridge::timer(id, UPDATES_FIRST_MS);
         if bridge::session_get(ABOUT_AGAIN) == "1" {
@@ -227,6 +246,8 @@ impl App {
             // The account as the shell answered it (the boot's snapshot predates the token).
             self.auth = tv::auth();
             self.tv_slot();
+            // A link or search that started the app comes after this first page.
+            self.on_shell_wake();
             // Home: the ready response the shell kept from the last run (now this tab's copy) is the page, as at a boot.
             if self.route == Route::Home && bridge::nav_type() != "back_forward" {
                 if let Some(r) = self.ready_take() {
@@ -266,7 +287,7 @@ impl App {
                 // The shell refused (offline shell, or an app too old for the command).
                 let why = short(json);
                 self.tv.about_note = match call {
-                    Call::Install => format!("{} ({why})", tv::update_error(&why)),
+                    Call::Install => format!("{} ({why})", tv::update_error(&why, false)),
                     Call::Check => format!("The check did not run ({why})."),
                     _ => String::new(),
                 };
@@ -280,6 +301,7 @@ impl App {
                         self.tv.running_client = i.client.clone();
                     }
                     let busy = matches!(i.state, tv::UpdateState::Downloading(..) | tv::UpdateState::Checking);
+                    self.tv_voice_cap(i.voice);
                     self.tv.shell = Some(i);
                     if call != Call::Install {
                         self.tv.about_note.clear();
@@ -416,6 +438,112 @@ impl App {
                 }
                 None => self.tv_dev_note(&short(json), true),
             },
+            Call::VoiceStart => {
+                if !ok || !crate::json::parse_str(json).and_then(|v| v.get("started").and_then(|s| s.as_bool())).unwrap_or(false) {
+                    self.tv_voice_end(tv::VoiceEnd::Missing);
+                }
+            }
+            Call::Events => {
+                // (An app before 0.6.0 refuses the command: nothing ever waits there.)
+                if ok {
+                    for e in tv::parse_shell_events(json) {
+                        self.tv_shell_event(e);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The shell has something for the page. On every boot too: it may have come before this page existed.
+    pub fn on_shell_wake(&mut self) {
+        if tv::on() && !self.tv.hold {
+            self.tv_call("shell_events", "null", Call::Events);
+        }
+    }
+
+    fn tv_shell_event(&mut self, e: tv::ShellEvent) {
+        match e {
+            tv::ShellEvent::Heard(q) => {
+                self.tv.voice_resume = false;
+                self.tv.voice_mic = false;
+                self.tv_search_for(&q);
+            }
+            tv::ShellEvent::VoiceEnd(end) => self.tv_voice_end(end),
+            tv::ShellEvent::Search(q) => {
+                self.tv_panels_close();
+                self.tv_search_for(&q);
+            }
+            tv::ShellEvent::Open(path) => {
+                // The shell only sends paths it built from checked parts; only these routes open anyway.
+                let Some(route @ (Route::Watch { .. } | Route::Channel { .. } | Route::Playlist { .. })) = crate::route::parse(&path) else { return };
+                self.tv_panels_close();
+                let url = route.url();
+                if url != self.url {
+                    self.navigate(route, url, Mode::Push);
+                }
+            }
+        }
+    }
+
+    /// Runs a search as if it was typed on the search screen.
+    fn tv_search_for(&mut self, q: &str) {
+        let q = tv::keyboard::edit("", tv::keyboard::Edit::Insert(q));
+        self.on_submit("ytc-search", &q);
+    }
+
+    /// Something from outside the app takes over the screen.
+    fn tv_panels_close(&mut self) {
+        if self.tv.open {
+            self.tv_close();
+        }
+        if self.tv.about {
+            self.tv_about_close();
+        }
+        if bridge::any(OPEN) {
+            self.on_key("Escape", false);
+        }
+    }
+
+    // ---------------------------------------------------------- voice search
+
+    /// The mic control shows only while the shell can open a recognizer (`shell_info`'s `caps`): never on an older app.
+    fn tv_voice_cap(&mut self, on: bool) {
+        if self.tv.voice != on {
+            self.tv.voice = on;
+            bridge::root_attr(tv::keyboard::MIC_ROOT, on.then(|| "1".to_string()));
+        }
+    }
+
+    fn tv_voice_start(&mut self) {
+        if !self.tv.voice {
+            return;
+        }
+        // The recognizer listens: a playing video waits (and goes on if nothing comes of it).
+        if matches!(self.route, Route::Watch { .. }) && self.player.as_ref().is_some_and(|p| !p.paused()) {
+            self.tv.voice_resume = true;
+            self.on_key("k", false);
+        }
+        self.tv_call("voice_start", "null", Call::VoiceStart);
+    }
+
+    /// The recognizer closed without a search: the focus is back where it was, and a notice unless the owner closed it.
+    fn tv_voice_end(&mut self, end: tv::VoiceEnd) {
+        if end == tv::VoiceEnd::Missing {
+            self.tv_voice_cap(false);
+        }
+        if std::mem::take(&mut self.tv.voice_resume) && self.player.as_ref().is_some_and(|p| p.paused()) {
+            self.on_key("k", false);
+        }
+        if std::mem::take(&mut self.tv.voice_mic) && self.tv_search_on() {
+            bridge::focus(if self.tv.voice { tv::keyboard::MIC } else { tv::keyboard::QUERY });
+        }
+        self.tv_focus_check();
+        if !end.note().is_empty() {
+            bridge::html(NOTE, &crate::util::esc(end.note()));
+            bridge::attr(NOTE, "class", "tvnote on");
+            self.tv.note_until = bridge::epoch() + NOTE_MS;
+            let id = self.timer(Timer::TvFocus);
+            bridge::timer(id, NOTE_MS as u32 + 50);
         }
     }
 
@@ -490,6 +618,10 @@ impl App {
             }
             "tv-close" => self.tv_close(),
             "tv-search" => self.tv_search_open(),
+            "tv-mic" => {
+                self.tv.voice_mic = true;
+                self.tv_voice_start();
+            }
             "tv-about" => self.tv_about_open(),
             "tv-about-close" => self.tv_about_close(),
             "tv-check" => {
@@ -771,6 +903,13 @@ impl App {
     pub(super) fn tv_key(&mut self, key: &str, editable: bool) -> Option<bool> {
         if !tv::on() {
             return None;
+        }
+        // The remote's search and voice keys, where the system delivers them.
+        if key == tv::VOICE_KEY {
+            if !bridge::any(PANELS) {
+                self.tv_voice_start();
+            }
+            return Some(true);
         }
         if let Some(handled) = self.tv_keyboard_key(key, editable) {
             return Some(handled);
@@ -1165,6 +1304,11 @@ impl App {
     pub(super) fn tv_focus_check(&mut self) {
         if !tv::on() {
             return;
+        }
+
+        if self.tv.note_until > 0.0 && bridge::epoch() >= self.tv.note_until {
+            self.tv.note_until = 0.0;
+            bridge::attr(NOTE, "class", "tvnote");
         }
 
         if self.tv_drawer_focus() {

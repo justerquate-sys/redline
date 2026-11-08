@@ -9,8 +9,10 @@
 //! - [`net`]: the HTTP agent (rustls, bundled roots, timeouts, statuses as values).
 //! - [`readystore`]: the ready Home response kept across app starts (sealed, one account, 10 min, read once).
 //! - [`tel`]: speed telemetry to the owner's debug center on their network (off unless turned on).
+//! - [`incoming`]: what other apps and the system hand the app (a search, a YouTube link), validated.
 
 pub mod auth;
+pub mod incoming;
 pub mod net;
 pub mod readystore;
 pub mod release;

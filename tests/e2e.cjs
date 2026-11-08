@@ -8823,6 +8823,212 @@ chrome.runtime.onMessage.addListener(m => {
     } finally { await tvClose(tv); }
   });
 
+  await step('TV voice search and what the shell hands the page (960×540 and 1920×1080): the mic only with the shell\'s capability, reached from the query row; what was heard runs the search, a cancel returns the focus, no match a calm notice that goes; the search and voice keys, not over a panel; a search or link from outside, on a page that starts later too; the desktop keeps its own mic', async () => {
+    const tv = await tvOpen();
+    const info = (update, caps) => JSON.stringify({ version: '0.6.0', version_code: 6000, bundle: { seq: 100, client: '0.9.0', source: 'builtin' }, update: update || { state: 'idle' }, offer: null, repo: 'o/r', ...(caps ? { caps } : {}) });
+    const answer = (cmd, json) => tv.evaluate(([c, j]) => { for (const k of ['ytc:shell', 'e2e:tvshell']) { const t = JSON.parse(localStorage.getItem(k) || '{}'); if (j == null) delete t[c]; else t[c] = j; localStorage.setItem(k, JSON.stringify(t)); } }, [cmd, json]);
+    // The shell's news: the page is woken and asks; taken once, as the shell's are.
+    const events = async (...list) => {
+      await answer('shell_events', JSON.stringify({ events: list }));
+      await tv.evaluate(() => document.dispatchEvent(new Event('ytc-wake')));
+      await tv.waitForTimeout(120);
+      await answer('shell_events', '{"events":[]}');
+    };
+    const shown = () => tv.evaluate(() => { const m = document.getElementById('ytc-tvmic'); return !!m && m.getClientRects().length > 0; });
+    const focusId = () => tv.evaluate(() => document.activeElement.id);
+    const asked = cmd => tv.evaluate(c => JSON.parse(localStorage.getItem('ytc:shell-log') || '[]').filter(x => x[0] === c).length, cmd);
+    const voiceKey = () => tv.evaluate(() => (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'BrowserSearch', bubbles: true, cancelable: true })));
+    const openSearch = async () => {
+      await tv.waitForSelector('#ytc-side .rl[data-nav=search]');
+      await tv.waitForTimeout(250);
+      await tv.focus('#ytc-side .rl[data-nav=search]');
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => document.activeElement && document.activeElement.matches('#ytc-tvk .tvk-keys button'));
+    };
+    const note = () => tv.evaluate(() => { const n = document.getElementById('ytc-tvnote'); return n && n.getClientRects().length ? n.textContent : ''; });
+    try {
+      for (const [W, H] of TVSIZES) {
+        await tv.setViewportSize({ width: W, height: H });
+
+        // A shell before 0.6.0 (no caps), and one without a recognizer: no mic.
+        await tv.goto('https://www.youtube.com/', { waitUntil: 'commit' });
+        await tv.evaluate(j => localStorage.setItem('e2e:tvshell', JSON.stringify({ shell_info: j, shell_events: '{"events":[]}', voice_start: '{"started":true}' })), info());
+        await tvGo(tv, 'code', 'https://www.youtube.com/');
+        await openSearch();
+        assert.equal(await shown(), false, 'no mic on an older shell');
+        await tv.keyboard.press('ArrowUp');
+        assert.equal(await focusId(), 'ytc-tvquery');
+        await tv.keyboard.press('ArrowRight');
+        assert.equal(await focusId(), 'ytc-tvquery', 'nothing to the right of the query');
+        await answer('shell_info', info(null, { voice: false }));
+        await tvGo(tv, 'code', 'https://www.youtube.com/');
+        await openSearch();
+        assert.equal(await shown(), false, 'no mic without a recognizer');
+
+        // With the capability: on the query row, its right end inside the safe area, reached with the remote.
+        await answer('shell_info', info(null, { voice: true }));
+        await tvGo(tv, 'code', 'https://www.youtube.com/');
+        await openSearch();
+        assert.equal(await shown(), true, 'the mic with the capability');
+        const row = await tv.evaluate(() => { const b = id => document.getElementById(id).getBoundingClientRect(), q = b('ytc-tvquery'), m = b('ytc-tvmic'); return { qt: q.top, qb: q.bottom, qr: q.right, mt: m.top, mb: m.bottom, ml: m.left, mr: m.right, mw: m.width }; });
+        assert.ok(Math.abs(row.qt - row.mt) <= 1 && Math.abs(row.qb - row.mb) <= 1, `one row: ${JSON.stringify(row)}`);
+        assert.ok(row.qr < row.ml && row.mr <= W * 0.975 + 1, `beside the query, inside the safe area: ${JSON.stringify(row)}`);
+        assert.ok(Math.abs(row.mw - W / 80 * 2.5) <= 1, 'as tall and wide as the query is tall');
+        assert.deepEqual(await tvAudit(tv, `search with the mic ${W}`), []);
+        await tv.keyboard.press('ArrowUp');
+        assert.equal(await focusId(), 'ytc-tvquery', '↑ from the keys');
+        await tv.keyboard.press('ArrowRight');
+        assert.equal(await focusId(), 'ytc-tvmic', '→ from the query');
+        const ring = await tv.evaluate(() => { const c = getComputedStyle(document.getElementById('ytc-tvmic')); return { w: parseFloat(c.outlineWidth), s: c.outlineStyle, col: c.outlineColor, tr: c.transitionDuration, anim: c.animationName }; });
+        assert.ok(ring.w >= W / 80 / 6 - 0.5 && ring.s === 'solid' && ring.col === 'rgb(241, 241, 241)', `the white frame: ${JSON.stringify(ring)}`);
+        assert.ok(ring.tr === '0s' && ring.anim === 'none', 'no animation');
+        await tvShot(tv, 'search-mic');
+        await tv.keyboard.press('ArrowDown');
+        assert.ok(await tv.evaluate(() => document.activeElement.matches('#ytc-tvk .tvk-keys button')), '↓ from the mic: the keys');
+        await tv.keyboard.press('ArrowUp');
+        await tv.keyboard.press('ArrowRight');
+        await tv.keyboard.press('ArrowLeft');
+        assert.equal(await focusId(), 'ytc-tvquery', '← from the mic');
+        await tv.keyboard.press('ArrowRight');
+
+        // OK opens the recognizer. A cancel: nothing to read, the focus on the mic, the screen as it was.
+        await tv.evaluate(() => localStorage.setItem('ytc:shell-log', '[]'));
+        await tv.keyboard.press('Enter');
+        await tv.waitForFunction(() => JSON.parse(localStorage.getItem('ytc:shell-log')).some(c => c[0] === 'voice_start'));
+        await tv.evaluate(() => document.activeElement.blur());
+        await events({ kind: 'voice', state: 'cancel' });
+        assert.equal(await focusId(), 'ytc-tvmic', 'a cancel returns the focus');
+        assert.equal(await note(), '', 'and says nothing');
+        assert.equal(await tv.getAttribute('#ytc', 'data-tvq'), '1');
+        // No match: a calm notice that goes by itself, the focus on the mic.
+        await tv.keyboard.press('Enter');
+        await events({ kind: 'voice', state: 'none' });
+        assert.match(await note(), /Didn't catch that/);
+        assert.equal(await focusId(), 'ytc-tvmic');
+        assert.deepEqual(await tvAudit(tv, `voice notice ${W}`), []);
+        await tvShot(tv, 'search-mic-note');
+        await tv.waitForFunction(() => !document.getElementById('ytc-tvnote').getClientRects().length, null, { timeout: 6000 });
+        // The recognizer is gone: no crash, the mic goes, the focus on the query.
+        await answer('voice_start', '{"started":false}');
+        await tv.keyboard.press('Enter');
+        await tv.waitForFunction(() => !document.getElementById('ytc-tvmic').getClientRects().length);
+        assert.equal(await focusId(), 'ytc-tvquery');
+        assert.match(await note(), /isn't available/);
+        await answer('voice_start', '{"started":true}');
+
+        // What was heard runs the search, as if typed: the results take the focus, the query shows it.
+        await tvGo(tv, 'code', 'https://www.youtube.com/');
+        await openSearch();
+        await tv.keyboard.press('ArrowUp');
+        await tv.keyboard.press('ArrowRight');
+        await tv.keyboard.press('Enter');
+        await events({ kind: 'voice', state: 'text', text: 'lofi\n<b>' });
+        await tv.waitForFunction(() => location.pathname === '/results');
+        assert.equal(await tv.evaluate(() => new URLSearchParams(location.search).get('search_query')), 'lofi<b>', 'control characters out, the text encoded');
+        await tv.waitForFunction(() => document.activeElement && document.activeElement.matches('#ytc-list a.t'), null, { timeout: 5000 });
+        assert.equal(await tv.getAttribute('#ytc', 'data-tvq'), '');
+        assert.equal(await tv.textContent('#ytc-tvquery-text'), 'lofi<b>', 'escaped');
+        assert.equal(await shown(), false, 'the mic belongs to the search screen');
+
+        // The remote's search and voice keys: from a page, directly; not over an open panel.
+        await tvGo(tv, 'code', 'https://www.youtube.com/');
+        await tv.waitForSelector('#ytc-side .rl[data-nav=about]');
+        await tv.waitForFunction(() => document.documentElement.dataset.ytcTvmic === '1');
+        await tv.evaluate(() => localStorage.setItem('ytc:shell-log', '[]'));
+        await voiceKey();
+        await tv.waitForFunction(() => JSON.parse(localStorage.getItem('ytc:shell-log')).some(c => c[0] === 'voice_start'));
+        const before = await focusId();
+        await events({ kind: 'voice', state: 'cancel' });
+        assert.equal(await focusId(), before, 'the focus stays where it was');
+        await tv.focus('#ytc-side .rl[data-nav=about]');
+        await tv.keyboard.press('Enter');
+        await tv.waitForSelector('#ytc-tvabout.on');
+        await tv.evaluate(() => localStorage.setItem('ytc:shell-log', '[]'));
+        await voiceKey();
+        await tv.waitForTimeout(100);
+        assert.equal(await asked('voice_start'), 0, 'not over a panel');
+
+        // A search from outside: over that panel too, it takes the screen.
+        await events({ kind: 'search', q: 'rain sounds' });
+        await tv.waitForFunction(() => new URLSearchParams(location.search).get('search_query') === 'rain sounds');
+        assert.equal(await tv.locator('#ytc-tvabout.on').count(), 0, 'the panel closed');
+        // A link: only the routes it may name, and Back returns.
+        await tv.waitForFunction(() => document.activeElement && document.activeElement.matches('#ytc-list a.t'), null, { timeout: 5000 });
+        const was = await tv.evaluate(() => location.href);
+        await events({ kind: 'open', path: '/feed/history' }, { kind: 'open', path: 'https://evil.example/' }, { kind: 'open', path: '//evil.example/watch?v=-Bxc4gJluC0' });
+        assert.equal(await tv.evaluate(() => location.href), was, 'nothing else opens');
+        await events({ kind: 'open', path: '/channel/UCaZO-66UcqyVT9btiqdDryA' });
+        await tv.waitForFunction(() => location.pathname === '/channel/UCaZO-66UcqyVT9btiqdDryA');
+        // The same on a page that starts later (a cold start from a link): it asks when it boots.
+        await answer('shell_events', JSON.stringify({ events: [{ kind: 'open', path: '/channel/UCaZO-66UcqyVT9btiqdDryA' }] }));
+        await tvGo(tv, 'code', 'https://www.youtube.com/');
+        await tv.waitForFunction(() => location.pathname === '/channel/UCaZO-66UcqyVT9btiqdDryA', null, { timeout: 8000 });
+        await answer('shell_events', '{"events":[]}');
+        await tv.waitForFunction(() => document.activeElement && document.activeElement.matches('#ytc-list a.t'), null, { timeout: 5000 });
+
+        // A playing video waits while the recognizer listens, and goes on when nothing came of it.
+        await tvGo(tv, 'code', 'https://www.youtube.com/watch?v=-Bxc4gJluC0&t=35');
+        await tv.waitForFunction(() => { const v = document.getElementById('ytc-video'); return v && !v.paused && v.currentTime > 0; }, null, { timeout: 15000 });
+        await voiceKey();
+        await tv.waitForFunction(() => document.getElementById('ytc-video').paused);
+        await events({ kind: 'voice', state: 'cancel' });
+        await tv.waitForFunction(() => !document.getElementById('ytc-video').paused);
+        await tv.evaluate(() => localStorage.removeItem('e2e:tvshell'));
+      }
+      assert.deepEqual(tv.errors, []);
+    } finally { await tvClose(tv); }
+    // The desktop extension: its own mic, none of this.
+    const desk = await ctx.newPage();
+    try {
+      await desk.goto('https://www.youtube.com/', { waitUntil: 'commit' });
+      await desk.waitForSelector('#ytc-mic');
+      assert.equal(await desk.locator('#ytc-tvmic').count(), 0);
+      assert.equal(await desk.locator('#ytc-tvnote').count(), 0);
+      assert.equal(await desk.evaluate(() => document.documentElement.dataset.ytcTvmic), undefined);
+    } finally { await desk.close(); }
+  });
+
+  await step('TV update failures in words (960×540 and 1920×1080): GitHub not answering, its rate limit, trying again by itself or not; the technical part under them', async () => {
+    const tv = await tvOpen();
+    const info = update => JSON.stringify({ version: '0.6.0', version_code: 6000, bundle: { seq: 100, client: '0.9.0', source: 'builtin' }, update, offer: null, repo: 'o/r', caps: { voice: true } });
+    const answer = (cmd, json) => tv.evaluate(([c, j]) => { for (const k of ['ytc:shell', 'e2e:tvshell']) { const t = JSON.parse(localStorage.getItem(k) || '{}'); if (j == null) delete t[c]; else t[c] = j; localStorage.setItem(k, JSON.stringify(t)); } }, [cmd, json]);
+    const screen = () => tv.evaluate(() => ({ head: document.querySelector('#ytc-tvabout .tvus b')?.textContent, text: document.querySelector('#ytc-tvabout .tvus').textContent, focus: document.activeElement.dataset.act }));
+    const failed = async (error, retry_at) => {
+      await answer('shell_check', info({ state: 'failed', at: Date.now(), error, ...(retry_at ? { retry_at } : {}) }));
+      await tv.focus('#ytc-tvabout [data-act=tv-check]');
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(e => document.querySelector('#ytc-tvabout .tvus')?.textContent.includes(e), error, { timeout: 5000 });
+      return screen();
+    };
+    try {
+      for (const [W, H] of TVSIZES) {
+        await tv.setViewportSize({ width: W, height: H });
+        await tv.evaluate(() => localStorage.removeItem('e2e:tvshell')).catch(() => {});
+        await tvGo(tv, 'code', 'https://www.youtube.com/');
+        await tv.waitForSelector('#ytc-side .rl[data-nav=about]');
+        await tv.waitForTimeout(250);
+        await tv.focus('#ytc-side .rl[data-nav=about]');
+        await tv.keyboard.press('Enter');
+        await tv.waitForSelector('#ytc-tvabout.on');
+        const raw = 'GitHub isn\'t answering (lumen-tv-manifest.json: download HTTP 504, API HTTP 502)';
+        let s = await failed(raw, Date.now() + 300e3);
+        assert.equal(s.head, 'GitHub isn\'t answering right now (HTTP 504). Trying again automatically.');
+        assert.ok(s.text.includes(raw) && s.focus === 'tv-check', JSON.stringify(s));
+        assert.deepEqual(await tvAudit(tv, `update failed, readable ${W}`), []);
+        await tvShot(tv, 'about-github-down');
+        // The reason an app before 0.6.0 gives: no second route, no retries promised.
+        s = await failed('lumen-tv-manifest.json: HTTP 504');
+        assert.equal(s.head, 'GitHub isn\'t answering right now (HTTP 504). Try again in a few minutes.');
+        s = await failed('GitHub\'s rate limit was reached (release lookup: HTTP 403, resets in 23 min)', Date.now() + 1380e3);
+        assert.equal(s.head, 'GitHub\'s limit for update checks was reached. Trying again automatically.');
+        assert.ok(s.text.includes('resets in 23 min'), s.text);
+        await tvShot(tv, 'about-github-limit');
+        await tv.evaluate(() => localStorage.removeItem('e2e:tvshell'));
+      }
+      assert.deepEqual(tv.errors, []);
+    } finally { await tvClose(tv); }
+  });
+
   await step('TV About & updates → Developer (960×540): hidden by default; → five times on the last button shows it, Off; Turn on → the page loads again into telemetry and returns to the screen, On with the address; an address submitted is saved; an app without telemetry says so', async () => {
     const tv = await tvOpen();
     const tel = (on, extra = {}) => JSON.stringify({ on, url: 'http://192.168.1.20:47321', dev: true, queued: 0, sent: on ? 3 : 0, error: null, ...extra });
