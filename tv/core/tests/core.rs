@@ -836,6 +836,86 @@ fn failed_checks_retry_sooner_then_return_to_the_schedule() {
     assert_eq!(release::next_check_ms(1, 86_400) / MIN, 120.0, "at most 2 h, whatever a header says");
 }
 
+/// A route that sends part of the APK and then nothing: the other route gets its turn long before the 20-minute limit.
+#[test]
+fn a_stalled_apk_body_falls_over_to_the_other_route() {
+    use std::io::{Read, Write};
+    let g = fake_github("stall", serves(), serves(), "");
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let stalled = format!("http://{}/x", l.local_addr().unwrap());
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for s in l.incoming() {
+            let Ok(mut s) = s else { continue };
+            let _ = s.read(&mut [0u8; 2048]);
+            let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\nPK-", APK.len());
+            let _ = s.flush();
+            held.push(s);
+        }
+    });
+    let offer = release::ApkOffer { apk: apk_entry(), url: stalled.clone(), api_url: Some(format!("{}/api/lumen-tv-0.2.0.apk", g.m.base)) };
+    let h = Http::download(Duration::from_secs(120), Duration::from_millis(400));
+    let started = std::time::Instant::now();
+    let mut seen = Vec::new();
+    let p = release::download_apk_progress(&h, &offer, &g.dir, &mut |got, _| seen.push(got)).unwrap();
+    assert_eq!(std::fs::read(p).unwrap(), APK);
+    assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
+    assert_eq!(seen.first(), Some(&0));
+    assert!(seen.contains(&3), "the part it did send counted: {seen:?}");
+    assert_eq!(seen.iter().filter(|g| **g == 0).count(), 2, "the count starts over: {seen:?}");
+    // Both routes stalling: said in words, not hanging.
+    let offer = release::ApkOffer { apk: apk_entry(), url: stalled.clone(), api_url: Some(stalled) };
+    let e = release::download_apk(&h, &offer, &g.dir.join("none")).unwrap_err();
+    assert!(e.starts_with("No connection to GitHub (APK: download timeout: no data"), "{e}");
+}
+
+/// The update thread's one due time: only automatic failures back off, a press reuses a fresh check and never pushes the
+/// next check out, and a clock corrected backwards does not stall it.
+#[test]
+fn the_schedule_of_automatic_checks() {
+    use release::{CHECK_EVERY_MS, Schedule};
+    const MIN: f64 = 60_000.0;
+    let t0 = 1_000_000_000_000.0;
+    let mut s = Schedule::default();
+    assert!(!s.recent(t0), "nothing to reuse yet");
+    // Automatic failures: 5, 15, 60 min, then the schedule.
+    for (i, step) in [5.0, 15.0, 60.0, 360.0].into_iter().enumerate() {
+        assert_eq!(s.finished(t0, true, Some(0)), t0 + step * MIN, "failure {}", i + 1);
+    }
+    assert_eq!(s.fails, 4);
+    // Any success: back to the schedule, the back-off forgotten.
+    assert_eq!(s.finished(t0, false, None), t0 + CHECK_EVERY_MS);
+    assert_eq!(s.fails, 0);
+    // Four failed presses from a healthy schedule: no back-off, and the next automatic check 5 min off, not 6 h.
+    let mut s = Schedule { next_at: t0 + CHECK_EVERY_MS, ..Default::default() };
+    for press in 0..4 {
+        let at = t0 + press as f64 * MIN;
+        assert_eq!(s.finished(at, false, Some(0)), t0 + 5.0 * MIN, "press {press}");
+    }
+    assert_eq!(s.fails, 0);
+    // A press never pushes a retry out, even at the end of the back-off.
+    let mut s = Schedule { fails: 1, next_at: t0 + 3.0 * MIN, ..Default::default() };
+    assert_eq!(s.finished(t0, false, Some(0)), t0 + 3.0 * MIN);
+    assert_eq!(s.fails, 1);
+    // A rate limit a press learned of is waited out, by the automatic check too (at most 2 h).
+    let mut s = Schedule { next_at: t0 + MIN, ..Default::default() };
+    assert_eq!(s.finished(t0, false, Some(1800)), t0 + 30.0 * MIN);
+    let mut s = Schedule { next_at: t0 + MIN, ..Default::default() };
+    assert_eq!(s.finished(t0, false, Some(99_999)), t0 + 120.0 * MIN);
+    // A check of any kind is reusable for a press for 60 s.
+    let mut s = Schedule::default();
+    s.finished(t0, true, None);
+    assert!(s.recent(t0 + 59_000.0) && !s.recent(t0 + 61_000.0));
+    // Due time: the plain case; past due; a clock corrected back by a year.
+    let mut s = Schedule { next_at: t0 + 5.0 * MIN, ..Default::default() };
+    assert_eq!(s.due_in(t0), 5.0 * MIN);
+    assert!(s.due_in(t0 + 6.0 * MIN) < 0.0);
+    let back = t0 - 365.0 * 24.0 * 60.0 * MIN;
+    assert_eq!(s.due_in(back), CHECK_EVERY_MS);
+    assert_eq!(s.next_at, back + CHECK_EVERY_MS, "and it stays fixed");
+    assert!(!s.recent(back), "nor does a jump count as recent");
+}
+
 /// By hand and rarely, against the real GitHub (`cargo test --locked --test core -- --ignored real_github`): the API
 /// route, without the website, delivers the signed files of the latest release, and the compiled-in key accepts them.
 #[test]

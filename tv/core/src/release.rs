@@ -369,6 +369,56 @@ pub fn next_check_ms(fails: u32, wait_secs: u64) -> f64 {
     step.max(wait_secs.min(2 * 3600) as f64 * 1000.0)
 }
 
+/// A check that ended this recently answers for a press of Check for updates (no requests).
+pub const CHECK_REUSE_MS: f64 = 60_000.0;
+
+/// The automatic checks: failed ones in a row, when the next is due, when the last check of any kind ended (epoch ms).
+/// One due time, read by the one update thread: whatever a check finds only moves this one time.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Schedule {
+    pub fails: u32,
+    pub next_at: f64,
+    pub done_at: f64,
+}
+
+impl Schedule {
+    /// A check ended (`failed`: with this rate-limit wait, 0 = none); the time of the next automatic one. Only automatic
+    /// failures raise the back-off, so pressing Retry never pushes the next check out: a failed press can only bring it
+    /// nearer, to where one more automatic failure would put it.
+    pub fn finished(&mut self, now: f64, automatic: bool, failed: Option<u64>) -> f64 {
+        self.done_at = now;
+        self.next_at = match (failed, automatic) {
+            (None, _) => {
+                self.fails = 0;
+                now + CHECK_EVERY_MS
+            }
+            (Some(wait), true) => {
+                self.fails += 1;
+                now + next_check_ms(self.fails, wait)
+            }
+            (Some(wait), false) => {
+                let nearer = now + next_check_ms(self.fails + 1, wait);
+                self.next_at.min(nearer).max(now + wait.min(2 * 3600) as f64 * 1000.0)
+            }
+        };
+        self.next_at
+    }
+
+    /// A check this recent answers for a press (a clock that jumped does not count as recent).
+    pub fn recent(&self, now: f64) -> bool {
+        self.done_at > 0.0 && (now - self.done_at).abs() < CHECK_REUSE_MS
+    }
+
+    /// Milliseconds until the next automatic check. Nothing is ever due further off than the schedule's own step: more
+    /// than that means the clock was corrected back, and the check must not wait for the old time to come round.
+    pub fn due_in(&mut self, now: f64) -> f64 {
+        if self.next_at - now > CHECK_EVERY_MS {
+            self.next_at = now + CHECK_EVERY_MS;
+        }
+        self.next_at - now
+    }
+}
+
 /// A newer shell (APK) the release offers.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ApkOffer {

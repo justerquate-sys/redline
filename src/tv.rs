@@ -389,7 +389,8 @@ fn server_error(e: &str) -> Option<&str> {
 pub fn update_error(e: &str, retrying: bool) -> String {
     const AGAIN: &str = "Trying again automatically.";
     let l = e.to_ascii_lowercase();
-    if l.contains("http 403") || l.contains("http 429") || l.contains("rate limit") {
+    // (A shell that retries names a rate limit when it is one, so its bare 403 is something else. Older shells do not.)
+    if l.contains("rate limit") || l.contains("http 429") || (l.contains("http 403") && !retrying) {
         format!("GitHub's limit for update checks was reached. {}", if retrying { AGAIN } else { "Try again in an hour." })
     } else if l.contains("signature") || l.contains("hash mismatch") || l.contains("verify") {
         "The download did not pass Redline's signature check, so nothing was installed.".into()
@@ -651,6 +652,9 @@ mod tests {
         assert_eq!(update_error(limit, true), "GitHub's limit for update checks was reached. Trying again automatically.");
         assert_eq!(update_error(limit, false), "GitHub's limit for update checks was reached. Try again in an hour.");
         assert_eq!(update_error("GitHub's rate limit was reached (x: download HTTP 504, API HTTP 429)", true), "GitHub's limit for update checks was reached. Trying again automatically.");
+        // A real 403 from a shell that names its rate limits is not one; from an older shell it may be.
+        assert_eq!(update_error("lumen-tv-manifest.json: HTTP 403", true), "The update check did not work. Trying again automatically.");
+        assert_eq!(update_error("release lookup: HTTP 403", false), "GitHub's limit for update checks was reached. Try again in an hour.");
         assert_eq!(update_error("No connection to GitHub (release lookup: io: refused)", true), "No connection to GitHub. Trying again automatically.");
         assert_eq!(update_error("No connection to GitHub (x: download timeout, API timeout)", false), "No connection to GitHub. Check the TV's network and try again.");
         assert_eq!(update_error("GitHub isn't answering (x: download timeout: global, API HTTP 503)", true), "GitHub isn't answering right now (HTTP 503). Trying again automatically.");

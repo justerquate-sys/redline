@@ -43,7 +43,7 @@ use lumen_tv_core::auth::{Account, Endpoints};
 use lumen_tv_core::incoming::{self, Incoming};
 use lumen_tv_core::net::Http;
 use lumen_tv_core::readystore;
-use lumen_tv_core::release::{self, ApkOffer, Bundle};
+use lumen_tv_core::release::{self, ApkOffer, Bundle, Schedule};
 use lumen_tv_core::rules::{Decision, Rules};
 use lumen_tv_core::store::Store;
 use lumen_tv_core::tel;
@@ -108,14 +108,6 @@ pub struct Shell {
     tel_wake: Condvar,
     tel_http: Http,
     ready: Mutex<ReadySlot>,
-}
-
-/// The automatic checks: failed ones in a row, and when the next one is due (epoch ms). The one update thread reads it,
-/// so whatever a check finds only moves this one time.
-#[derive(Default)]
-struct Schedule {
-    fails: u32,
-    next_at: f64,
 }
 
 /// The ready Home response kept from the last run: read (and deleted from disk) once, at launch.
@@ -373,9 +365,9 @@ impl Shell {
             "voice_start" => Ok(json!({"started": host::voice_start()}).to_string()),
             "shell_events" => Ok(json!({"events": self.events.lock().unwrap().drain(..).collect::<Vec<_>>()}).to_string()),
             // Checks for updates now (the client's About & updates screen; tests). No dialog: the screen
-            // shows what it found.
+            // shows what it found. A check that just ended answers instead (`release::CHECK_REUSE_MS`).
             "shell_check" => {
-                self.check();
+                self.check(false);
                 self.call("shell_info", "null")
             }
             // Installs the offered APK (About & updates → Install update): downloads in the background.
@@ -478,17 +470,10 @@ impl Shell {
         self.push_event(e);
     }
 
-    /// Notes how a check ended; the time of the next automatic one.
-    fn reschedule(&self, failed: Option<u64>) -> f64 {
-        let mut s = self.schedule.lock().unwrap();
-        s.fails = if failed.is_some() { s.fails + 1 } else { 0 };
-        s.next_at = now() + release::next_check_ms(s.fails, failed.unwrap_or(0));
-        s.next_at
-    }
-
-    /// One update check (blocking; the update thread, or the About & updates screen). A check already running answers
-    /// for both: this one waits for its end, and adds no requests.
-    pub fn check(&self) {
+    /// One update check (blocking; `automatic`: the update thread, else the About & updates screen). A check already
+    /// running answers for both: this one waits for its end, and adds no requests. So does one that just ended, for a
+    /// press of the button.
+    pub fn check(&self, automatic: bool) {
         let _one = match self.checking.try_lock() {
             Ok(g) => g,
             Err(TryLockError::Poisoned(e)) => e.into_inner(),
@@ -497,6 +482,9 @@ impl Shell {
                 return;
             }
         };
+        if !automatic && self.schedule.lock().unwrap().recent(now()) {
+            return;
+        }
         let seq = self.bundle.read().unwrap().0.seq;
         let code = version().1;
         *self.status.lock().unwrap() = json!({"state": "checking", "at": now()});
@@ -514,22 +502,22 @@ impl Shell {
                     st["apk"] = json!({"version": o.apk.version, "version_code": o.apk.version_code});
                     *self.offer.lock().unwrap() = Some(o.clone());
                 }
-                self.reschedule(None);
+                self.schedule.lock().unwrap().finished(now(), automatic, None);
                 *self.status.lock().unwrap() = st;
             }
             Err(e) => {
                 log::warn!("update check: {}", e.reason);
-                let retry_at = self.reschedule(Some(e.wait_secs));
+                let retry_at = self.schedule.lock().unwrap().finished(now(), automatic, Some(e.wait_secs));
                 *self.status.lock().unwrap() = json!({"state": "failed", "at": now(), "error": e.reason, "retry_at": retry_at});
             }
         }
     }
 
     /// The update thread's rest: until the next check is due. It looks again every minute: a check from the screen may
-    /// have moved it, and a sleeping TV stops this clock, not the wall clock.
+    /// have moved it, and a sleeping TV stops this clock, not the wall clock (`due_in` also survives a corrected clock).
     fn until_next_check(&self) {
         loop {
-            let left = self.schedule.lock().unwrap().next_at - now();
+            let left = self.schedule.lock().unwrap().due_in(now());
             if left <= 0.0 {
                 return;
             }
@@ -570,7 +558,7 @@ pub fn spawn_updates() {
     std::thread::spawn(|| {
         std::thread::sleep(Duration::from_secs(8));
         while let Some(s) = get() {
-            s.check();
+            s.check(true);
             s.until_next_check();
         }
     });

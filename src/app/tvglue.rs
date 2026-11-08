@@ -477,9 +477,11 @@ impl App {
                 // The shell only sends paths it built from checked parts; only these routes open anyway.
                 let Some(route @ (Route::Watch { .. } | Route::Channel { .. } | Route::Playlist { .. })) = crate::route::parse(&path) else { return };
                 self.tv_panels_close();
-                let url = route.url();
-                if url != self.url {
+                if route != self.route {
+                    let url = route.url();
                     self.navigate(route, url, Mode::Push);
+                } else {
+                    self.tv_focus_check();
                 }
             }
         }
@@ -493,6 +495,8 @@ impl App {
 
     /// Something from outside the app takes over the screen.
     fn tv_panels_close(&mut self) {
+        // (Search can be open over the video a link names: it closes, and the focus goes back to the page.)
+        self.tv_keyboard_leave();
         if self.tv.open {
             self.tv_close();
         }
@@ -514,6 +518,15 @@ impl App {
         }
     }
 
+    /// A key for the player itself. Not through `on_key`: with the search screen open (over a playing video) that would
+    /// type the letter into the query.
+    fn tv_player_key(&mut self, key: &str) -> bool {
+        let Some(p) = self.player.as_mut() else { return false };
+        let handled = p.on_key(key);
+        self.after_player();
+        handled
+    }
+
     fn tv_voice_start(&mut self) {
         if !self.tv.voice {
             return;
@@ -521,7 +534,7 @@ impl App {
         // The recognizer listens: a playing video waits (and goes on if nothing comes of it).
         if matches!(self.route, Route::Watch { .. }) && self.player.as_ref().is_some_and(|p| !p.paused()) {
             self.tv.voice_resume = true;
-            self.on_key("k", false);
+            self.tv_player_key("k");
         }
         self.tv_call("voice_start", "null", Call::VoiceStart);
     }
@@ -532,7 +545,7 @@ impl App {
             self.tv_voice_cap(false);
         }
         if std::mem::take(&mut self.tv.voice_resume) && self.player.as_ref().is_some_and(|p| p.paused()) {
-            self.on_key("k", false);
+            self.tv_player_key("k");
         }
         if std::mem::take(&mut self.tv.voice_mic) && self.tv_search_on() {
             bridge::focus(if self.tv.voice { tv::keyboard::MIC } else { tv::keyboard::QUERY });
@@ -929,7 +942,7 @@ impl App {
             if let Some(p) = self.player.as_mut() {
                 p.wake();
             }
-            return Some(self.on_key(k, false));
+            return Some(self.tv_player_key(k));
         }
         let d = tv::dir(key);
         if editable {

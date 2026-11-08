@@ -23,9 +23,10 @@ pub fn parse(action: &str, data: &str, query: &str) -> Option<Incoming> {
     }
 }
 
-/// Query text: no control characters, bounded, not empty.
+/// Query text: control characters become a space (they separate words), bounded, not empty.
 pub fn clean_query(q: &str) -> Option<String> {
-    let q: String = q.chars().filter(|c| !c.is_control()).take(MAX_QUERY).collect();
+    let q = q.split(char::is_control).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ");
+    let q: String = q.chars().take(MAX_QUERY).collect();
     let q = q.trim();
     (!q.is_empty()).then(|| q.to_string())
 }
@@ -42,9 +43,9 @@ fn is_channel_id(s: &str) -> bool {
     s.len() == 24 && s.starts_with("UC") && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
-/// A handle or custom channel name (`/@name`, `/c/name`, `/user/name`).
+/// A handle or custom channel name (`/@name`, `/c/name`, `/user/name`); dots alone would be a path step (`/c/..`).
 fn is_name(s: &str) -> bool {
-    (1..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+    (1..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)) && !s.bytes().all(|b| b == b'.')
 }
 
 /// A start time: `90`, `90s`, `1m30s`, `1h2m3s` → seconds.
@@ -141,7 +142,8 @@ mod tests {
     fn searches_from_the_system() {
         let s = |a, q| parse(a, "", q);
         assert_eq!(s("android.intent.action.SEARCH", "lofi"), Some(Incoming::Search("lofi".into())));
-        assert_eq!(s("com.google.android.gms.actions.SEARCH_ACTION", "  rain\n\tsounds "), Some(Incoming::Search("rainsounds".into())));
+        assert_eq!(s("com.google.android.gms.actions.SEARCH_ACTION", "  rain\n\tsounds "), Some(Incoming::Search("rain sounds".into())));
+        assert_eq!(clean_query("a\u{0}b"), Some("a b".into()));
         assert_eq!(s("android.intent.action.SEARCH", " \n "), None);
         assert_eq!(s("android.intent.action.MAIN", "lofi"), None);
         assert_eq!(clean_query(&"音".repeat(600)).unwrap().chars().count(), MAX_QUERY);
@@ -197,6 +199,11 @@ mod tests {
             "https://www.youtube.com/playlist?list=a'b".to_string(),
             "https://www.youtube.com/channel/notachannel".to_string(),
             "https://www.youtube.com/@".to_string(),
+            "https://www.youtube.com/c/..".to_string(),
+            "https://www.youtube.com/c/.".to_string(),
+            "https://www.youtube.com/user/.".to_string(),
+            "https://www.youtube.com/user/...".to_string(),
+            "https://www.youtube.com/@..".to_string(),
             "https://www.youtube.com/@a%2F..%2F..%2Faccount".to_string(),
             "https://www.youtube.com/@a%2Fb".to_string(),
             format!("https://www.youtube.com//watch?v={V}"),

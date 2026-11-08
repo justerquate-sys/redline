@@ -101,10 +101,12 @@ routes (`tv/core/src/release.rs`, `Routes`):
   failing website costs its 11 s once. The next check starts with the website again. The release lookup has no second
   route (it is the API).
 - After 4 failed tries a check gives up (a route that keeps flipping cannot drag it out), and the APK download
-  (`shell_install`, also with both routes) has its own 20-minute limit but gives up on a route that gives no answer in
-  30 s; its progress starts over when the second route takes over.
-- A failed check tries again sooner: after 5 min, 15 min and 1 h, then back to every 6 hours (one thread, one due time:
-  a check from the screen moves it, nothing stacks). It waits out a rate limit's reset when GitHub names one, up to 2 h.
+  (`shell_install`, also with both routes) has its own 20-minute limit but gives up on a route that gives no answer, or
+  stops sending, for 30 s; its progress starts over when the second route takes over.
+- A failed check tries again sooner: after 5 min, 15 min and 1 h, then back to every 6 hours (one thread, one due time,
+  nothing stacks). It waits out a rate limit's reset when GitHub names one, up to 2 h. Only automatic failures count: a
+  check from the screen that works puts the schedule back at 6 hours, and one that fails can only bring the next automatic
+  check nearer, never push it out. A clock corrected backwards cannot stall the checks either.
   None of this touches a running page: the rules above about videos hold for a retry too.
 
 What a check costs in unauthenticated API requests (60 an hour per IP):
@@ -114,10 +116,12 @@ What a check costs in unauthenticated API requests (60 an hour per IP):
 | Already up to date | 1 (the lookup) | 3 (lookup, manifest, signature) |
 | New interface (9 files with the telemetry variant) | 1 | 10 (lookup and each file once) |
 | The APK download | 0 | 1 |
+| A press of Check for updates or Retry | as the check above, or 0 when a check ended in the last 60 s (it answers instead) | the same |
 
 All requests, worst case, for one check: the lookup, 9 files and 4 failed tries, 14. The worst hour on one TV (every
 check failing on the very last file) is 3 checks at 10 API requests: launch, +5 min, +20 min; other devices behind the
-same IP share the limit, and an app restart is one more check.
+same IP share the limit, and an app restart is one more check. Pressing is limited to one real check a minute, so
+someone pressing all hour could still reach the limit (60 up-to-date checks); the screen then says so.
 
 An app from before this screen (0.1.0 builds of 2 Nov 2026) cannot install from it: it offers a new app in its own
 dialog once (*Install*); after that update everything is one click here.

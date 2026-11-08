@@ -8966,13 +8966,60 @@ chrome.runtime.onMessage.addListener(m => {
         await answer('shell_events', '{"events":[]}');
         await tv.waitForFunction(() => document.activeElement && document.activeElement.matches('#ytc-list a.t'), null, { timeout: 5000 });
 
+        // (video.paused flips at once; the player's own state follows with the media event a moment later, long before any
+        // recognizer could close: these wait for that too.)
+        const waitPaused = async () => { await tv.waitForFunction(() => document.getElementById('ytc-video').paused, null, { timeout: 3000 }); await tv.waitForTimeout(300); };
+        const waitPlaying = async () => { await tv.waitForFunction(() => !document.getElementById('ytc-video').paused, null, { timeout: 3000 }); await tv.waitForTimeout(300); };
         // A playing video waits while the recognizer listens, and goes on when nothing came of it.
         await tvGo(tv, 'code', 'https://www.youtube.com/watch?v=-Bxc4gJluC0&t=35');
         await tv.waitForFunction(() => { const v = document.getElementById('ytc-video'); return v && !v.paused && v.currentTime > 0; }, null, { timeout: 15000 });
         await voiceKey();
-        await tv.waitForFunction(() => document.getElementById('ytc-video').paused);
+        await waitPaused();
         await events({ kind: 'voice', state: 'cancel' });
-        await tv.waitForFunction(() => !document.getElementById('ytc-video').paused);
+        await waitPlaying();
+
+        // The mic over that playing video: the search screen opens over it. The player gets the key, the query stays
+        // empty, and the next press of the mic is not a search for what was typed by accident.
+        const query = () => tv.evaluate(() => ({ q: document.getElementById('ytc-q').value, label: document.getElementById('ytc-tvquery-text').textContent }));
+        const none = { q: '', label: 'Search videos' };
+        const videoWas = await tv.evaluate(() => location.href);
+        await tv.keyboard.press('/');
+        await tv.waitForFunction(() => document.activeElement && document.activeElement.matches('#ytc-tvk .tvk-keys button'));
+        await tv.keyboard.press('ArrowUp');
+        await tv.keyboard.press('ArrowRight');
+        assert.equal(await focusId(), 'ytc-tvmic');
+        assert.equal(await tv.evaluate(() => document.getElementById('ytc-video').paused), false, 'playing behind the search screen');
+        await tv.keyboard.press('Enter');
+        await waitPaused();
+        assert.deepEqual(await query(), none, 'pausing typed nothing');
+        await events({ kind: 'voice', state: 'cancel' });
+        await waitPlaying();
+        assert.deepEqual(await query(), none, 'going on typed nothing');
+        assert.equal(await focusId(), 'ytc-tvmic');
+        await tv.keyboard.press('Enter');
+        await waitPaused();
+        assert.equal(await tv.evaluate(() => location.href), videoWas, 'the mic again: no search, the video still there');
+        await events({ kind: 'voice', state: 'none' });
+        await waitPlaying();
+        // The search key on that screen.
+        await voiceKey();
+        await waitPaused();
+        assert.deepEqual(await query(), none, 'the search key typed nothing');
+        await events({ kind: 'voice', state: 'cancel' });
+        await waitPlaying();
+        // A media key on that screen is the player's too.
+        await tv.evaluate(() => (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'MediaPlayPause', bubbles: true, cancelable: true })));
+        await waitPaused();
+        assert.deepEqual(await query(), none, 'a media key typed nothing');
+        await tv.evaluate(() => (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'MediaPlayPause', bubbles: true, cancelable: true })));
+        await waitPlaying();
+        // A link to the video already open: the search screen goes and the video shows, with the focus on it.
+        assert.equal(await tv.getAttribute('#ytc', 'data-tvq'), '1');
+        await events({ kind: 'open', path: new URL(videoWas).pathname + new URL(videoWas).search });
+        await tv.waitForFunction(() => document.getElementById('ytc').dataset.tvq !== '1');
+        assert.equal(await tv.evaluate(() => location.href), videoWas);
+        await tv.waitForFunction(() => document.activeElement && document.activeElement.id === 'ytc-seek', null, { timeout: 3000 });
+        assert.equal(await tv.evaluate(() => document.getElementById('ytc-video').paused), false);
         await tv.evaluate(() => localStorage.removeItem('e2e:tvshell'));
       }
       assert.deepEqual(tv.errors, []);

@@ -136,7 +136,8 @@ class MainActivity : TauriActivity() {
   private fun voiceEnded(state: String, text: String) {
     listening = false
     Native.voiceResult(state, text)
-    web?.requestFocus()
+    // (Only if it lost the focus: on a WebView that has it, this moves the page's focus to its first element.)
+    if (web?.hasFocus() == false) web?.requestFocus()
     wakePage()
   }
 
@@ -178,8 +179,10 @@ class MainActivity : TauriActivity() {
 
   override fun onStart() {
     super.onStart()
-    // A swapped bundle goes live when the owner comes back to the app (never mid-video).
-    if (reloadOnStart && stoppedAt > 0) {
+    if (debuggable) Log.d(TAG, "started")
+    // A swapped bundle goes live when the owner comes back to the app (never mid-video). An opaque recognizer closing
+    // is no coming back: the video is about to go on (this runs before its result). The reload waits for the next time.
+    if (reloadOnStart && stoppedAt > 0 && !listening) {
       reloadOnStart = false
       web?.reload()
     }
@@ -197,6 +200,7 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onStop() {
+    if (debuggable) Log.d(TAG, "stopped")
     stoppedAt = System.currentTimeMillis()
     // Leaving the app pauses playback (a TV app never plays on in the background).
     web?.evaluateJavascript("document.querySelectorAll('video,audio').forEach(m=>m.pause())", null)
