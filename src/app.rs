@@ -271,6 +271,8 @@ enum Timer {
 enum Mode {
     Push,
     Pop,
+    /// In place of the current history entry.
+    Replace,
 }
 
 /// A rendered page kept in memory for instant back/forward (never persisted).
@@ -428,6 +430,8 @@ pub struct App {
     up_chain: (u32, u32),
     /// Videos seen in this tab (a stand-in for a locked target is never one of them).
     up_seen: Vec<String>,
+    /// The check near the end asked again after a locked answer: (navigation, how many times).
+    up_rechecks: (u32, u32),
     /// The playlist panel last rendered (list id, current video): its current-row mark slides from there.
     pl_last: Option<(String, String)>,
     /// Navigation motion state (`motionglue.rs`).
@@ -636,6 +640,7 @@ pub fn boot() {
         panel_shown: None,
         up_chain: (0, 0),
         up_seen: Vec::new(),
+        up_rechecks: (0, 0),
         pl_last: None,
         mo: Default::default(),
         spec_queue: Vec::new(),
@@ -1025,7 +1030,7 @@ impl App {
         let title = self.head_title();
         self.set_title(&title);
         let head = self.feed.head.clone().unwrap_or_else(|| render::feed_head(""));
-        render::page(&head, &self.fx_visible(&self.feed.shown), self.has_more(), "", ImgPlan::first(Lay::Grid, self.cols))
+        render::page(&head, &self.fx_visible(&self.feed.shown), self.has_more(), &self.feed_empty(""), ImgPlan::first(Lay::Grid, self.cols))
     }
 
     fn head_title(&self) -> String {
@@ -1112,8 +1117,10 @@ impl App {
             bridge::html(PILL, "");
         }
         self.stats = Stats::default();
-        if mode == Mode::Push {
-            bridge::push(&url);
+        match mode {
+            Mode::Push => bridge::push(&url),
+            Mode::Replace => bridge::replace(&url),
+            Mode::Pop => {}
         }
         self.route = route;
         self.url = url;

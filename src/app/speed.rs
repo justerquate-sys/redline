@@ -22,7 +22,8 @@ impl App {
 
     /// The video cards in view (≤ 8) join the speculative queue.
     pub(super) fn spec_pass(&mut self) {
-        if !bridge::visible() {
+        // (`ytc-test-nospec`, localStorage, tests only.)
+        if !bridge::visible() || bridge::local_flag("ytc-test-nospec") {
             return;
         }
         let hrefs = bridge::visible_hrefs(LIST, ".c", "a.t", SPEC_CARDS);

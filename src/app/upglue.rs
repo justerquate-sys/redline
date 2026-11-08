@@ -15,8 +15,10 @@ use std::rc::Rc;
 
 /// Videos remembered as seen in this tab (`up_skips`).
 const UP_SEEN_MAX: usize = 50;
-/// An automatic advance moves past this many videos the player refuses, then shows the panel.
+/// An automatic advance moves past this many videos in a row that the player refuses, then shows the panel.
 const UP_SKIPS: u32 = 3;
+/// A video's check near the end asks about the replacement this many times: a list of 500 locked rows is no walk.
+const UP_RECHECKS: u32 = 3;
 
 impl App {
     /// The current watch page's parsed `next` response, if it has arrived.
@@ -130,21 +132,33 @@ impl App {
             return false;
         }
         let Some(n) = self.next_video() else { return false };
-        self.up_advance(n);
+        let skips = self.up_chain.1;
+        // A skipped video never enters the history: Back goes to the video that was watched.
+        let route = Route::Watch { v: n.v, t: 0, list: n.list };
+        let url = route.url();
+        self.navigate(route, url, Mode::Replace);
+        self.up_chain = (self.nav, skips + 1);
         true
     }
 
-    /// The app itself moves on: what `up_skip_locked` counts.
+    /// The app itself moves on from a video that played: what `up_skip_locked` then counts from.
     fn up_advance(&mut self, n: Next) {
-        let hops = if self.up_chain.0 == self.nav { self.up_chain.1 } else { 0 };
         self.up_open(n);
-        self.up_chain = (self.nav, hops + 1);
+        self.up_chain = (self.nav, 1);
     }
 
     /// A prefetch learned that the video it asked about is for a channel's members: what plays next may have
-    /// changed, and the replacement gets its prefetch too.
+    /// changed, and the replacement gets its prefetch too, a few times per video.
     pub(super) fn up_prefetch_again(&mut self) {
-        self.up_prefetched = 0;
+        if self.up_rechecks.0 != self.nav {
+            self.up_rechecks = (self.nav, 0);
+        }
+        if self.up_prefetched == self.nav && self.up_rechecks.1 < UP_RECHECKS {
+            self.up_rechecks.1 += 1;
+            self.up_prefetched = 0;
+            // Already near the end: not at the next position report, which may be after the end.
+            self.up_prefetch();
+        }
     }
 
     fn up_title(&self, v: &str) -> String {

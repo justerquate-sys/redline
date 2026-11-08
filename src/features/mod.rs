@@ -464,9 +464,6 @@ pub fn note(hidden: usize, visible: usize, p: &Prefs, surf: Surface) -> String {
     if p.playlists_only && surf == Surface::Home {
         out.push_str(" · <button type=\"button\" class=\"lnk2\" data-act=\"fx-pl\">Show all</button>");
     }
-    if !p.show_members {
-        out.push_str(" · <button type=\"button\" class=\"lnk2\" data-act=\"fx-members\">Show members-only videos</button>");
-    }
     out
 }
 

@@ -44,24 +44,28 @@ pub fn permanent(reason: &str) -> bool {
         || reason.strip_prefix("VISIONOS ").is_some_and(|r| r.starts_with(|c: char| c.is_ascii_uppercase()))
 }
 
-/// The player's verdict that a video is for a channel's members: YouTube's known phrases only (VISIONOS is
-/// always asked in English, `api::vision_request`), never the word alone ("content from Club Members Records").
+/// The player's verdict that a video is for a channel's members: YouTube's own sentences only (VISIONOS is
+/// always asked in English, `api::vision_request`), never a name that happens to say it ("content from Members
+/// Only, who has blocked it").
 pub fn members_only(reason: &str) -> bool {
     if !reason.starts_with("VISIONOS ") {
         return false;
     }
     let low = reason.to_ascii_lowercase();
-    ["members on level:", "members-only", "members only", "members first"].iter().any(|p| low.contains(p))
+    if ["content from", "blocked it", "copyright"].iter().any(|p| low.contains(p)) {
+        return false;
+    }
+    ["channel's members", "members on level:", "members-only content", "members-only video", "for members only", "only for members", "members first"].iter().any(|p| low.contains(p))
 }
 
 /// YouTube's words name a time hours or more away, or a date.
 fn far_off(said: &str) -> bool {
-    const FAR: [&str; 11] = ["hour", "hours", "day", "days", "week", "weeks", "month", "months", "year", "years", "tomorrow"];
+    const FAR: [&str; 12] = ["hour", "hours", "day", "days", "week", "weeks", "month", "months", "year", "years", "today", "tomorrow"];
     const MONTHS: [&str; 24] = ["jan", "january", "feb", "february", "mar", "march", "apr", "april", "may", "jun", "june", "jul", "july", "aug", "august", "sep", "sept", "september", "oct", "october", "nov", "november", "dec", "december"];
     let low = said.to_ascii_lowercase();
     let words: Vec<&str> = low.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).collect();
     let number = |w: Option<&&str>| w.is_some_and(|w| w.bytes().all(|b| b.is_ascii_digit()));
-    words.iter().enumerate().any(|(i, w)| FAR.contains(w) || (MONTHS.contains(w) && (number(words.get(i + 1)) || (i > 0 && number(words.get(i - 1))))))
+    low.contains('/') || words.iter().enumerate().any(|(i, w)| FAR.contains(w) || (MONTHS.contains(w) && (number(words.get(i + 1)) || (i > 0 && number(words.get(i - 1))))))
 }
 
 /// Whether the panel offers Try again: everything but a verdict about the video itself. The bot check (Try
@@ -308,22 +312,21 @@ fn said(reason: &str) -> &str {
 /// no invitation).
 pub const MEMBERS_LINE: &str = "This video is for this channel's members.";
 
-/// YouTube's sentences without its invitations and, on a members verdict, its tiers.
-fn plain_words(words: &str, members: bool) -> String {
-    let keep = |s: &&str| {
-        let low = s.to_ascii_lowercase();
-        !(low.starts_with("join") || low.starts_with("become a member")) && !(members && (low.contains("join ") || low.contains("level")))
-    };
-    words.split_inclusive(". ").map(str::trim).filter(|s| !s.is_empty()).filter(keep).collect::<Vec<_>>().join(" ")
-}
-
-/// A verdict's one plain line under the headline: what YouTube adds beyond the headline, never an invitation.
-/// Members-only: it's for this channel's members (anything else YouTube says stays: when early access ends).
+/// A verdict's one plain line under the headline. Members-only: always the same line, plus YouTube's sentence
+/// only if it says when the video goes public: a whitelist, as a channel's tier may read like anything ("Dr.
+/// Who. Fan Club"). Others: YouTube's words beyond the headline, never an invitation.
 pub fn line(reason: &str) -> String {
-    let words = plain_words(said(reason), members_only(reason));
+    let sentences = || said(reason).split_inclusive(". ").map(str::trim).filter(|s| !s.is_empty());
     if members_only(reason) {
-        return if words.is_empty() { MEMBERS_LINE.into() } else { words };
+        let tiered = reason.to_ascii_lowercase().contains("members on level:");
+        let when = sentences().find(|s| {
+            let low = s.to_ascii_lowercase();
+            !tiered && (low.contains("public") || low.contains("everyone")) && !low.starts_with("join") && !low.starts_with("become")
+        });
+        return when.map_or_else(|| MEMBERS_LINE.to_string(), |s| format!("{MEMBERS_LINE} {s}"));
     }
+    let invitation = |s: &&str| ["join", "become a member", "upgrade"].iter().any(|i| s.to_ascii_lowercase().starts_with(i));
+    let words = sentences().filter(|s| !invitation(s)).collect::<Vec<_>>().join(" ");
     if words == message(reason) { String::new() } else { words }
 }
 
@@ -702,16 +705,21 @@ mod tests {
             "VISIONOS UNPLAYABLE: Join this channel to get access to members-only content like this video, and other exclusive perks.",
             "VISIONOS UNPLAYABLE: Join to get access to members-only content like this video.",
             "VISIONOS UNPLAYABLE: Become a member to watch this members-only video.",
+            "VISIONOS UNPLAYABLE: This video is available to this channel's members on level: Dr. Who. Fan Club (or any higher level). Join this YouTube channel from your computer or mobile app.",
+            "VISIONOS UNPLAYABLE: This video is available to this channel's members on level: The Public. Everyone (or any higher level). Join this YouTube channel from your computer or mobile app.",
+            "VISIONOS UNPLAYABLE: This is members-only content. Upgrade your membership to watch.",
         ] {
             assert!(members_only(r), "{r}");
             assert_eq!(line(r), MEMBERS_LINE, "{r}");
         }
-        // Another sentence stays as YouTube said it: when early access ends.
+        // The one other sentence that stays: when it goes public.
         let first = "VISIONOS UNPLAYABLE: This video is for members first and goes public on 1 Dec. Join this channel to watch now.";
-        assert_eq!(line(first), "This video is for members first and goes public on 1 Dec.");
-        // Known phrases only: the word alone isn't a verdict, and no reason of another kind counts.
+        assert_eq!(line(first), format!("{MEMBERS_LINE} This video is for members first and goes public on 1 Dec."));
+        // YouTube's sentences only: a name isn't a verdict, and no reason of another kind counts.
         let club = "VISIONOS UNPLAYABLE: This video contains content from Club Members Records, who has blocked it in your country on copyright grounds.";
         assert!(!members_only(club) && !members_only("VISIONOS ERROR: Our members asked us to remove this video"));
+        assert!(!members_only("VISIONOS UNPLAYABLE: This video contains content from Members Only, who has blocked it in your country on copyright grounds."), "a band");
+        assert!(!members_only("VISIONOS UNPLAYABLE: This video contains content from Members First, who has blocked it in your country on copyright grounds."));
         assert_eq!(message(club), "YouTube won't play this video here");
         assert!(!crate::player::own::quiet(club), "a real failure, not an expected one");
         assert!(!members_only("googlevideo HTTP 403 after a player refresh"));
@@ -740,6 +748,11 @@ mod tests {
             (format!("{up}: Premieres in 3 days"), ""),
             (format!("{up}: This live event will begin on Nov 12, 2026 at 5:00 PM"), ""),
             (format!("{up}: Premiere will begin tomorrow"), ""),
+            (format!("{up}: Premieres in 1 hour"), ""),
+            (format!("{up}: This live event will begin in 2 weeks"), ""),
+            (format!("{up}: Premieres today at 5:00 PM"), ""),
+            (format!("{up}: Scheduled for Nov 12, 5:00 PM"), ""),
+            (format!("{up}: Scheduled for 12/11/2026"), ""),
             ("VISIONOS LOGIN_REQUIRED: Sign in to confirm your age".to_string(), "Sign in to confirm your age"),
             ("VISIONOS LOGIN_REQUIRED: This video is private".to_string(), "This video is private"),
             ("VISIONOS ERROR: This video has been removed by the uploader".to_string(), ""),

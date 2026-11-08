@@ -938,7 +938,8 @@ body{overscroll-behavior:none;overflow-x:clip}
 /* Home Filters: as wide as its widest row, so the four switches (Shorts, Music, Live, Playlists only) share one line. */
 .fx-p:not(.s){width:max-content;min-width:min(360px,calc(100vw - 32px));max-width:calc(100vw - 32px)}
 .fx-p:not(.s) .fx-row:has(>.fx-sw){flex-wrap:nowrap}
-@media (max-width:760px){.fx-p:not(.s) .fx-row:has(>.fx-sw){flex-wrap:wrap}#ytc-hfx .fx-f>.fx-p{position:fixed;top:58px;left:16px;right:16px;width:auto;min-width:0;max-width:none}}
+/* A narrow window: the panel spans the window under the header, far from the button's corner: a short drop and fade, no clip out of a corner that isn't the button. */
+@media (max-width:760px){.fx-p:not(.s) .fx-row:has(>.fx-sw){flex-wrap:wrap}#ytc-hfx .fx-f>.fx-p{position:fixed;top:58px;left:16px;right:16px;width:auto;min-width:0;max-width:none}.fx-f>.fx-p{clip-path:inset(-40px round 52px);transform:translateY(calc(-8px * var(--mv)))}}
 /* search filters: YouTube's options are links (hover prefetches, click re-queries) */
 #ytc a.fx-ch{display:inline-block;text-decoration:none;line-height:normal}
 #ytc .fx-ch[aria-current=true]{background:var(--ac);color:var(--bg)}

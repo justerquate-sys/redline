@@ -81,6 +81,7 @@ module.exports = async function membersTests(h) {
     mbrprivate1: { status: 'LOGIN_REQUIRED', reason: 'This video is private' },
     mbrwrong001: { status: 'ERROR', reason: 'Something went wrong' },
     mbrclub0001: { status: 'UNPLAYABLE', reason: 'This video contains content from Club Members Records, who has blocked it in your country on copyright grounds.' },
+    mbrband0001: { status: 'UNPLAYABLE', reason: 'This video contains content from Members Only, who has blocked it in your country on copyright grounds.' },
     mbrprem0005: { status: 'LIVE_STREAM_OFFLINE', reason: 'Premieres in 5 minutes' },
     mbrlive0012: { status: 'LIVE_STREAM_OFFLINE', reason: 'This live event will begin in 12 minutes.' },
     mbrshortly1: { status: 'LIVE_STREAM_OFFLINE', reason: 'Premiere will begin shortly' },
@@ -118,7 +119,21 @@ module.exports = async function membersTests(h) {
     await readyDel(true);
     // (Subscriptions and History need an account.)
     await ctx.addCookies([{ name: 'SAPISID', value: 'e2e-members', domain: '.youtube.com', path: '/', secure: true }]);
-    try { await fn(); } finally { await ctx.clearCookies({ name: 'SAPISID' }); unhook(); await page.evaluate(() => { localStorage.removeItem('ytc-test-noready'); sessionStorage.clear(); }).catch(() => {}); await sw.evaluate(() => chrome.storage.local.remove('yourTubeShowMembersV1')); }
+    try { await fn(); } finally { await ctx.clearCookies({ name: 'SAPISID' }); unhook(); await page.evaluate(() => { localStorage.removeItem('ytc-test-noready'); localStorage.removeItem('ytc-test-nospec'); sessionStorage.clear(); }).catch(() => {}); await sw.evaluate(() => chrome.storage.local.remove('yourTubeShowMembersV1')); }
+  };
+  const noSpec = async () => { await open('/'); await page.evaluate(() => localStorage.setItem('ytc-test-nospec', '1')); };
+  const vOf = () => new URL(page.url()).searchParams.get('v');
+  const onV = v => page.waitForFunction(x => new URL(location.href).searchParams.get('v') === x, v, { timeout: 30000 });
+  const toEnd = async () => {
+    await page.waitForFunction(() => { const v = document.getElementById('ytc-video'); return v && v.duration > 0 && v.readyState >= 2; }, null, { timeout: 20000 });
+    await page.evaluate(() => { const v = document.getElementById('ytc-video'); v.currentTime = v.duration - 1.2; v.play(); });
+  };
+  // The check near the end can't tell (it gets an error); once it has asked, the verdict is armed for the player.
+  const lockOnPage = ids => {
+    const state = { armed: false, asked: 0, async checked() { for (let i = 0; i < 400 && !state.asked; i++) await page.waitForTimeout(50); assert.ok(state.asked, 'the check near the end asked'); await page.waitForTimeout(300); state.armed = true; } };
+    const before = HOOK.vision;
+    HOOK.vision = v => { if (!ids.includes(v)) return before(v); state.asked++; return { playabilityStatus: state.armed ? { status: 'UNPLAYABLE', reason: LOCKED_REASON } : { status: 'ERROR', reason: 'Something went wrong' } }; };
+    return state;
   };
   const open = async url => {
     await page.goto('about:blank');
@@ -411,13 +426,20 @@ module.exports = async function membersTests(h) {
   }));
 
   await step('members-only: a card in view gets its label from the speculative check, before any click', withHook(async () => {
-    await open('/');
-    await waitCard(CLICK);
+    // The check is held back (`next` comes first) until the cards are marked.
+    let release = () => {};
+    NEXT.gate = new Promise(r => { release = r; });
+    try {
+      await open('/');
+      await waitCard(CLICK);
+      assert.equal(await cardBadge(CLICK).count(), 0, 'nothing says so yet');
+      await page.evaluate(id => { for (const c of [document.querySelector('#ytc-list .c'), document.querySelector(`#ytc-list .c[data-v="${id}"]`)]) c.dataset.same = '1'; }, CLICK);
+    } finally { release(); NEXT.gate = null; }
     await page.waitForSelector(`#ytc-list .c[data-v="${CLICK}"] .th b.mo`, { timeout: 15000 });
     assert.equal(await page.evaluate(() => sessionStorage.getItem('ytc:members')), CLICK);
     checkLabels(await labelGeometry(), 'added in place');
     // The list wasn't rendered again under the pointer: the same elements.
-    assert.equal(await page.evaluate(() => { const c = document.querySelector('#ytc-list .c'); c.dataset.same = '1'; return c.dataset.same; }), '1');
+    assert.deepEqual(await page.evaluate(id => [document.querySelector('#ytc-list .c').dataset.same, document.querySelector(`#ytc-list .c[data-v="${id}"]`).dataset.same], CLICK), ['1', '1']);
   }));
 
   await step('members-only: an ordinary uploads list of a channel whose id starts UCMO is not the members list: no labels, its rows play next', withHook(async () => {
@@ -465,22 +487,66 @@ module.exports = async function membersTests(h) {
   }));
 
   await step('members-only: an automatic advance stops at its cap (three skips), on the panel', withHook(async () => {
-    const before = HOOK.vision;
+    await noSpec();
     const rowIds = videoRows(json('next_list.json'));
-    const asked = new Set();
-    let first = true;
-    HOOK.vision = v => {
-      if (v === rowIds[0]) return before(v);
-      if (v === rowIds[1] && first) { first = false; return { playabilityStatus: { status: 'ERROR', reason: 'Something went wrong' } }; }
-      asked.add(v);
-      return { playabilityStatus: { status: 'UNPLAYABLE', reason: LOCKED_REASON } };
-    };
-    await open(`/watch?v=${rowIds[0]}&list=PLmbrordinary4&t=35`);
-    await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 40000 });
+    const lock = lockOnPage(rowIds.slice(1));
+    await open(`/watch?v=${rowIds[0]}&list=PLmbrordinary4`);
+    await page.waitForSelector('#ytc-pll .pli', { timeout: 15000 });
+    await lock.checked();
+    await toEnd();
+    await onV(rowIds[4]);
+    await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 15000 });
     await page.waitForTimeout(1500);
-    const at = new URL(page.url()).searchParams.get('v');
-    assert.ok(rowIds.indexOf(at) >= 1 && rowIds.indexOf(at) <= 4, `one landing + three skips: ${at} of ${JSON.stringify(rowIds)}`);
+    assert.equal(vOf(), rowIds[4], `the landing on row 1 + three skips: ${JSON.stringify(rowIds)}`);
     assert.equal(await page.textContent('.pfm'), 'Members-only video');
+  }));
+
+  await step('members-only: only skips in a row count: four videos that played, then a locked row, is one skip, and it goes on', withHook(async () => {
+    await noSpec();
+    const rowIds = videoRows(json('next_list.json'));
+    const lock = lockOnPage([rowIds[4]]);
+    await open(`/watch?v=${rowIds[0]}&list=PLmbrordinary5`);
+    await page.waitForSelector('#ytc-pll .pli', { timeout: 15000 });
+    for (let i = 0; i < 4; i++) {
+      await onV(rowIds[i]);
+      if (i === 3) await lock.checked();
+      await toEnd();
+      await page.waitForFunction(x => new URL(location.href).searchParams.get('v') !== x, rowIds[i], { timeout: 30000 });
+    }
+    await onV(rowIds[5]);
+    await page.waitForFunction(() => document.documentElement.dataset.ytcFirstFrame, null, { timeout: 15000 });
+    assert.equal(await page.locator('#ytc-player .pfail').count(), 0, 'no panel');
+  }));
+
+  await step('members-only: a skipped video never enters the history: one Back from where it landed goes to the video that played', withHook(async () => {
+    await noSpec();
+    const rowIds = videoRows(json('next_list.json'));
+    const lock = lockOnPage([rowIds[4]]);
+    await open(`/watch?v=${rowIds[3]}&list=PLmbrordinary6`);
+    await page.waitForSelector('#ytc-pll .pli', { timeout: 15000 });
+    await lock.checked();
+    await toEnd();
+    await onV(rowIds[5]);
+    await page.waitForFunction(() => document.documentElement.dataset.ytcFirstFrame, null, { timeout: 15000 });
+    await page.goBack({ waitUntil: 'commit' });
+    await onV(rowIds[3]);
+    await page.waitForTimeout(800);
+    assert.equal(await page.locator('#ytc-player .pfail').count(), 0, 'not the locked panel');
+  }));
+
+  await step('members-only: a list of locked rows is no walk: a video\'s check near the end asks about at most four of them', withHook(async () => {
+    await noSpec();
+    const rowIds = videoRows(json('next_list.json'));
+    for (const id of rowIds.slice(1)) verdicts[id] = { status: 'UNPLAYABLE', reason: LOCKED_REASON };
+    try {
+      const n0 = log.api.length;
+      await open(`/watch?v=${rowIds[0]}&list=PLmbrordinary7`);
+      await page.waitForFunction(() => (sessionStorage.getItem('ytc:members') || '').split(',').length >= 4, null, { timeout: 30000 });
+      await page.waitForTimeout(6000);
+      const asked = log.api.slice(n0).filter(a => a.ep === 'player' && a.body.context?.client?.clientName === 'VISIONOS' && rowIds.slice(1).includes(a.body.videoId)).map(a => a.body.videoId);
+      assert.equal(new Set(asked).size, 4, `the first, then three more: ${JSON.stringify(asked)}`);
+      assert.equal((await page.evaluate(() => sessionStorage.getItem('ytc:members'))).split(',').length, 4);
+    } finally { for (const id of rowIds.slice(1)) delete verdicts[id]; }
   }));
 
   await step('members-only: the Filters panel stays on screen at every width, Home and Search, and the pointer reaches it', withHook(async () => {
@@ -495,11 +561,34 @@ module.exports = async function membersTests(h) {
         await page.waitForTimeout(350);
         const g = await measure();
         assert.ok(g.pl >= 0 && g.pr <= g.iw && g.swMin >= g.pl - .5 && g.swMax <= g.pr + .5, `${url} at ${w}: ${JSON.stringify(g)}`);
+        if (w <= 760) {
+          // Closed, nothing is clipped out of a corner that isn't the button: a short drop and fade.
+          await page.mouse.move(5, 600);
+          await page.waitForTimeout(300);
+          assert.match(await page.evaluate(() => getComputedStyle(document.querySelector('#ytc-hfx .fx-p')).clipPath), /inset\(-40px/, `${url} at ${w}`);
+        }
         if (w === 720) await shotPage(`members-filters-720${url === '/' ? '' : '-search'}`);
         await page.mouse.move(5, 600);
         await page.waitForTimeout(200);
       }
     }
+    // A summary in the button makes it wider.
+    await sw.evaluate(() => chrome.storage.local.set({ yourTubeMinimumHomeDurationV1: 60, yourTubeHomeOrderV1: 'popular' }));
+    await open('/');
+    await page.waitForSelector('#ytc-hfx .fx-fb', { timeout: 15000 });
+    await page.waitForFunction(() => /60\+ min/.test(document.querySelector('#ytc-hfx .fx-fb')?.textContent || ''), null, { timeout: 8000 });
+    for (const w of [800, 770, 761, 760, 745]) {
+      await page.setViewportSize({ width: w, height: 800 });
+      await page.waitForTimeout(250);
+      await page.hover('#ytc-hfx .fx-fb').catch(() => {});
+      await page.waitForTimeout(350);
+      const g = await measure();
+      assert.ok(g.pl >= 0 && g.pr <= g.iw && g.swMin >= g.pl - .5 && g.swMax <= g.pr + .5, `with a summary at ${w}: ${JSON.stringify(g)}`);
+      await page.mouse.move(5, 600);
+      await page.waitForTimeout(150);
+    }
+    await sw.evaluate(() => chrome.storage.local.remove(['yourTubeMinimumHomeDurationV1', 'yourTubeHomeOrderV1']));
+    await page.waitForTimeout(200);
     await page.setViewportSize({ width: 480, height: 800 });
     await page.waitForTimeout(250);
     await page.hover('#ytc-hfx .fx-fb');
@@ -530,6 +619,9 @@ module.exports = async function membersTests(h) {
     assert.equal(club.head, "YouTube won't play this video here");
     assert.match(club.line, /Club Members Records/);
     assert.equal(club.learned, null, 'never learned as members-only');
+    const band = await see('mbrband0001');
+    assert.equal(band.head, "YouTube won't play this video here", 'a band called Members Only');
+    assert.equal(band.learned, null);
     const join = await see('mbrjoinvar1');
     assert.equal(join.head, 'Members-only video');
     assert.equal(join.line, PLAIN_LINE);
@@ -576,7 +668,7 @@ module.exports = async function membersTests(h) {
     await shotPage('members-related-long', await page.locator(`#ytc-list .c[data-v="${rel[1].contentId}"]`).boundingBox());
   }));
 
-  await step('members-only: with the switch off, a first page of nothing but locked cards says nothing false: more comes in silently; at the end a filter is named, and Home offers to show them', withHook(async () => {
+  await step('members-only: with the switch off, a first page of nothing but locked cards says nothing false: more comes in silently; at the end a filter is named, no button undoes the choice, and a filter that did not hide them is not blamed on the switch', withHook(async () => {
     const j = JSON.parse(homeFirst); videoLockups(j).forEach(l => lock(l));
     const allLocked = JSON.stringify(j);
     const strip = o => { if (Array.isArray(o)) { const k = o.filter(x => !x?.continuationItemRenderer); k.forEach(strip); return (o.length = 0, o.push(...k), o); } if (o && typeof o === 'object') Object.values(o).forEach(strip); return o; };
@@ -597,13 +689,32 @@ module.exports = async function membersTests(h) {
     body = lastPage;
     await open('/feed/subscriptions');
     await page.waitForSelector('.empty', { timeout: 15000 });
-    assert.equal(await page.textContent('.empty'), 'Your Filters hide the members-only videos here.');
+    const line = 'Your Filters hide the members-only videos here.';
+    assert.equal(await page.textContent('.empty'), line);
     await shotPage('members-all-locked-subs');
+    // A reload paints the snapshot: the line stays.
+    await page.reload({ waitUntil: 'commit' });
+    await page.waitForSelector('.empty', { timeout: 15000 });
+    assert.equal(await page.textContent('.empty'), line, 'after a reload');
     await open('/');
-    await page.waitForFunction(() => document.querySelector('#ytc-fx-note')?.textContent.includes('No videos match your filters'), null, { timeout: 15000 });
+    await page.waitForFunction(t => document.querySelector('#ytc-fx-note')?.textContent === t, line, { timeout: 15000 });
     assert.equal(await page.locator('.empty').count(), 0);
-    await page.click('#ytc-fx-note [data-act=fx-members]');
+    assert.equal(await page.locator('#ytc-fx-note button').count(), 0, 'no button undoes the choice');
+    // The Filters panel is how it comes back.
+    await page.hover('#ytc-hfx .fx-fb');
+    await page.click('#ytc-hfx [data-act=fx-members]');
     await waitCard(feed.locked);
+    await page.mouse.move(5, 600);
+    // A minimum length hid a page with no members-only card at all: the note doesn't blame the switch.
+    body = homeFirst;
+    await sw.evaluate(() => chrome.storage.local.set({ yourTubeShowMembersV1: false, yourTubeMinimumHomeDurationV1: 180 }));
+    await page.evaluate(() => sessionStorage.setItem('ytc:fx', '180|0|0|0|0|0|0'));
+    HOOK.vision = () => null;
+    await open('/');
+    await page.waitForFunction(() => /No videos match your filters/.test(document.querySelector('#ytc-fx-note')?.textContent || ''), null, { timeout: 25000 });
+    assert.ok(!/members/i.test(await page.textContent('#ytc-fx-note')), await page.textContent('#ytc-fx-note'));
+    assert.equal(await page.locator('#ytc-fx-note [data-act=fx-members]').count(), 0);
+    await sw.evaluate(() => chrome.storage.local.remove('yourTubeMinimumHomeDurationV1'));
   }));
 
   await step('members-only: back on a page kept in memory: a video that played after all has lost its label; the place on the page is kept after learning', withHook(async () => {

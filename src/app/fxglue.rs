@@ -245,13 +245,16 @@ impl App {
 
     /// The items of `items` that stay visible with the current filters.
     pub(super) fn fx_visible(&self, items: &[Item]) -> Vec<Item> {
+        self.fx_visible_as(items, &self.fx.prefs)
+    }
+
+    fn fx_visible_as(&self, items: &[Item], prefs: &Prefs) -> Vec<Item> {
         let surf = self.fx_surface();
         let any_blocked = !rules_empty();
         let wl = matches!(&self.route, Route::Playlist { list } if list == "WL");
-        if !wl && !filters::active(surf, &self.fx.prefs, any_blocked) {
+        if !wl && !filters::active(surf, prefs, any_blocked) {
             return items.to_vec();
         }
-        let prefs = &self.fx.prefs;
         let checker = &self.fx.checker;
         // A card that turned out to be members-only only when it was clicked goes by the switch too.
         let hide_learned = !prefs.show_members && surf != Surface::Other;
@@ -409,8 +412,18 @@ impl App {
         }
     }
 
+    /// The Members-only switch is really what emptied the page: with it on, a card would show.
+    fn fx_members_hid(&self) -> bool {
+        if self.fx.prefs.show_members {
+            return false;
+        }
+        let on = Prefs { show_members: true, ..self.fx.prefs.clone() };
+        !self.fx_visible_as(&self.feed.shown, &on).is_empty() || !self.fx_visible_as(&self.feed.buf, &on).is_empty()
+    }
+
     /// The line of a feed with no visible card: `empty` only when nothing arrived. Cards the filters hid and
-    /// more on the way say nothing (more may fill the page); Home and Search have their note.
+    /// more on the way say nothing (more may fill the page); Home and Search have their note. On Subscriptions
+    /// the switch is the only filter.
     pub(super) fn feed_empty(&self, empty: &str) -> String {
         if self.feed.shown.is_empty() && self.feed.buf.is_empty() {
             return empty.to_string();
@@ -484,6 +497,9 @@ impl App {
         }
         let (hidden, visible) = self.fx_counts();
         let mut html = features::note(hidden, visible, &self.fx.prefs, surf);
+        if hidden > 0 && visible == 0 && self.fx_members_hid() {
+            html = FILTER_HID.to_string();
+        }
         if let Some(s) = self.fx.session.as_ref().filter(|_| self.fx.topic_on()) {
             if self.feed.shown.is_empty() && self.feed.buf.is_empty() {
                 // Nothing looks like loading; only a final outcome is stated.

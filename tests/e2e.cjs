@@ -7803,15 +7803,17 @@ chrome.runtime.onMessage.addListener(m => {
     const n0 = nexts().length;
     await nearEnd(); await keys('k');
     for (let i = 0; i < 40 && !nexts().slice(n0).some(a => a.body.videoId === items[1]); i++) await page.waitForTimeout(50);
-    const pre = nexts().slice(n0).filter(a => a.body.videoId === items[1]);
+    // (A related card of the same video may have its own speculative `next`, without the playlist and under its
+    // own cache key: not this request.)
+    for (let i = 0; i < 40 && !nexts().slice(n0).some(a => a.body.videoId === items[1] && a.body.playlistId === PL); i++) await page.waitForTimeout(50);
+    const pre = nexts().slice(n0).filter(a => a.body.videoId === items[1] && a.body.playlistId === PL);
     assert.equal(pre.length, 1, 'next of the next item prefetched once');
-    assert.equal(pre[0].body.playlistId, PL);
     assert.ok(log.api.some(a => a.ep === 'player' && a.body.videoId === items[1] && a.body.context.client.clientName === 'VISIONOS'), 'VISIONOS prefetched');
     // End → the next playlist item at once (no countdown), from the prefetch.
     await keys('k');
     await page.waitForFunction(v => location.search.startsWith(`?v=${v}&list=`), items[1], { timeout: 10000 });
     await page.waitForFunction(() => /2 \/ 6$/.test(document.querySelector('#ytc-pl .plm')?.textContent || ''));
-    assert.equal(nexts().slice(n0).filter(a => a.body.videoId === items[1]).length, 1, 'the prefetched next was used');
+    assert.equal(nexts().slice(n0).filter(a => a.body.videoId === items[1] && a.body.playlistId === PL).length, 1, 'the prefetched next was used');
     assert.equal(await page.locator('#ytc-pl .pli.cur .pln').textContent(), '▶');
     if (process.env.YTC_SHOTS) await page.screenshot({ path: path.join(process.env.YTC_SHOTS, 'watch-playlist.png') });
     // A row click jumps there.
