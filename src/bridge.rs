@@ -263,6 +263,13 @@ extern "C" {
     pub fn storage_get(key: &str);
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn storage_set(key: &str, json: &str);
+    /// Saves all of `chrome.storage.local` except the keys in `skip` (a JSON list) as the file `name`; the values never
+    /// enter Wasm. Answered by `on_store_result(id, ok)`.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn storage_export(id: u32, name: &str, skip: &str);
+    /// Opens this extension's page `path` in a new tab.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn open_tab(path: &str);
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn extension_page() -> bool;
     #[wasm_bindgen(js_namespace = YTC)]

@@ -9680,6 +9680,32 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
     }
   });
 
+  await step('popup: Export all settings opens its own tab and saves one file of everything in chrome.storage.local, saying it holds the Deepgram key', async () => {
+    const before = await sw.evaluate(() => chrome.storage.local.get(null));
+    await sw.evaluate(() => chrome.storage.local.set({ ytcVoiceKeyV1: 'e2e-export-deepgram' }));
+    const id = await sw.evaluate(() => chrome.runtime.id);
+    const pop = await ctx.newPage();
+    await pop.goto(`chrome-extension://${id}/popup.html`, { waitUntil: 'commit' });
+    await pop.waitForSelector('#popup-export');
+    const opened = ctx.waitForEvent('page');
+    await pop.click('#popup-export');
+    const tab = await opened;
+    await tab.waitForSelector('#popup-export-save');
+    assert.match(await tab.locator('#ytc-popup').innerText(), /Deepgram key/);
+    assert.equal(await tab.locator('#popup-sponsor').count(), 0, 'its own page');
+    const saving = tab.waitForEvent('download');
+    await tab.click('#popup-export-save');
+    const file = await saving;
+    assert.equal(file.suggestedFilename(), 'redline-settings.json');
+    const saved = JSON.parse(fs.readFileSync(await file.path(), 'utf8'));
+    assert.equal(saved.redlineSettings, 1);
+    assert.equal(saved.items.ytcVoiceKeyV1, 'e2e-export-deepgram');
+    assert.deepEqual(Object.keys(saved.items).sort(), Object.keys(await sw.evaluate(() => chrome.storage.local.get(null))).sort(), 'everything');
+    await tab.waitForFunction(() => /Saved/.test(document.querySelector('#popup-status').textContent));
+    await tab.close(); await pop.close();
+    await sw.evaluate(k => { if (k === undefined) return chrome.storage.local.remove('ytcVoiceKeyV1'); return chrome.storage.local.set({ ytcVoiceKeyV1: k }); }, before.ytcVoiceKeyV1);
+  });
+
   await step('no live network traffic; no YouTube player JS or embed ever requested', async () => {
     assert.ok(log.external.every(u => /ytimg\.com|ggpht\.com|googleusercontent\.com/.test(new URL(u).hostname)), log.external.filter(u => !/ytimg|ggpht|googleusercontent/.test(u)).join(','));
     // (The DNR step fetches /s/player/abc/…/base.js itself to prove it is not blocked.)

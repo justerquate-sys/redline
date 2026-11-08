@@ -576,6 +576,22 @@ const YTC = (() => {
       const done = v => call('on_storage', key, JSON.stringify(v && v[key] !== undefined ? v[key] : null));
       try { chrome.storage.local.get(key).then(done, () => done(null)); } catch { queueMicrotask(() => done(null)); }
     },
+    // Saves everything in chrome.storage.local (without the `skip` keys, a JSON list) as a file. The values stay here:
+    // a secret among them never enters Wasm. on_store_result(id, ok) when the file is handed to the browser.
+    storage_export(id, name, skip) {
+      const done = ok => call('on_store_result', id, ok);
+      try {
+        chrome.storage.local.get(null).then(all => {
+          for (const k of JSON.parse(skip)) delete all[k];
+          const url = URL.createObjectURL(new Blob([JSON.stringify({ redlineSettings: 1, exportedAt: new Date().toISOString(), items: all }, null, 1)], { type: 'application/json' }));
+          const a = d.createElement('a');
+          a.href = url; a.download = name; d.body.append(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          done(true);
+        }, () => done(false));
+      } catch { queueMicrotask(() => done(false)); }
+    },
+    open_tab(path) { try { chrome.tabs.create({ url: chrome.runtime.getURL(path) }).catch(() => {}); } catch {} },
     storage_set(key, json) { try { chrome.storage.local.set({ [key]: JSON.parse(json) }); } catch {} },
     extension_page() { return /^(chrome|moz)-extension:$/.test(location.protocol); },
     storage_watch(key) {

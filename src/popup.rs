@@ -18,7 +18,12 @@ struct Popup {
     counts: Option<Vec<u64>>,
     undo: bool,
     message: u32,
+    export: u32,
 }
+
+const EXPORT_QUERY: &str = "?file=export";
+const EXPORT_FILE: &str = "redline-settings.json";
+const EXPORT_SKIP: &str = "[]";
 
 pub fn active() -> bool { ACTIVE.with(Cell::get) }
 
@@ -26,6 +31,10 @@ fn with(f: impl FnOnce(&mut Popup)) { STATE.with(|s| { if let Ok(mut s) = s.try_
 
 pub fn boot() {
     ACTIVE.with(|a| a.set(true));
+    // The export's own tab: a toolbar popup closes when a save dialog takes the focus, and its download with it.
+    if bridge::href().contains(EXPORT_QUERY) {
+        return bridge::doc(&export_page());
+    }
     bridge::doc(&html());
     bridge::storage_watch(config::STORAGE_KEY);
     with(|s| s.read());
@@ -64,6 +73,16 @@ pub fn on_click(act: &str, arg: &str, keyboard: bool) -> bool {
     bridge::root_attr("data-ytc-popup-input", Some(if keyboard { "keyboard" } else { "pointer" }.into()));
     if act == "popup-undo" {
         message("sponsor-undo");
+        return true;
+    }
+    if act == "popup-export" {
+        bridge::open_tab(&format!("popup.html{EXPORT_QUERY}"));
+        return true;
+    }
+    if act == "popup-export-save" {
+        let id = next_id();
+        with(|s| s.export = id);
+        bridge::storage_export(id, EXPORT_FILE, EXPORT_SKIP);
         return true;
     }
     let mut handled = false;
@@ -109,6 +128,9 @@ pub fn on_storage_change(key: &str, raw: &str) {
 }
 
 pub fn on_store_result(id: u32, ok: bool) {
+    if with_export(id) {
+        return bridge::text("popup-status", if ok { "Saved to your downloads. Keep it private." } else { "Couldn’t read the settings. Try again." });
+    }
     with(|s| {
         let Some((pending_id, patch)) = s.writing else { return };
         if id != pending_id { return; }
@@ -147,6 +169,17 @@ pub fn on_timer(id: u32) {
     }
 }
 
+fn with_export(id: u32) -> bool {
+    let mut mine = false;
+    with(|s| mine = s.export == id);
+    mine
+}
+
+fn export_page() -> String {
+    let name = crate::render::NAME;
+    format!(r#"<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Export all settings</title><link rel="stylesheet" href="client.css"><link rel="stylesheet" href="popup.css"></head><body id="ytc" class="popup popup-file"><main id="ytc-popup" data-ready="true"><header>{mark}<span>{name}</span></header><h1>Export all settings</h1><p class="popup-note">One file with everything {name} keeps in this browser: preferences, searches, resume positions, topics, blocked websites and filters.</p><p class="popup-note"><b>It also holds your Deepgram key, if you saved one.</b> Keep the file private, and delete it once you have imported it.</p><button type="button" id="popup-export-save" data-act="popup-export-save">Save file</button><p id="popup-status" role="status" aria-live="polite"></p></main></body>"#, mark = crate::render::POPUP_MARK)
+}
+
 fn html() -> String {
     let name = crate::render::NAME;
     let mut s = format!(r#"<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{name}</title><link rel="stylesheet" href="client.css"><link rel="stylesheet" href="popup.css"></head><body id="ytc" class="popup"><main id="ytc-popup"><header>{mark}<span>{name}</span></header>"#, mark = crate::render::POPUP_MARK);
@@ -155,6 +188,6 @@ fn html() -> String {
         let key = c.key();
         s.push_str(&format!(r#"<button type="button" id="popup-cat-{key}" data-act="sponsor-category" data-arg="{key}" aria-pressed="false"><i aria-hidden="true"><svg viewBox="0 0 16 16"><path d="m3 8 3 3 7-7"/></svg></i><span>{}</span><small id="popup-cat-{key}-count"></small></button>"#, c.label()));
     }
-    s.push_str(r#"</div></details><button type="button" id="popup-undo" data-act="popup-undo" data-visible="false">Undo last skip</button><p class="popup-source">Segment data from SponsorBlock</p></section><p id="popup-status" role="status" aria-live="polite"></p></main></body>"#);
+    s.push_str(r#"</div></details><button type="button" id="popup-undo" data-act="popup-undo" data-visible="false">Undo last skip</button><p class="popup-source">Segment data from SponsorBlock</p></section><button type="button" id="popup-export" data-act="popup-export">Export all settings</button><p id="popup-status" role="status" aria-live="polite"></p></main></body>"#);
     s
 }
