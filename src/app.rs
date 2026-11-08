@@ -1108,6 +1108,7 @@ impl App {
         }
         self.route = route;
         self.url = url;
+        self.tv_navigated(mode == Mode::Pop);
         if matches!(self.route, Route::Watch { .. }) {
             crate::ready::taint();
         }
@@ -1808,11 +1809,15 @@ impl App {
     }
 
     pub fn on_click(&mut self, href: &str, act: &str, arg: &str, mods: u32) -> bool {
-        // Bit 32 = keyboard activation (not a modifier).
+        // Bit 32 = keyboard activation, 64 = by a held key's auto-repeat (not modifiers).
         let kbd = mods & 32 != 0;
         self.last_input = bridge::now();
-        if mods & !32 != 0 {
+        if mods & !(32 | 64) != 0 {
             return false;
+        }
+        // TV: holding OK is one press (it never unsubscribes past the question, or opens what the page it opened focuses).
+        if mods & 64 != 0 && crate::tv::on() && !crate::tv::repeats(act, arg) {
+            return true;
         }
         crate::telemetry::input(if kbd { "keyboard" } else { "pointer" });
         if act.starts_with("tv-kb-") {
@@ -1916,7 +1921,7 @@ impl App {
             r => r.url(),
         };
         self.mo_click(kbd, &route);
-        self.tv_channel_opened(&route, &url);
+        self.tv_channel_opened(&route);
         self.navigate(route, url, Mode::Push);
         self.mo_flush();
         true
@@ -3029,6 +3034,7 @@ impl App {
     fn mount_player(&mut self, v: &str, t: u32, list: Option<String>) {
         self.clear_failed();
         let retry = self.retry_start.take();
+        let returned = self.tv.returned.take();
         if self.cfg_ready && !self.cfg.own_player {
             if let Some(id) = retry.and_then(|r| r.frame) {
                 bridge::held_drop(&id);
@@ -3038,6 +3044,8 @@ impl App {
         }
         let start = match &retry {
             Some(r) if r.t > 0.0 => r.t,
+            // TV: back from the channel opened from this video: where it was left, not the URL's `t`.
+            _ if returned.is_some() => returned.map_or(0.0, |r| r.0),
             _ if t > 0 => t as f64,
             _ => self.fx_resume(v).or_else(|| self.resume.get(v).copied()).unwrap_or(0.0),
         };
@@ -3045,7 +3053,7 @@ impl App {
         p.list = list;
         let (carry, frame) = retry.map_or((Default::default(), None), |r| (r.carry, r.frame));
         p.take_over(carry);
-        p.start_paused |= self.stale_paused(v);
+        p.start_paused |= self.stale_paused(v) || returned.is_some_and(|r| r.1);
         // Every route met the bot check a moment ago: try the remembered route only (no
         // parallel recovery); blocked again → the panel, whose Try again recovers fully.
         p.no_recover = self.vision_block_until > bridge::now();

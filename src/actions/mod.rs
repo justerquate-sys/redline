@@ -55,6 +55,8 @@ const MSG_OUT_MS: u32 = 200;
 /// "Copied" stays this long, then the Copy label morphs back.
 const COPIED_MS: u32 = 1800;
 const CONFIRM_MS: u32 = 3000;
+/// TV: a press this soon after "Unsubscribe?" was shown cannot have read it.
+const TV_CONFIRM_QUIET_MS: f64 = 400.0;
 /// Comments start observing their sentinel when the main thread is idle (so
 /// they never compete with the player's first requests).
 const COMMENTS_IDLE_MS: u32 = 1500;
@@ -221,6 +223,7 @@ pub struct Actions {
     likes: HashMap<String, Toggle<Like>>,
     subs: HashMap<String, Toggle<bool>>,
     confirm: u32,
+    confirm_at: f64,
     share_open: bool,
     share_t: bool,
     share_at: u32,
@@ -457,6 +460,9 @@ impl Actions {
         self.render_watch_slots();
         self.save_probe();
         self.tv_state_probe();
+        if self.tv_save {
+            self.tv_save_paint();
+        }
         // `#ytc-comments` survives an info re-render of the same video.
         if self.cm.as_ref().is_none_or(|c| c.v != v) {
             self.start_comments();
@@ -613,6 +619,12 @@ impl Actions {
     /// later row follows the player's Watch later action, which may have changed since.
     pub fn tv_save_open(&mut self, net: &Net) {
         self.tv_save = true;
+        self.save_err = None;
+        // Pressed before the page's data came: it waits as Loading, the page's quiet check fills it (`on_watch`).
+        if self.v.is_empty() {
+            self.tv_save_paint();
+            return;
+        }
         let v = self.v.clone();
         let wl = crate::features::shared(|s| s.saves.probed.contains_key(&v).then(|| s.saves.get(&v) == crate::features::watch_later::State::Saved));
         if let (Some(on), Some(l)) = (wl, self.list_mut(&v)) {
@@ -622,7 +634,6 @@ impl Actions {
         }
         if self.save_rows().is_none() && !self.save_loading {
             self.save_loading = true;
-            self.save_err = None;
             self.post(net, req::playlists(&v), Job::Playlists { v, probe: false });
         }
         self.tv_save_paint();
@@ -663,6 +674,8 @@ impl Actions {
         if crate::tv::on() {
             bridge::attr(crate::player::ui::TVLK, "aria-pressed", if l == Like::Like { "true" } else { "false" });
             bridge::attr(crate::player::ui::TVDL, "aria-pressed", if l == Like::Dislike { "true" } else { "false" });
+            bridge::text(crate::player::ui::TVLK_L, if l == Like::Like { "Liked" } else { "Like" });
+            bridge::text(crate::player::ui::TVDL_L, if l == Like::Dislike { "Disliked" } else { "Dislike" });
         }
     }
 
@@ -1048,11 +1061,15 @@ impl Actions {
                     return Click::Handled;
                 }
                 self.tv_changed(&ch);
+                if crate::tv::on() && self.confirm != 0 && bridge::now() - self.confirm_at < TV_CONFIRM_QUIET_MS {
+                    return Click::Handled;
+                }
                 let Some(t) = self.subs.get_mut(&ch) else { return Click::Handled };
                 if t.shown() && self.confirm == 0 {
                     // Unsubscribing is deliberate: a second click confirms.
                     let g = self.next_gen();
                     self.confirm = g;
+                    self.confirm_at = bridge::now();
                     self.timer(Tm::Confirm(g), CONFIRM_MS);
                 } else {
                     self.confirm = 0;
@@ -1477,7 +1494,7 @@ impl Actions {
             Job::Playlists { v, probe } => {
                 self.save_loading = false;
                 // (TV: the panel opened while the quiet check was out: it waits for this answer and reports it.)
-                let probe = probe && !self.tv_save;
+                let probe = probe && !(self.tv_save && v == self.v);
                 match res.map(|j| save::parse(&j)) {
                     Ok(Some(list)) => {
                         self.lists.retain(|(k, _)| *k != v);
@@ -1512,6 +1529,13 @@ impl Actions {
                 }
                 if v == self.v && self.tv_save {
                     self.tv_save_paint();
+                }
+                // (The panel opened on this video while the answer for another was out: now its own list.)
+                if self.tv_save && v != self.v && !self.v.is_empty() && !self.save_loading && self.save_rows().is_none() {
+                    self.save_loading = true;
+                    self.save_err = None;
+                    let cur = self.v.clone();
+                    self.post(net, req::playlists(&cur), Job::Playlists { v: cur, probe: false });
                 }
             }
             Job::Edit { v, pl } => {

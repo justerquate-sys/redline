@@ -65,7 +65,7 @@ const HEAD_EXTRA: u64 = 128 * 1024;
 const PRE_EXTRA: u64 = 1024 * 1024;
 
 /// The video and audio formats a player would start this response with.
-fn plan(body: &[u8], prefs: &Prefs, bw: Option<f64>) -> Option<(Format, Format)> {
+fn plan(v: &str, body: &[u8], prefs: &Prefs, bw: Option<f64>) -> Option<(Format, Format)> {
     let json = json::parse(body)?;
     let fmts = formats::parse(&json);
     if json.pointer("/videoDetails/isLive").and_then(json::Value::as_bool) == Some(true) || !fmts.iter().any(|f| f.video && f.index_end > 0) {
@@ -85,7 +85,9 @@ fn plan(body: &[u8], prefs: &Prefs, bw: Option<f64>) -> Option<(Format, Format)>
     let known = |i: u32| caps.get(&i).copied();
     let screen = formats::caps_for_screen(&fmts, bridge::matches("(dynamic-range: high)"), &known);
     let ladder = formats::ladder_with(&fmts, &codecs, &ok, &screen);
-    let audio = formats::audio(&fmts, &ok)?.clone();
+    // (TV: the track it will really start on, not the default one it would then throw away.)
+    let tv = crate::tv::on().then(|| formats::tv_audio(&fmts, &formats::chosen_audio(v).unwrap_or_default(), &prefs.audio_lang, &ok)).flatten();
+    let audio = tv.or_else(|| formats::audio(&fmts, &ok))?.clone();
     let i = if prefs.quality > 0 {
         formats::pick(&ladder, prefs.quality)?
     } else {
@@ -107,7 +109,7 @@ pub fn prefetch_media(v: &str, body: &[u8], prefs: &Prefs, bw: Option<f64>, star
     if PRE.with(|p| p.borrow().iter().any(|e| e.v == v)) {
         return false;
     }
-    let Some((video, audio)) = plan(body, prefs, bw) else { return false };
+    let Some((video, audio)) = plan(v, body, prefs, bw) else { return false };
     pre_cancel(&[v]);
     let now = bridge::now();
     PRE.with(|p| {

@@ -64,7 +64,9 @@ const YTC = (() => {
       if (!el) return;
       clicked = el; // click_rect: the source of a shared-element morph
       // 32: keyboard activation (Enter/Space on a focused control: click with detail 0 and no pointer position).
-      const mods = (e.ctrlKey ? 1 : 0) | (e.metaKey ? 2 : 0) | (e.shiftKey ? 4 : 0) | (e.altKey ? 8 : 0) | (el.target === '_blank' ? 16 : 0) | (e.detail === 0 && !e.clientX && !e.clientY ? 32 : 0);
+      // 64: and that key is being held (an auto-repeat activated it, not a press).
+      const kbd = e.detail === 0 && !e.clientX && !e.clientY;
+      const mods = (e.ctrlKey ? 1 : 0) | (e.metaKey ? 2 : 0) | (e.shiftKey ? 4 : 0) | (e.altKey ? 8 : 0) | (el.target === '_blank' ? 16 : 0) | (kbd ? 32 : 0) | (kbd && held ? 64 : 0);
       if (call('on_click', el.getAttribute('href') || '', el.dataset.act || '', el.dataset.arg || '', mods)) e.preventDefault();
     });
     d.addEventListener('submit', e => {
@@ -515,6 +517,7 @@ const YTC = (() => {
     frame(id) { requestAnimationFrame(() => setTimeout(() => call('on_timer', id), 0)); },
     title(t) { d.title = t; },
     push(url) { history.pushState(null, '', url); },
+    history_back() { history.back(); },
     replace(url) { history.replaceState(null, '', url); },
     scroll_y: () => scrollY,
     scroll_to(y) { scrollTo(0, y); },

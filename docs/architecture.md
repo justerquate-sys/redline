@@ -1146,28 +1146,35 @@ focus while open and restores it to its originating player button on close. Navi
 the watch snapshot is saved, preventing stale overlays on another page. Desktop markup and behavior are preserved.
 
 The player row (`ui::shell_tv`) also carries what the official TV app has. **Channel** (`render::tv_channel`) is a plain
-link: a channel page opened from a video (`Tv::from_watch`) is left by one Back (`on_back` lets the shell go back instead
-of focusing the rail), and the video comes back through the usual Pop path at its position. **Subscribe** shares
+link: the history entry of a channel page opened from a video is left by one Back (`tv::History`, a mirror of the tab's
+history kept entry by entry: `on_back` lets the shell go back instead of focusing the rail; the same channel reached another
+way is another entry), and the video comes back through the usual Pop path as it was left (`Tv::left`: its position, over
+the URL's `t`, and whether it was paused). A held OK is one press: the bridge marks a click activated by a key's
+auto-repeat (`on_click` bit 64) and on TV only typing and the exact-speed steps take it (`tv::repeats`); a press within 400 ms
+of "Unsubscribe?" does not confirm it. **Subscribe** shares
 `Actions::subs`, the confirming second press and the rollback with the desktop button: `tv_row_sub` in the row,
 `tv_channel` on the channel page (`#ytc-chsub`; it points `acts` at that channel, the channel id coming from the route or
 `App::channels`), the More info button. **Audio** is its own menu (`ui::audio_menu`, `p-menu audio`); on TV the Captions
-menu never has tabs. `set_audio` writes the language (`p.al`, the id's tag: `en-US.4` → `en-US`) and, per video in
-memory, the track (`formats::remember_audio`). `build_ladder` then picks: the track chosen for this video
+menu never has tabs. `set_audio` writes, per video in memory, the track (`formats::remember_audio`) and, for a dub, its language (`p.al`,
+the id's tag: `en-US.4` → `en-US`); choosing a video's original clears `p.al`, because it means "no dubs": a language
+remembered from it would dub the next video that has another original. `build_ladder` then picks: the track chosen for this video
 (`audio_sel`, also what `own::Carry` hands a new player), else the remembered language where the video has it
 (`formats::track_for_lang`: the exact tag, else the same language), else YouTube's default; no locale guess, nothing
-replaces a choice made for a video. **Auto-translate**: `captions::list_tv` adds, after the video's tracks, the
+replaces a choice made for a video. The focus prefetch (`own/pre.rs`) asks for the same track. **Auto-translate**: `captions::list_tv` adds, after the video's tracks, the
 languages from YouTube's `translationLanguages` that have no track: the device's, Russian, English, then common ones, 8
 at most, each `&tlang=` on the spoken language's track. A choice there is remembered (`p.cl`) and found again
 (`prefer_lang`); choosing one of the video's own tracks clears it. **Dislike** shares `Actions::likes` with Like (one
 state, so they exclude each other). **Save** is a panel (`#ytc-tvsave`) (`save::tv_inner`) with, the same `a-pl` clicks and
 `Toggle`s as the desktop chooser, without its new-playlist form. **Next/Previous**: `tv_next` is the playlist's next, YouTube's
-autoplay target whatever the Autoplay switch says, else the first related video; `tv_prev` walks `Tv::trail`, this
-session's videos, or restarts the video when there is none.
+autoplay target whatever the Autoplay switch says, else the first related video; `tv_prev` is the playlist's previous
+(`upnext::prev`), else walks `Tv::trail`, this session's videos, or restarts the video when there is none. When that video
+is right behind in the history Previous is `history.back()`: otherwise Home → A → Next → B → Previous → A would leave Back
+going to B, the video just left, and only then to A. Anything else opens as a new entry.
 
 Every TV account action uses the desktop's request path (`actions::post` → `tv::finish`: `TVHTML5` with the bearer). The
 anonymous watch and channel pages cannot tell the account's rating or subscription, so a quiet request as the account asks once
-(`Job::TvState`, `actions::watch::account_state`, read loosely); it never overrides a change made on this device
-(`tv_changed`). A refused action rolls back and writes the reason into `#ytc-tvnote`, the only part of `say` that can be
+(`Job::TvState`, `actions::watch::account_state`, read loosely: a subscription counts only when it names this channel, else
+it stays unknown); it never overrides a change made on this device (`tv_changed`). A refused action rolls back and writes the reason into `#ytc-tvnote`, the only part of `say` that can be
 seen with no panel open; the Save panel uses its own line.
 
 `decoder_watch` used to skip when the end of stream had been signalled, so a fully buffered short video whose playhead froze

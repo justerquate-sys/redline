@@ -327,6 +327,21 @@ pub fn track_for_lang<'a>(tracks: &'a [(String, String)], lang: &str) -> Option<
     tracks.iter().find(|(id, _)| track_lang(id).eq_ignore_ascii_case(lang)).or_else(|| tracks.iter().find(|(id, _)| primary(track_lang(id)).eq_ignore_ascii_case(want))).map(|(id, _)| id.as_str())
 }
 
+/// TV: what choosing track `id` leaves remembered for the next videos: a dub's language; nothing for an original.
+pub fn remembered_lang(id: &str, dub: bool) -> String {
+    if dub { track_lang(id).chars().take(16).collect() } else { String::new() }
+}
+
+/// TV: the track this video starts on instead of YouTube's default: the one chosen for it (`sel`), else the remembered
+/// language where the video has it.
+pub fn tv_audio<'a>(formats: &'a [Format], sel: &str, lang: &str, supported: &dyn Fn(&str) -> bool) -> Option<&'a Format> {
+    let chosen = if sel.is_empty() { None } else { audio_in(formats, sel, supported) };
+    chosen.or_else(|| {
+        let tracks = audio_tracks(formats, supported);
+        track_for_lang(&tracks, lang).and_then(|id| audio_in(formats, id, supported))
+    })
+}
+
 thread_local! {
     /// TV: a track picked on one video stays that video's for this session, whatever is chosen on others.
     static AUDIO_CHOSEN: std::cell::RefCell<std::collections::VecDeque<(String, String)>> = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
@@ -513,6 +528,8 @@ mod tests {
         let t = |ids: &[&str]| ids.iter().map(|i| (i.to_string(), i.to_string())).collect::<Vec<_>>();
         let dub = t(&["ru.3", "de-DE.3", "en-US.4"]);
         assert_eq!(track_lang("en-US.4"), "en-US");
+        assert_eq!(remembered_lang("fr-FR.3", true), "fr-FR", "a dub's language is remembered");
+        assert_eq!(remembered_lang("en-US.4", false), "", "an original clears it");
         assert_eq!(track_for_lang(&dub, "ru"), Some("ru.3"));
         assert_eq!(track_for_lang(&dub, "en-US"), Some("en-US.4"));
         assert_eq!(track_for_lang(&dub, "en-GB"), Some("en-US.4"), "the same language");

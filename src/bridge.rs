@@ -244,6 +244,8 @@ extern "C" {
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn push(url: &str);
     #[wasm_bindgen(js_namespace = YTC)]
+    pub fn history_back();
+    #[wasm_bindgen(js_namespace = YTC)]
     pub fn replace(url: &str);
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn scroll_y() -> f64;

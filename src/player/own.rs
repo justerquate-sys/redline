@@ -1409,18 +1409,17 @@ impl Own {
             }
         }
         let usable: Vec<Format> = self.formats.iter().filter(|f| !bad.contains(&f.itag)).cloned().collect();
-        let tv = crate::tv::on();
-        let tracks = if tv { formats::audio_tracks(&usable, &ok) } else { Vec::new() };
-        // TV: a track picked on this video earlier in the session counts as picked now.
-        if tv && self.audio_sel.is_empty() {
-            self.audio_sel = formats::chosen_audio(&self.v).unwrap_or_default();
-        }
-        let chosen = (!self.audio_sel.is_empty()).then(|| formats::audio_in(&usable, &self.audio_sel, &ok)).flatten();
-        // TV: the language chosen last, where this video has it. Never over a choice made for this video.
-        let remembered = if tv && chosen.is_none() { formats::track_for_lang(&tracks, &self.prefs.audio_lang).and_then(|id| formats::audio_in(&usable, id, &ok)) } else { None };
-        self.audio = chosen.or(remembered).or_else(|| formats::audio(&usable, &ok)).cloned();
-        if tv {
-            bridge::class_all(&format!("#{}", ui::AUB), "on", tracks.len() > 1);
+        if crate::tv::on() {
+            // A track picked on this video earlier in the session counts as picked now; else the language chosen
+            // last, where this video has it. Never over a choice made for this video.
+            if self.audio_sel.is_empty() {
+                self.audio_sel = formats::chosen_audio(&self.v).unwrap_or_default();
+            }
+            self.audio = formats::tv_audio(&usable, &self.audio_sel, &self.prefs.audio_lang, &ok).or_else(|| formats::audio(&usable, &ok)).cloned();
+            bridge::class_all(&format!("#{}", ui::AUB), "on", formats::audio_tracks(&usable, &ok).len() > 1);
+        } else {
+            let chosen = (!self.audio_sel.is_empty()).then(|| formats::audio_in(&usable, &self.audio_sel, &ok)).flatten();
+            self.audio = chosen.or_else(|| formats::audio(&usable, &ok)).cloned();
         }
     }
 
@@ -4459,12 +4458,13 @@ impl Own {
     /// track, so the representation is fetched again and cut in now.
     fn set_audio(&mut self, id: &str) {
         let Some(f) = formats::audio_in(&self.formats, id, &|m: &str| bridge::mse_ok(m)).cloned() else { return };
-        // TV: the choice is remembered, also when it is the track already playing: this video keeps it and the next
-        // one with this language plays it.
+        // TV: the choice stays this video's, also when it is the track already playing. A dub's language is remembered
+        // for the next videos; a video's original means "no dubs", so it clears that (the next video plays its own
+        // original, whatever language that is).
         if crate::tv::on() {
             self.audio_sel = id.to_string();
             formats::remember_audio(&self.v, id);
-            self.prefs.audio_lang = formats::track_lang(id).chars().take(16).collect();
+            self.prefs.audio_lang = formats::remembered_lang(id, f.alt_audio);
             self.out.push(Out::Prefs(self.prefs.clone()));
         }
         if self.audio.as_ref().is_some_and(|a| a.itag == f.itag && a.audio_id == f.audio_id) {

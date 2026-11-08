@@ -17,7 +17,7 @@ use crate::bridge;
 use crate::render::MAIN;
 use crate::route::Route;
 use crate::tv::{self, DeviceCode, Dir, Poll};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Focus stops for the remote (visible ones only; the bridge filters by visibility).
 const SEL: &str = "a[href]:not([tabindex='-1']),button:not([disabled]):not([tabindex='-1']),input:not([type=hidden]):not([tabindex='-1']),select,textarea,[tabindex='0']";
@@ -127,8 +127,14 @@ pub(super) struct Tv {
     /// The link last opened from each page (page URL → href): coming back focuses it again, as
     /// YouTube's TV app does.
     opened: HashMap<String, String>,
-    /// Channel pages opened from a video: Back returns to the video at once (not the rail first).
-    from_watch: HashSet<String>,
+    /// The tab's history, entry by entry: a channel page opened from a video is left by one Back; what lies behind.
+    history: tv::History,
+    /// The next entry is a channel page opened from a video.
+    next_from_watch: bool,
+    /// Videos a channel page was opened from: (position, paused) as they were left, used when Back returns (bounded).
+    left: HashMap<String, (f64, bool)>,
+    /// Back just returned to such a video: the player being mounted takes them.
+    pub(super) returned: Option<(f64, bool)>,
     /// The videos of this session, oldest first (the remote's Previous; bounded).
     trail: Vec<Route>,
     /// Scrub run: generation (a newer press ends the older rest timer), last press, presses held.
@@ -196,6 +202,7 @@ impl App {
             return;
         }
         bridge::back_hook();
+        self.tv.history.push(&self.url, false);
         bridge::append("ytc", &format!("<div id=\"{SIGN}\" class=\"tvs\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Sign in\"></div><aside id=\"{INFO}\" class=\"tvi\" role=\"dialog\" aria-modal=\"true\" aria-label=\"More info\"></aside><aside id=\"{}\" class=\"tvi\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Save to playlist\"><header class=\"tvih\"><button type=\"button\" class=\"tvb tvx\" data-act=\"tv-save-close\">Back to video</button></header><div id=\"{}\" class=\"tvib\"></div></aside><div id=\"{}\" class=\"tvnote\" role=\"status\"></div>", crate::actions::TV_SAVE, crate::actions::TV_SAVE_BODY, crate::actions::TV_NOTE));
         self.tv_slot();
         self.tv_ask_token(self.tv.hold);
@@ -781,16 +788,33 @@ impl App {
         }))
     }
 
-    /// The remote's Previous: the previous video of this session, else this one from the start.
+    /// The remote's Previous: the playlist's previous item, else the previous video of this session, else this one from
+    /// the start. A video right behind this entry is a step back through the history (as if Next was never pressed: Back
+    /// then leaves as it would have), anything else opens as a new entry.
     fn tv_prev(&mut self) {
-        match tv::trail_back(&mut self.tv.trail) {
+        self.up_cancel();
+        let listed = match (&self.route, self.cur_watch()) {
+            (Route::Watch { v, .. }, Some(w)) => crate::features::upnext::prev(&w.up, v),
+            _ => None,
+        };
+        let target = match listed {
+            Some(n) => {
+                // (Walking a playlist backward, this video is no longer on the way back.)
+                self.tv.trail.pop();
+                Some(Route::Watch { v: n.v, t: 0, list: n.list })
+            }
+            None => tv::trail_back(&mut self.tv.trail),
+        };
+        match target {
             Some(r) => {
-                self.up_cancel();
-                let url = r.url();
-                self.navigate(r, url, super::Mode::Push);
+                if self.tv.history.behind().and_then(crate::route::parse).as_ref() == Some(&r) {
+                    bridge::history_back();
+                } else {
+                    let url = r.url();
+                    self.navigate(r, url, super::Mode::Push);
+                }
             }
             None => {
-                self.up_cancel();
                 if let Some(p) = self.player.as_mut() {
                     p.input(true);
                     p.seek_to(0.0);
@@ -801,13 +825,31 @@ impl App {
         }
     }
 
-    /// A channel page opened from a video is one step away from it (`on_back`).
-    pub(super) fn tv_channel_opened(&mut self, route: &Route, url: &str) {
+    /// A channel page opened from a video is one step away from it (`on_back`), and the video comes back as it was left.
+    pub(super) fn tv_channel_opened(&mut self, route: &Route) {
         if tv::on() && matches!(route, Route::Channel { .. }) && matches!(self.route, Route::Watch { .. }) {
-            if self.tv.from_watch.len() > 64 {
-                self.tv.from_watch.clear();
+            self.tv.next_from_watch = true;
+            if let Some(p) = self.player.as_ref() {
+                if self.tv.left.len() > 64 {
+                    self.tv.left.clear();
+                }
+                self.tv.left.insert(self.url.clone(), (p.resume_at(), p.paused()));
             }
-            self.tv.from_watch.insert(url.to_string());
+        }
+    }
+
+    /// A navigation took place (`self.url` is the new page): the history mirror, and what a video returned to takes back.
+    pub(super) fn tv_navigated(&mut self, pop: bool) {
+        if !tv::on() {
+            return;
+        }
+        let from_watch = std::mem::take(&mut self.tv.next_from_watch);
+        self.tv.returned = None;
+        if pop {
+            self.tv.history.pop(&self.url);
+            self.tv.returned = self.tv.left.remove(&self.url);
+        } else {
+            self.tv.history.push(&self.url, from_watch);
         }
     }
 
@@ -975,7 +1017,7 @@ impl App {
             return 0;
         }
         // A channel page opened from a video: Back is the way back to it.
-        if self.tv.from_watch.contains(&self.url) && !bridge::any("#ytc-side :focus") {
+        if self.tv.history.from_watch() && !bridge::any("#ytc-side :focus") {
             return 0;
         }
         if !bridge::any("#ytc-side :focus") {
@@ -1025,6 +1067,8 @@ impl App {
                 return Some(false);
             }
             match r {
+                // (Not from under the search screen: what is being typed stays.)
+                tv::Remote::Next | tv::Remote::Prev if self.tv_search_on() => return Some(true),
                 tv::Remote::Next => {
                     self.tv_next();
                     return Some(true);

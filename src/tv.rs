@@ -272,6 +272,58 @@ pub fn remote_player_key(r: Remote, paused: bool) -> Option<&'static str> {
     }
 }
 
+/// A held OK repeats only what is meant to repeat: typing and deleting, and stepping the exact speed. Everything else
+/// is one press, however long the key stays down.
+pub fn repeats(act: &str, arg: &str) -> bool {
+    matches!(act, "tv-kb-key" | "tv-kb-delete") || (act == "p-set" && matches!(arg, "rate:+" | "rate:-"))
+}
+
+/// What the app knows of the tab's history, entry by entry (the browser does not say which entry a Back landed on):
+/// which channel page was opened from a video, and what lies right behind this entry. Starts over with a page load. A
+/// TV has no Forward key, so a Pop that matches nothing is a step back.
+#[derive(Default)]
+pub struct History {
+    entries: Vec<(String, bool)>,
+    at: usize,
+}
+
+impl History {
+    const MAX: usize = 200;
+
+    pub fn push(&mut self, url: &str, from_watch: bool) {
+        self.entries.truncate(if self.entries.is_empty() { 0 } else { self.at + 1 });
+        self.entries.push((url.to_string(), from_watch));
+        if self.entries.len() > Self::MAX {
+            self.entries.remove(0);
+        }
+        self.at = self.entries.len() - 1;
+    }
+
+    pub fn pop(&mut self, url: &str) {
+        let at = |i: usize| self.entries.get(i).is_some_and(|e| e.0 == url);
+        if self.at > 0 && at(self.at - 1) {
+            self.at -= 1;
+        } else if at(self.at + 1) {
+            self.at += 1;
+        } else if self.at > 0 {
+            self.at -= 1;
+        } else {
+            // Further back than this page load knows.
+            self.entries = vec![(url.to_string(), false)];
+        }
+    }
+
+    /// This entry is a channel page opened from a video.
+    pub fn from_watch(&self) -> bool {
+        self.entries.get(self.at).is_some_and(|e| e.1)
+    }
+
+    /// The URL right behind this entry.
+    pub fn behind(&self) -> Option<&str> {
+        self.at.checked_sub(1).and_then(|i| self.entries.get(i)).map(|e| e.0.as_str())
+    }
+}
+
 /// The session's trail of videos: a video opened goes on the end (not twice in a row, bounded).
 pub fn trail_push<T: PartialEq>(trail: &mut Vec<T>, r: T, max: usize) {
     if trail.last() != Some(&r) {
@@ -613,7 +665,56 @@ pub const DEV_TAPS: u32 = 5;
 
 #[cfg(test)]
 mod tests {
-    use super::{trail_back, trail_push};
+    use super::{History, repeats, trail_back, trail_push};
+
+    #[test]
+    fn held_keys_repeat_only_what_should() {
+        for (a, arg) in [("tv-kb-key", "a"), ("tv-kb-delete", ""), ("p-set", "rate:+"), ("p-set", "rate:-")] {
+            assert!(repeats(a, arg), "{a}");
+        }
+        for (a, arg) in [("a-sub", ""), ("a-like", ""), ("a-dislike", ""), ("a-pl", "0"), ("fx-wl", "x"), ("", ""), ("tv-kb-search", ""), ("tv-kb-layout", ""), ("p-set", "au:ru.3"), ("p-toggle", ""), ("tv-save", "")] {
+            assert!(!repeats(a, arg), "{a}");
+        }
+    }
+
+    #[test]
+    fn the_history_mirror_knows_entries_not_urls() {
+        let mut h = History::default();
+        h.push("/watch?v=a", false);
+        h.push("/@x", true);
+        assert!(h.from_watch());
+        assert_eq!(h.behind(), Some("/watch?v=a"));
+        h.pop("/watch?v=a");
+        assert!(!h.from_watch());
+        assert_eq!(h.behind(), None);
+        // The same channel by another way: its own entry, not the one opened from the video.
+        h.push("/", false);
+        h.push("/@x", false);
+        assert!(!h.from_watch(), "the URL alone means nothing");
+        h.pop("/");
+        h.pop("/watch?v=a");
+        h.push("/@x", true);
+        h.push("/watch?v=b", false);
+        h.pop("/@x");
+        assert!(h.from_watch(), "back on that entry, it still is");
+        h.pop("/watch?v=a");
+        h.pop("/watch?v=old");
+        assert_eq!((h.behind(), h.from_watch()), (None, false), "further back than this load knows");
+        // A Pop that matches nothing (a URL YouTube rewrote) is a step back; a forward one is recognised.
+        let mut h = History::default();
+        for u in ["/1", "/2", "/3"] {
+            h.push(u, false);
+        }
+        h.pop("/rewritten");
+        assert_eq!(h.behind(), Some("/1"));
+        h.pop("/3");
+        assert_eq!(h.behind(), Some("/2"), "forward");
+        for i in 0..250 {
+            h.push(&format!("/n{i}"), false);
+        }
+        assert_eq!(h.behind(), Some("/n248"));
+        assert_eq!(h.entries.len(), History::MAX, "bounded");
+    }
 
     #[test]
     fn previous_walks_the_sessions_videos() {

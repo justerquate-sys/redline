@@ -54,18 +54,20 @@ A video
 plays full screen at once; any key shows the controls (they hide 4 s after the last key while playing): ←/→ on the
 bar seek 10 s (faster while held, with the storyboard frame), OK plays/pauses, ↓ goes to the buttons, on play/pause,
 and once more to Up next. The buttons, one row with a visible label for the focused one: Channel (← from play/pause:
-OK opens its page, one Back returns to the video at its position), Subscribe (signed in; OK again asks "Unsubscribe?"
+OK opens its page, one Back returns to the video as it was left, at its position, paused if it was), Subscribe (signed in; OK again asks "Unsubscribe?"
 first), play/pause, Captions (its Auto-translate section: the device's language, Russian, English and a few more;
 a language chosen there stays for the next videos), Audio (only when the video has several tracks: YouTube's names,
-the current one marked; the language chosen plays by itself on the next video that has it), speed, quality, and when
-signed in Like, Dislike, Watch later, Save (a panel of your playlists, OK checks one), then Comments and More info.
+the current one marked; a dub's language plays by itself on the next video that has it, choosing a video's original
+ends that), speed, quality, and when signed in Like, Dislike, Watch later, Save (a panel of your playlists, OK checks
+one), then Comments and More info. Holding OK is one press, except on the keyboard's letters and Delete.
 Comments opens a readable side panel with Top/Newest, replies and more pages; it loads only
 when opened. More info includes the description, channel (the first ↑ from the description), Subscribe when signed in,
 and chapters when available. A channel's page has Subscribe under its header (↑ from the first row of cards; signed
 out it leads to Sign in). An action YouTube refuses goes back to what it was and says why, top right.
 Back or Back to video closes any panel and returns to its player control. Media keys (play/pause, rewind,
-fast-forward, Next: Up next's first, Previous: the video before this one in this session, else this one from the
-start) work everywhere on the watch page. The look is documented in [design/](design/README.md).
+fast-forward, Next: Up next's first, Previous: the playlist's previous item, else the video before this one in this
+session, else this one from the start; a video right behind in the history is a step back, so Back then leaves as if Next
+was never pressed) work everywhere on the watch page, not over the search screen. The look is documented in [design/](design/README.md).
 
 ## Updates
 

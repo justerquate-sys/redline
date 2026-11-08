@@ -53,7 +53,8 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
   channel's picture; subscribe; play/pause, where ↓ from the bar lands; captions; audio, only with several tracks; speed;
   quality; like; dislike; Watch later; save; comments; more info; the speed and quality pills as tall). All thirteen fit
   one row (about 1020 px of the 1800 px between the safe edges at 1080p, clear of the skip notice), so nothing hides behind a
-  More control. The focused action has a visible 19.5 px label below it, the row's first one from the safe edge. ←/→ on the bar scrub 10 s per press (30, 60, 120 s while held)
+  More control. The focused action has a visible 19.5 px label below it, the row's first one from the safe edge. Like and
+  Dislike while pressed are solid white with a filled thumb, focused or not, labelled Liked and Disliked. ←/→ on the bar scrub 10 s per press (30, 60, 120 s while held)
   with the storyboard frame above the target; the seek goes out once, when the remote rests. ↓ from the buttons
   moves the overlay up 10 rem immediately for the Up next row (11 rem cards, about six on screen). Menus, More info
   and Comments are panels from the right edge (18.5 / 25 / 28.5 rem: 444 / 600 / 684 px; 22.5 px text, 57 px menu
@@ -70,7 +71,8 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
   over the first card, so ↑ from the first row reaches it; solid white, neutral once subscribed), then the grid. The
   scrim ends above the first row as on every page; the first card keeps the default focus, so OK never subscribes by accident.
 - **Notice**: an account action YouTube refused says why top right over the page or picture (21 px, 28 rem at most,
-  on the safe edge, clear of a two-line title), for 6 s; inside a panel the panel's own line says it.
+  on the safe edge, clear of a two-line title), for 6 s; beside Comments, a menu or Save, never over their headers; More
+  info has its own line for it, and it stays off the search screen.
 - **Sign in / Account**: full screen: the steps on the left from the content edge (the URL the device flow
   returned, the code at 3.5 rem = 84 px), the QR code of that URL on a light 15 rem tile on the right, as far from the
   right edge as the steps are from the left (`src/qr.rs`), Back first and focused.

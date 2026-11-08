@@ -181,7 +181,8 @@ pub fn parse(v: &Value) -> Acts {
 /// TV: the rating and subscription an answer of the account's own client states, wherever it states them (`None`: it
 /// does not say). The watch and channel pages themselves are anonymous WEB calls on TV, so they cannot know these.
 /// Read loosely on purpose: the TV client's shapes are not those of WEB, and only a real sign-in shows them; a shape
-/// not recognised changes nothing.
+/// not recognised changes nothing. A subscription counts only when it names this channel (a page shows others too):
+/// a button with its id, or the page's owner linking to it.
 pub fn account_state(v: &Value, ch: Option<&str>) -> (Option<Like>, Option<bool>) {
     let (mut like, mut sub) = (None, None);
     super::walk(v, &mut |k, x| match k {
@@ -190,11 +191,11 @@ pub fn account_state(v: &Value, ch: Option<&str>) -> (Option<Like>, Option<bool>
         "toggleButtonRenderer" if like.is_none() && x.get("isToggled").and_then(Value::as_bool) == Some(true) => {
             like = find_all(x, "likeEndpoint").iter().find_map(|e| st(e, &["status"])).and_then(Like::from_status).filter(|l| *l != Like::None);
         }
-        "subscribeButtonRenderer" | "subscribeButtonViewModel" | "subscriptionButton" | "subscriptionStateEntity" if sub.is_none() => {
-            let other = st(x, &["channelId"]).is_some_and(|id| ch.is_some_and(|c| c != id));
-            if !other {
-                sub = x.get("subscribed").and_then(Value::as_bool);
-            }
+        "subscribeButtonRenderer" if sub.is_none() && st(x, &["channelId"]).is_some_and(|id| Some(id) == ch) => {
+            sub = x.get("subscribed").and_then(Value::as_bool);
+        }
+        "videoOwnerRenderer" if sub.is_none() && find(x, "browseEndpoint").and_then(|b| st(b, &["browseId"])).is_some_and(|id| Some(id) == ch) => {
+            sub = find(x, "subscriptionButton").and_then(|b| b.get("subscribed")).and_then(Value::as_bool);
         }
         _ => {}
     });
@@ -617,12 +618,23 @@ mod tests {
         // WEB's shapes (the fixture: signed out, not subscribed, no rating).
         assert_eq!(account_state(&fixture("next.json"), Some("UCaZO-66UcqyVT9btiqdDryA")), (Some(Like::None), Some(false)));
         // The shapes seen from TV clients, wherever they sit.
-        let j = crate::json::jv!({"contents": {"singleColumnWatchNextResults": {"results": [{"videoOwnerRenderer": {"subscriptionButton": {"subscribed": true}}}]}}, "transportControls": {"promotedActions": [
+        let j = crate::json::jv!({"contents": {"singleColumnWatchNextResults": {"results": [{"videoOwnerRenderer": {"navigationEndpoint": {"browseEndpoint": {"browseId": "UCabc"}}, "subscriptionButton": {"subscribed": true}}}]}}, "transportControls": {"promotedActions": [
             {"button": {"toggleButtonRenderer": {"isToggled": false, "defaultServiceEndpoint": {"likeEndpoint": {"status": "LIKE"}}}}},
             {"button": {"toggleButtonRenderer": {"isToggled": true, "defaultServiceEndpoint": {"likeEndpoint": {"status": "DISLIKE"}}, "toggledServiceEndpoint": {"likeEndpoint": {"status": "INDIFFERENT"}}}}}]}});
         assert_eq!(account_state(&j, ch), (Some(Like::Dislike), Some(true)));
         let j = crate::json::jv!({"a": [{"subscribeButtonRenderer": {"channelId": "UCother", "subscribed": true}}, {"subscribeButtonRenderer": {"channelId": "UCabc", "subscribed": false}}, {"likeStatus": "LIKE"}]});
         assert_eq!(account_state(&j, ch), (Some(Like::Like), Some(false)), "another channel's button is not this one's");
+        // What does not name this channel leaves it unknown.
+        for j in [
+            crate::json::jv!({"subscriptionStateEntity": {"subscribed": true}}),
+            crate::json::jv!({"subscriptionButton": {"subscribed": true}}),
+            crate::json::jv!({"subscribeButtonRenderer": {"subscribed": true}}),
+            crate::json::jv!({"videoOwnerRenderer": {"navigationEndpoint": {"browseEndpoint": {"browseId": "UCother"}}, "subscriptionButton": {"subscribed": true}}}),
+            crate::json::jv!({"videoOwnerRenderer": {"subscriptionButton": {"subscribed": true}}}),
+        ] {
+            assert_eq!(account_state(&j, ch).1, None, "{j:?}");
+        }
+        assert_eq!(account_state(&crate::json::jv!({"subscribeButtonRenderer": {"channelId": "UCabc", "subscribed": true}}), None).1, None);
         // Nothing stated, nothing known.
         assert_eq!(account_state(&crate::json::jv!({"responseContext": {}, "likeStatus": "UNKNOWN", "toggleButtonRenderer": {"isToggled": false}}), ch), (None, None));
     }

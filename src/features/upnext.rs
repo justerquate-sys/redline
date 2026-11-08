@@ -129,6 +129,16 @@ pub fn next(up: &Up, cur: &str, autoplay: bool) -> Option<Next> {
     (v != cur).then(|| Next { v: v.clone(), now: list.is_some() && up.playlist.as_ref().is_some_and(|p| Some(&p.id) == list.as_ref()), list: list.clone() })
 }
 
+/// The playlist item before `cur` (the remote's Previous). `None`: no playlist, or its first item.
+pub fn prev(up: &Up, cur: &str) -> Option<Next> {
+    let pl = up.playlist.as_ref()?;
+    let before = match pl.items.iter().position(|i| i.v == cur).or_else(|| pl.items.iter().position(|i| i.cur)) {
+        Some(p) => p.checked_sub(1).and_then(|p| pl.items.get(p)),
+        None => pl.items.iter().rev().find(|i| i.idx < pl.cur),
+    };
+    before.map(|n| Next { v: n.v.clone(), list: Some(pl.id.clone()), now: true })
+}
+
 pub fn watch_href(v: &str, list: Option<&str>) -> String {
     match list {
         Some(l) => format!("/watch?v={v}&list={l}"),
@@ -239,6 +249,10 @@ mod tests {
         let last = pl.items.last().unwrap().v.clone();
         assert_eq!(next(&up, &last, false), None, "end of the playlist, Autoplay off");
         assert_eq!(next(&up, &last, true), None, "no wrap to the playlist's own earlier item");
+        // The remote's Previous walks the same list backward; it ends at the first item.
+        assert_eq!(prev(&up, &pl.items[2].v), Some(Next { v: pl.items[1].v.clone(), list: Some(pl.id.clone()), now: true }));
+        assert_eq!(prev(&up, &pl.items[0].v), None);
+        assert_eq!(prev(&Up::default(), "x"), None);
         let h = panel(Some(pl), &pl.items[2].v);
         assert!(h.contains("3 / 6") && h.contains("class=\"pli cur\""));
         assert_eq!(h.matches("<li>").count(), 6);

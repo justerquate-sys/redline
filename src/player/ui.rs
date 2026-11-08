@@ -146,6 +146,9 @@ pub const AUB: &str = "ytc-aub";
 pub const TVLK: &str = "ytc-tvlk";
 pub const TVDL: &str = "ytc-tvdl";
 pub const TVSV: &str = "ytc-tvsv";
+/// TV: the focused labels of Like and Dislike ("Liked", "Disliked" while pressed).
+pub const TVLK_L: &str = "ytc-tvlk-l";
+pub const TVDL_L: &str = "ytc-tvdl-l";
 const I_LIKE: &str = "<svg class=\"o\" viewBox=\"0 0 24 24\"><path d=\"M7.5 10.5V20H4v-9.5zm0 0 3.8-6.5c1.4 0 2.4 1 2.1 2.5l-.7 3.5H19a2 2 0 0 1 2 2.3l-1.1 6a2 2 0 0 1-2 1.7H7.5\"/></svg>";
 const I_INFO: &str = "<svg class=\"o\" viewBox=\"0 0 24 24\"><path d=\"M20.5 12a8.5 8.5 0 1 1-17 0 8.5 8.5 0 0 1 17 0zM12 11v5.5M12 7.6v.1\"/></svg>";
 /// Headphones (the Audio action).
@@ -178,8 +181,8 @@ pub fn shell_tv() -> String {
 <button type=\"button\" class=\"pb tvau\" id=\"{AUB}\" data-act=\"p-menu\" data-arg=\"audio\" aria-haspopup=\"true\" aria-label=\"Audio\">{I_AUDIO}<span class=\"tvpl\" aria-hidden=\"true\">Audio</span></button>\
 <button type=\"button\" class=\"pb pw\" id=\"{SPEED}\" data-act=\"p-menu\" data-arg=\"speed\" aria-haspopup=\"true\" aria-label=\"Speed\"><span id=\"{RATEB}\" class=\"plbl\">1×</span><span class=\"tvpl\" aria-hidden=\"true\">Speed</span></button>\
 <button type=\"button\" class=\"pb pw\" id=\"{QUAL}\" data-act=\"p-menu\" data-arg=\"quality\" aria-haspopup=\"true\" aria-label=\"Quality\"><span id=\"{QLBL}\" class=\"plbl pq\">Auto</span><span class=\"tvpl\" aria-hidden=\"true\">Quality</span></button>\
-<button type=\"button\" class=\"pb tvlk tvac\" id=\"{TVLK}\" data-act=\"a-like\" aria-pressed=\"false\" aria-label=\"I like this\">{I_LIKE}<span class=\"tvpl\" aria-hidden=\"true\">Like</span></button>\
-<button type=\"button\" class=\"pb tvlk tvac tvdl\" id=\"{TVDL}\" data-act=\"a-dislike\" aria-pressed=\"false\" aria-label=\"I dislike this\">{I_LIKE}<span class=\"tvpl\" aria-hidden=\"true\">Dislike</span></button>\
+<button type=\"button\" class=\"pb tvlk tvac\" id=\"{TVLK}\" data-act=\"a-like\" aria-pressed=\"false\" aria-label=\"I like this\">{I_LIKE}<span id=\"{TVLK_L}\" class=\"tvpl\" aria-hidden=\"true\">Like</span></button>\
+<button type=\"button\" class=\"pb tvlk tvac tvdl\" id=\"{TVDL}\" data-act=\"a-dislike\" aria-pressed=\"false\" aria-label=\"I dislike this\">{I_LIKE}<span id=\"{TVDL_L}\" class=\"tvpl\" aria-hidden=\"true\">Dislike</span></button>\
 <span id=\"{TVWL}\" class=\"pslot\"></span>\
 <button type=\"button\" class=\"pb tvac\" id=\"{TVSV}\" data-act=\"tv-save\" aria-haspopup=\"dialog\" aria-label=\"Save to playlist\">{I_SAVE}<span class=\"tvpl\" aria-hidden=\"true\">Save</span></button>\
 <button type=\"button\" class=\"pb\" data-act=\"tv-comments\" aria-label=\"Comments\" aria-haspopup=\"dialog\">{I_COMMENTS}<span class=\"tvpl\" aria-hidden=\"true\">Comments</span></button>\

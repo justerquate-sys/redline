@@ -22,7 +22,7 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
   const walkRow = async (tv, sel) => {
     await toRow(tv);
     const here = () => tv.evaluate(s => document.activeElement.matches(s), sel);
-    for (let i = 0; i < 3 && !(await here()); i++) await tv.keyboard.press('ArrowLeft');
+    for (let i = 0; i < 14 && !(await here()); i++) await tv.keyboard.press('ArrowLeft');
     for (let i = 0; i < 15 && !(await here()); i++) await tv.keyboard.press('ArrowRight');
     assert.ok(await here(), `the remote reaches ${sel}: on ${await act(tv)}`);
   };
@@ -136,6 +136,10 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         await tv.keyboard.press('Enter');
         assert.equal((await sub('ytc-sub-b')).text, 'Unsubscribe?');
         assert.equal(calls('subscription/unsubscribe').length, u0, 'the first OK only asks');
+        // (A press right on top of the question has not read it.)
+        await tv.keyboard.press('Enter');
+        assert.equal((await sub('ytc-sub-b')).text, 'Unsubscribe?', 'too soon to count');
+        await tv.waitForTimeout(450);
         await tv.keyboard.press('Enter');
         assert.equal((await sub('ytc-sub-b')).text, 'Subscribe');
         await tv.waitForTimeout(150);
@@ -158,6 +162,7 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         await tv.keyboard.press('ArrowUp');
         assert.equal(await tv.evaluate(() => document.activeElement.dataset.act), 'tv-signin');
         assert.equal(await tv.evaluate(() => document.activeElement.textContent), 'Subscribe');
+        assert.equal(await tv.evaluate(() => getComputedStyle(document.activeElement).backgroundColor), 'rgb(241, 241, 241)', 'solid white, focused too');
         assert.deepEqual(await tvAudit(tv, `channel signed out ${W}`), []);
         await tv.keyboard.press('Enter');
         await tv.waitForSelector('#ytc-tvsign.on');
@@ -185,7 +190,9 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         assert.equal((await sub('ytc-sub-b')).text, 'Subscribed', 'the channel page knows');
         // Unsubscribed there: the row and More info follow.
         await tv.focus('#ytc-sub-b');
-        await tv.keyboard.press('Enter'); await tv.keyboard.press('Enter');
+        await tv.keyboard.press('Enter');
+        await tv.waitForTimeout(450);
+        await tv.keyboard.press('Enter');
         assert.equal((await sub('ytc-sub-b')).text, 'Subscribe');
         await tv.waitForTimeout(150);
         await tv.goBack({ waitUntil: 'commit' });
@@ -206,13 +213,14 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         assert.equal(await tv.locator('#ytc-tvsubr-b').count(), 0);
 
         // What the account says (its own client's answer): subscribed and liked show, without a press.
-        account = { contents: { singleColumnWatchNextResults: { results: { results: { contents: [{ itemSectionRenderer: { contents: [{ videoOwnerRenderer: { subscriptionButton: { subscribed: true } } }] } }] } } } }, likeStatus: 'LIKE' };
+        account = { contents: { singleColumnWatchNextResults: { results: { results: { contents: [{ itemSectionRenderer: { contents: [{ videoOwnerRenderer: { navigationEndpoint: { browseEndpoint: { browseId: CH } }, subscriptionButton: { subscribed: true } } }] } }] } } } }, likeStatus: 'LIKE' };
         await tvGo(tv, 'signed', `https://www.youtube.com/watch?v=${VID}`);
         await tv.waitForFunction(() => document.getElementById('ytc-tvsubr-b')?.textContent === 'Subscribed' && document.getElementById('ytc-tvlk')?.getAttribute('aria-pressed') === 'true', null, { timeout: 8000 });
+        account = { header: { subscribeButtonRenderer: { channelId: CH, subscribed: true } } };
         await tvGo(tv, 'signed', `https://www.youtube.com/channel/${CH}`);
         await tv.waitForFunction(() => document.getElementById('ytc-sub-b')?.textContent === 'Subscribed', null, { timeout: 8000 });
-        // A shape it cannot read changes nothing.
-        account = { responseContext: {} };
+        // A shape it cannot read, or another channel's state, changes nothing.
+        account = { responseContext: {}, subscriptionStateEntity: { subscribed: true }, subscriptionButton: { subscribed: true }, x: { subscribeButtonRenderer: { channelId: 'UCother', subscribed: true } } };
         await tvGo(tv, 'signed', `https://www.youtube.com/channel/${CH}`);
         await tv.waitForSelector('#ytc-sub-b');
         await tv.waitForTimeout(400);
@@ -408,6 +416,390 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
     } finally { MIDERR.go = false; await forget(); await tvClose(tv); }
   }, true));
 
+  await step('TV Audio: choosing a video\'s original clears the remembered dub language (also OK on the track already playing): the next video plays its own original; this video keeps the choice', async () => {
+    const tv = await tvOpen();
+    const fixture = nextFixture();
+    const nextOf = { dubtv000011: 'dubtv000012', dubtv000012: 'dubtv000013', dubtv000013: 'dubtv000014' };
+    await tv.route('**/youtubei/v1/next*', route => {
+      const b = route.request().postDataJSON(), to = nextOf[b.videoId];
+      if (!to) return route.fallback();
+      const o = JSON.parse(JSON.stringify(fixture));
+      o.currentVideoEndpoint.watchEndpoint.videoId = b.videoId;
+      o.contents.twoColumnWatchNextResults.autoplay.autoplay.sets[0].autoplayVideo.watchEndpoint.videoId = to;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
+    });
+    const audioMenu = async () => { await walkRow(tv, '#ytc-aub'); await tv.keyboard.press('Enter'); await tv.waitForSelector('#ytc-player.menu #ytc-menu'); };
+    const choose = async name => { await audioMenu(); for (let i = 0; i < 3 && await tv.evaluate(n => document.activeElement.textContent !== n, name); i++) await tv.keyboard.press('ArrowDown'); assert.equal(await tv.evaluate(() => document.activeElement.textContent), name); await tv.keyboard.press('Enter'); await tv.waitForTimeout(500); await back(tv); };
+    const lang = async (v, n0) => { await tv.waitForFunction(() => document.getElementById('ytc-video')?.currentTime > 0.2, null, { timeout: 20000 }); const a = log.gv.slice(n0).filter(g => g.v === v && g.lang); return a.at(-1)?.lang; };
+    try {
+      await forget();
+      await tv.setViewportSize({ width: 960, height: 540 });
+      await tvGo(tv, 'code', 'https://www.youtube.com/watch?v=dubtv000011');
+      await tv.waitForSelector('#ytc-aub.on');
+      await tv.waitForFunction(() => document.getElementById('ytc-video')?.currentTime > 0.2, null, { timeout: 20000 });
+      // OK on the track already playing, the original: nothing to remember.
+      await audioMenu();
+      assert.equal(await tv.evaluate(() => document.activeElement.textContent), 'Russian (original)');
+      await tv.keyboard.press('Enter');
+      await tv.waitForTimeout(500);
+      await back(tv);
+      assert.equal((await stored()).p?.al, undefined);
+      // A dub is remembered; escaping it to the original clears that.
+      await choose('French');
+      assert.equal((await stored()).p.al, 'fr');
+      let n0 = log.gv.length;
+      await tv.keyboard.press('MediaTrackNext');
+      await tv.waitForFunction(() => new URLSearchParams(location.search).get('v') === 'dubtv000012', null, { timeout: 8000 });
+      await tv.waitForSelector('#ytc-aub.on');
+      assert.equal(await lang('dubtv000012', n0), 'fr');
+      await audioMenu();
+      await tv.focus('#ytc-menu [data-arg="au:ru.3"]');
+      await tv.keyboard.press('Enter');
+      await tv.waitForTimeout(500);
+      await back(tv);
+      assert.equal((await stored()).p?.al, undefined, 'the original is no language preference');
+      n0 = log.gv.length;
+      await tv.keyboard.press('MediaTrackNext');
+      await tv.waitForFunction(() => new URLSearchParams(location.search).get('v') === 'dubtv000013', null, { timeout: 8000 });
+      await tv.waitForSelector('#ytc-aub.on');
+      assert.equal(await lang('dubtv000013', n0), 'ru', 'the next video: its own original, no dub');
+      // Back on the video where the original was chosen: it stays.
+      n0 = log.gv.length;
+      await tv.goBack({ waitUntil: 'commit' });
+      await tv.waitForFunction(() => new URLSearchParams(location.search).get('v') === 'dubtv000012');
+      await tv.waitForSelector('#ytc-aub.on');
+      assert.equal(await lang('dubtv000012', n0), 'ru');
+      assert.deepEqual(tv.errors, []);
+    } finally { await forget(); await tvClose(tv); }
+  });
+
+  await step('TV focus prefetch: a link resting under the focus prefetches the track the player will start on (the remembered language), once', async () => {
+    const tv = await tvOpen();
+    try {
+      await forget();
+      await tv.setViewportSize({ width: 960, height: 540 });
+      await tvGo(tv, 'code', 'https://www.youtube.com/watch?v=dubtv000021');
+      await tv.waitForSelector('#ytc-aub.on');
+      await tv.waitForFunction(() => document.getElementById('ytc-video')?.currentTime > 0.2, null, { timeout: 20000 });
+      await walkRow(tv, '#ytc-aub');
+      await tv.keyboard.press('Enter');
+      await tv.waitForSelector('#ytc-player.menu #ytc-menu');
+      for (let i = 0; i < 3 && await tv.evaluate(() => document.activeElement.textContent !== 'French'); i++) await tv.keyboard.press('ArrowDown');
+      await tv.keyboard.press('Enter');
+      await tv.waitForTimeout(600);
+      assert.equal((await stored()).p.al, 'fr');
+      await tvGo(tv, 'code', 'https://www.youtube.com/');
+      await tv.waitForSelector('.tvpc .tvb');
+      await tv.waitForTimeout(1500);
+      const n0 = log.gv.length, v = 'dubtv000022';
+      await tv.evaluate(v => { const a = document.createElement('a'); a.href = `/watch?v=${v}`; a.className = 't'; a.id = 'e2e-link'; a.textContent = 'x'; document.querySelector('#ytc-main').prepend(a); a.focus(); }, v);
+      for (let i = 0; i < 60 && !log.gv.slice(n0).some(g => g.v === v && g.lang); i++) await tv.waitForTimeout(100);
+      const pre = log.gv.slice(n0).filter(g => g.v === v && g.lang).map(g => g.lang);
+      assert.ok(pre.length && pre.every(l => l === 'fr'), 'the prefetch: ' + pre);
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => document.getElementById('ytc-video')?.currentTime > 0.5, null, { timeout: 20000 });
+      const all = log.gv.slice(n0).filter(g => g.v === v && g.lang).map(g => g.lang);
+      assert.ok(all.every(l => l === 'fr'), 'no other track fetched: ' + all);
+      assert.deepEqual(tv.errors, []);
+    } finally { await forget(); await tvClose(tv); }
+  });
+
+  await step('TV a held OK is one press: Subscribe, its confirmation, Like and Dislike, a playlist row, a link; only typing repeats', async () => {
+    const tv = await tvOpen();
+    const hold = async (n = 6) => { for (let i = 0; i < n; i++) { await tv.keyboard.down('Enter'); await tv.waitForTimeout(40); } await tv.keyboard.up('Enter'); await tv.waitForTimeout(200); };
+    try {
+      await tv.setViewportSize({ width: 960, height: 540 });
+      await tvGo(tv, 'signed', `https://www.youtube.com/channel/${CH}`);
+      await tv.waitForSelector('#ytc-sub-b');
+      await tv.waitForFunction(() => document.activeElement?.matches('#ytc-list a.t'), null, { timeout: 8000 });
+      await tv.focus('#ytc-sub-b');
+      const text = () => tv.textContent('#ytc-sub-b');
+      const c = () => [calls('subscription/subscribe').length, calls('subscription/unsubscribe').length];
+      let c0 = c();
+      await hold();
+      assert.equal(await text(), 'Subscribed', 'held: subscribes once');
+      assert.deepEqual(c(), [c0[0] + 1, c0[1]]);
+      await tv.waitForTimeout(3300);
+      c0 = c();
+      await hold();
+      assert.equal(await text(), 'Unsubscribe?', 'held: asks, and goes no further');
+      assert.deepEqual(c(), c0);
+      // Three quick presses: the question, then two too soon to have read it.
+      await tv.waitForTimeout(3300);
+      assert.equal(await text(), 'Subscribed', 'the question times out');
+      c0 = c();
+      for (let i = 0; i < 3; i++) await tv.keyboard.press('Enter');
+      await tv.waitForTimeout(150);
+      assert.equal(await text(), 'Unsubscribe?');
+      assert.deepEqual(c(), c0);
+      // The player row.
+      await tvGo(tv, 'signed', `https://www.youtube.com/watch?v=${VID}`);
+      await tv.waitForSelector('#ytc-like', { state: 'attached' });
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await paused(tv);
+      await walkRow(tv, '#ytc-tvlk');
+      const l0 = calls('like/like').length, r0 = calls('like/removelike').length;
+      await hold();
+      assert.equal(await tv.getAttribute('#ytc-tvlk', 'aria-pressed'), 'true');
+      assert.deepEqual([calls('like/like').length - l0, calls('like/removelike').length - r0], [1, 0], 'one rating');
+      await tv.keyboard.press('ArrowRight');
+      const d0 = calls('like/dislike').length;
+      await hold();
+      assert.equal(calls('like/dislike').length - d0, 1);
+      // The Channel link: its page opens; the card focused there stays closed.
+      await walkRow(tv, '.tvch');
+      await hold(8);
+      await tv.waitForFunction(() => document.getElementById('ytc')?.dataset.nav !== 'watch', null, { timeout: 8000 });
+      await tv.waitForTimeout(400);
+      assert.notEqual(await tv.evaluate(() => location.pathname), '/watch', 'held: no further than its page');
+      // Typing does repeat.
+      await tvGo(tv, 'code', 'https://www.youtube.com/');
+      await tv.waitForSelector('#ytc-side .rl[data-nav=search]');
+      await tv.focus('#ytc-side .rl[data-nav=search]');
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => document.activeElement?.matches('#ytc-tvk .tvk-keys button'));
+      await hold(4);
+      assert.equal((await tv.inputValue('#ytc-q')).length, 4, 'a held letter types');
+      assert.deepEqual(tv.errors, []);
+    } finally { await tvClose(tv); }
+  });
+
+  await step('TV Back from a channel page: one step only on the entry opened from a video; the same channel reached another way goes to the rail first, and the video comes back as it was left: paused stays paused, a video opened with t resumes where it was', async () => {
+    const tv = await tvOpen();
+    const toChannel = async () => {
+      await walkRow(tv, '.tvch');
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => document.getElementById('ytc')?.dataset.nav !== 'watch' && document.activeElement?.matches('#ytc-list a.t'), null, { timeout: 8000 });
+    };
+    try {
+      await tv.setViewportSize({ width: 960, height: 540 });
+      await tvGo(tv, 'code', `https://www.youtube.com/watch?v=${VID}`);
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await playing(tv, 1);
+      await tv.waitForFunction(() => document.activeElement?.id === 'ytc-seek');
+      const href = await tv.evaluate(() => document.querySelector('#ytc-tvch .tvch').getAttribute('href'));
+      await toChannel();
+      assert.deepEqual(await back(tv), { handled: false, exit: false }, 'opened from the video: Back leaves it');
+      // Home by the rail, then a link to the same channel: another history entry.
+      await tv.focus('#ytc-side .rl[data-nav=home]');
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => document.getElementById('ytc')?.dataset.nav === 'home', null, { timeout: 8000 });
+      await tv.waitForTimeout(800);
+      await tv.evaluate(h => { const a = document.createElement('a'); a.href = h; a.className = 't'; a.textContent = 'x'; document.querySelector('#ytc-main').prepend(a); a.focus(); }, href);
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(h => location.pathname === h && document.getElementById('ytc')?.dataset.nav !== 'home', href, { timeout: 8000 });
+      await tv.waitForTimeout(800);
+      assert.deepEqual(await back(tv), { handled: true, exit: false }, 'reached from Home: the rail first');
+      assert.ok(await isIn(tv, '#ytc-side'));
+      // Back through the history to the entry opened from the video: one step again.
+      await tv.goBack({ waitUntil: 'commit' });
+      await tv.waitForFunction(() => document.getElementById('ytc')?.dataset.nav === 'home', null, { timeout: 8000 });
+      await tv.goBack({ waitUntil: 'commit' });
+      await tv.waitForFunction(h => location.pathname === h, href, { timeout: 8000 });
+      await tv.waitForSelector('#ytc-list a.t');
+      await tv.focus('#ytc-list a.t');
+      assert.deepEqual(await back(tv), { handled: false, exit: false }, 'that entry keeps its rule');
+
+      // Paused stays paused, at its place.
+      await tvGo(tv, 'code', `https://www.youtube.com/watch?v=${VID}`);
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await playing(tv, 1);
+      await tv.evaluate(() => { document.getElementById('ytc-video').currentTime = 15; });
+      await tv.waitForFunction(() => document.getElementById('ytc-video').currentTime >= 15);
+      await tv.waitForFunction(() => document.activeElement?.id === 'ytc-seek');
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => document.getElementById('ytc-video').paused);
+      const t0 = (await video(tv)).t;
+      await toChannel();
+      await tv.goBack({ waitUntil: 'commit' });
+      await tv.waitForFunction(t => document.getElementById('ytc-video')?.readyState >= 2 && Math.abs(document.getElementById('ytc-video').currentTime - t) < 1, t0, { timeout: 15000 });
+      await tv.waitForTimeout(1500);
+      const v1 = await video(tv);
+      assert.ok(v1.paused && Math.abs(v1.t - t0) < 1, `paused at ${t0}: ${JSON.stringify(v1)}`);
+      // Playing stays playing.
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => !document.getElementById('ytc-video').paused);
+      await toChannel();
+      await tv.goBack({ waitUntil: 'commit' });
+      await tv.waitForFunction(() => { const v = document.getElementById('ytc-video'); return v && !v.paused && v.currentTime > 1; }, null, { timeout: 15000 });
+
+      // Opened with t: where it was left, not the URL's t.
+      await tvGo(tv, 'code', `https://www.youtube.com/watch?v=${VID}&t=5`);
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await playing(tv, 5);
+      await tv.evaluate(() => { document.getElementById('ytc-video').currentTime = 22; });
+      await tv.waitForFunction(() => document.getElementById('ytc-video').currentTime >= 22);
+      await tv.waitForFunction(() => document.activeElement?.id === 'ytc-seek');
+      await toChannel();
+      await tv.goBack({ waitUntil: 'commit' });
+      await tv.waitForFunction(() => document.getElementById('ytc-video')?.readyState >= 2, null, { timeout: 15000 });
+      const t2 = (await video(tv)).t;
+      assert.ok(t2 >= 21, `left at 22+, resumed at ${t2}`);
+      assert.deepEqual(tv.errors, []);
+    } finally { await tvClose(tv); }
+  });
+
+  await step('TV Previous in a playlist: the playlist\'s previous item, with the list kept; on the first item this video from the start', async () => {
+    const tv = await tvOpen();
+    const pl = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(__dirname, 'fixtures/next_list.json.gz')))).contents.twoColumnWatchNextResults.playlist.playlist;
+    const items = pl.contents.map(c => c.playlistPanelVideoRenderer.videoId), id = pl.playlistId;
+    const on = v => tv.waitForFunction(([v, id]) => { const q = new URLSearchParams(location.search); return q.get('v') === v && q.get('list') === id && document.getElementById('ytc-video'); }, [v, id], { timeout: 10000 });
+    try {
+      await tv.setViewportSize({ width: 960, height: 540 });
+      await tvGo(tv, 'code', `https://www.youtube.com/watch?v=${items[2]}&list=${id}`);
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await playing(tv);
+      await tv.keyboard.press('MediaTrackPrevious');
+      await on(items[1]);
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await playing(tv);
+      await tv.keyboard.press('MediaTrackNext');
+      await on(items[2]);
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await playing(tv);
+      await tv.keyboard.press('MediaTrackPrevious');
+      await on(items[1]);
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await playing(tv);
+      await tv.keyboard.press('MediaTrackPrevious');
+      await on(items[0]);
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await playing(tv, 3);
+      // The first item: nothing before it in this session (the way here was walked back): it restarts.
+      await tv.keyboard.press('MediaTrackPrevious');
+      await tv.waitForFunction(() => document.getElementById('ytc-video').currentTime < 2, null, { timeout: 3000 });
+      assert.equal(new URL(tv.url()).searchParams.get('v'), items[0]);
+      assert.deepEqual(tv.errors, []);
+    } finally { await tvClose(tv); }
+  });
+
+  await step('TV Save, the odd moments: pressed before the page\'s data came (no request without a video, it fills itself); an answer for the last video still out when the panel opens; forty playlists stay inside the safe area', async () => {
+    const tv = await tvOpen();
+    const fixture = nextFixture();
+    let holdNext = false, release = null, holdList = null;
+    const held = [];
+    await tv.route('**/youtubei/v1/next*', async route => {
+      const b = route.request().postDataJSON();
+      if (holdNext && b.videoId === VID && b.context?.client?.clientName !== 'TVHTML5') await new Promise(r => { release = r; });
+      return route.fallback();
+    });
+    await tv.route('**/youtubei/v1/playlist/get_add_to_playlist*', async route => {
+      if (holdList && route.request().postDataJSON().videoIds[0] === holdList) await new Promise(r => held.push(r));
+      return route.fallback();
+    });
+    try {
+      await tv.setViewportSize({ width: 960, height: 540 });
+      // Pressed at once: Loading, no request for no video; it fills when the page's data is in.
+      holdNext = true;
+      const g0 = calls('playlist/get_add_to_playlist').length;
+      await tvGo(tv, 'signed', `https://www.youtube.com/watch?v=${VID}`);
+      await tv.waitForSelector('#ytc-tvsv');
+      await tv.focus('#ytc-tvsv');
+      await tv.keyboard.press('Enter');
+      await tv.waitForSelector('#ytc-tvsave.on');
+      assert.match(await tv.textContent('#ytc-tvsave-body'), /Loading your playlists/);
+      await tv.waitForTimeout(300);
+      assert.equal(calls('playlist/get_add_to_playlist').slice(g0).filter(c => !c.body.videoIds[0]).length, 0, 'no request without a video');
+      holdNext = false;
+      if (release) release();
+      await tv.waitForSelector('#ytc-tvsave .ya-opt', { timeout: 8000 });
+      assert.ok(await tv.evaluate(() => document.activeElement.matches('#ytc-tvsave .ya-opt')), 'the first playlist takes the focus');
+      assert.ok(calls('playlist/get_add_to_playlist').slice(g0).every(c => c.body.videoIds[0] === VID));
+      await back(tv);
+
+      // A's quiet check still out, the panel opens on B: B's list comes.
+      const auto = fixture.contents.twoColumnWatchNextResults.autoplay.autoplay.sets[0].autoplayVideo.watchEndpoint.videoId;
+      holdList = 'dubtw000031';
+      await tvGo(tv, 'signed', 'https://www.youtube.com/watch?v=dubtw000031');
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      for (let i = 0; i < 60 && !held.length; i++) await tv.waitForTimeout(100);
+      assert.equal(held.length, 1, 'the quiet check for the first video is out');
+      await tv.keyboard.press('MediaTrackNext');
+      await tv.waitForFunction(a => new URLSearchParams(location.search).get('v') === a, auto, { timeout: 8000 });
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await paused(tv);
+      await walkRow(tv, '#ytc-tvsv');
+      await tv.keyboard.press('Enter');
+      await tv.waitForSelector('#ytc-tvsave.on');
+      assert.match(await tv.textContent('#ytc-tvsave-body'), /Loading/);
+      held.splice(0).forEach(r => r());
+      await tv.waitForSelector('#ytc-tvsave .ya-opt', { timeout: 8000 });
+      assert.equal(calls('playlist/get_add_to_playlist').at(-1).body.videoIds[0], auto);
+      await back(tv);
+      holdList = null;
+      assert.deepEqual(tv.errors, []);
+    } finally { if (release) release(); held.splice(0).forEach(r => r()); await tvClose(tv); }
+    // Forty playlists.
+    const tv2 = await tvOpen();
+    const pls = Array.from({ length: 40 }, (_, i) => ({ playlistAddToOptionRenderer: { playlistId: i ? `PLx${i}` : 'WL', title: { simpleText: i ? `Playlist number ${i}` : 'Watch later' }, privacy: 'PRIVATE', containsSelectedVideos: 'NONE' } }));
+    await tv2.route('**/youtubei/v1/playlist/get_add_to_playlist*', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ contents: [{ addToPlaylistRenderer: { playlists: pls } }] }) }));
+    try {
+      for (const [W, H] of TVSIZES) {
+        await tv2.setViewportSize({ width: W, height: H });
+        await tvGo(tv2, 'signed', `https://www.youtube.com/watch?v=${VID}`);
+        await tv2.waitForSelector('#ytc-tvch .tvch');
+        await paused(tv2);
+        await walkRow(tv2, '#ytc-tvsv');
+        await tv2.keyboard.press('Enter');
+        await tv2.waitForSelector('#ytc-tvsave .ya-opt');
+        for (const key of ['ArrowDown', 'ArrowUp']) {
+          for (let i = 0; i < 42; i++) {
+            await tv2.keyboard.press(key);
+            if (i % 7 === 0 || i > 38) assert.deepEqual(await tvAudit(tv2, `forty playlists ${key} ${i} at ${W}`), []);
+          }
+        }
+        assert.equal(await tv2.evaluate(() => document.activeElement.dataset.act), 'tv-save-close', 'up to Back to video');
+        await back(tv2);
+      }
+      assert.deepEqual(tv2.errors, []);
+    } finally { await tvClose(tv2); }
+  });
+
+  await step('TV the refusal notice stays clear of an open panel: beside Comments and a menu, never over their headers; hidden over Search and in More info (its own line)', async () => {
+    const tv = await tvOpen();
+    try {
+      await tv.setViewportSize({ width: 960, height: 540 });
+      const refuse = async () => {
+        await walkRow(tv, '#ytc-tvlk');
+        ACTS.fail.add('like/like'); ACTS.delay = 500;
+        await tv.keyboard.press('Enter');
+      };
+      const settle = async () => {
+        await tv.waitForFunction(() => document.getElementById('ytc-tvnote').textContent, null, { timeout: 5000 });
+        ACTS.fail.clear(); ACTS.delay = 0;
+      };
+      await tvGo(tv, 'signed', `https://www.youtube.com/watch?v=${VID}`);
+      await tv.waitForSelector('#ytc-like', { state: 'attached' });
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await paused(tv);
+      await refuse();
+      await tv.focus('[data-act=tv-comments]');
+      await tv.keyboard.press('Enter');
+      await tv.waitForSelector('#ytc-comments.on');
+      await settle();
+      const c = await tv.evaluate(() => { const n = document.getElementById('ytc-tvnote'), r = n.getBoundingClientRect(); return { shown: n.checkVisibility(), r: r.right, panel: document.getElementById('ytc-comments').getBoundingClientRect().left }; });
+      assert.ok(c.shown && c.r <= c.panel, `beside Comments: ${JSON.stringify(c)}`);
+      assert.deepEqual(await tvAudit(tv, 'notice beside Comments'), []);
+      await back(tv);
+      await tv.waitForFunction(() => !document.getElementById('ytc-tvnote').textContent, null, { timeout: 9000 });
+      await refuse();
+      await tv.focus('#ytc-speed');
+      await tv.keyboard.press('Enter');
+      await tv.waitForSelector('#ytc-player.menu #ytc-menu');
+      await settle();
+      const m = await tv.evaluate(() => { const n = document.getElementById('ytc-tvnote'), r = n.getBoundingClientRect(); return { shown: n.checkVisibility(), r: r.right, panel: document.getElementById('ytc-menu').getBoundingClientRect().left }; });
+      assert.ok(m.shown && m.r <= m.panel, `beside a menu: ${JSON.stringify(m)}`);
+      await back(tv);
+      await tv.waitForFunction(() => !document.getElementById('ytc-tvnote').textContent, null, { timeout: 9000 });
+      await refuse();
+      await tv.keyboard.press('/');
+      await tv.waitForFunction(() => document.activeElement?.matches('#ytc-tvk .tvk-keys button'));
+      await settle();
+      assert.ok(!(await tv.evaluate(() => document.getElementById('ytc-tvnote').checkVisibility())), 'not over Search');
+      assert.deepEqual(tv.errors, []);
+    } finally { ACTS.fail.clear(); ACTS.delay = 0; await tvClose(tv); }
+  });
+
   await step('TV caption auto-translate (960×540 and 1920×1080): Captions lists a short Auto-translate section led by the device\'s language, Russian, English; the choice is fetched with tlang and remembered for the next videos', async () => {
     const tv = await tvOpen();
     try {
@@ -475,6 +867,9 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         const l0 = calls('like/like').length, d0 = calls('like/dislike').length, r0 = calls('like/removelike').length;
         await tv.keyboard.press('Enter');
         assert.deepEqual(await pressed(), ['true', 'false']);
+        // A clear state: solid, focused or not, and the label says so.
+        const look = id => tv.evaluate(id => { const b = document.getElementById(id), s = getComputedStyle(b); return [s.backgroundColor, s.color, b.querySelector('.tvpl').textContent]; }, id);
+        assert.deepEqual(await look('ytc-tvlk'), ['rgb(241, 241, 241)', 'rgb(15, 15, 15)', 'Liked']);
         await tv.waitForTimeout(150);
         assert.equal(calls('like/like').length, l0 + 1);
         accountCall('like/like');
@@ -482,10 +877,13 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         await tv.keyboard.press('ArrowRight');
         assert.equal(await tv.evaluate(() => document.activeElement.id), 'ytc-tvdl');
         assert.equal((await label(tv)).text, 'Dislike');
+        assert.deepEqual(await look('ytc-tvlk'), ['rgb(241, 241, 241)', 'rgb(15, 15, 15)', 'Liked'], 'not focused: as solid');
         assert.deepEqual(await tvAudit(tv, `row dislike ${W}`), []);
         await tvShot(tv, 'player-row-dislike');
         await tv.keyboard.press('Enter');
         assert.deepEqual(await pressed(), ['false', 'true'], 'a dislike ends the like');
+        assert.deepEqual(await look('ytc-tvdl'), ['rgb(241, 241, 241)', 'rgb(15, 15, 15)', 'Disliked']);
+        assert.equal((await look('ytc-tvlk'))[2], 'Like');
         await tv.waitForTimeout(150);
         assert.equal(calls('like/dislike').length, d0 + 1);
         accountCall('like/dislike');
@@ -603,14 +1001,26 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
       await tv.keyboard.press('MediaTrackPrevious');
       await tv.waitForFunction(() => document.getElementById('ytc-video').currentTime < 2, null, { timeout: 3000 });
       assert.equal(new URL(tv.url()).searchParams.get('v'), VID, 'the same video');
+      // Over the search screen they do nothing: what is being typed stays.
+      await tv.keyboard.press('/');
+      await tv.waitForFunction(() => document.activeElement?.matches('#ytc-tvk .tvk-keys button'));
+      const typing = tv.url();
+      await tv.keyboard.press('MediaTrackNext');
+      await tv.keyboard.press('MediaTrackPrevious');
+      await tv.waitForTimeout(400);
+      assert.equal(tv.url(), typing);
+      assert.equal(await tv.getAttribute('#ytc', 'data-tvk'), '1', 'the keyboard stays up');
+      await back(tv); await back(tv);
       // Next: Up next's first.
+      const depth = await tv.evaluate(() => history.length);
       await tv.keyboard.press('MediaTrackNext');
       await on(auto);
       await tv.waitForSelector('#ytc-tvch .tvch');
       await playing(tv);
-      // Previous: back to it.
+      // Previous: back to it, a step back through the history: as if Next was never pressed.
       await tv.keyboard.press('MediaTrackPrevious');
       await on(VID);
+      assert.equal(await tv.evaluate(() => history.length), depth + 1, 'no new entry');
       await tv.waitForSelector('#ytc-tvch .tvch');
       await playing(tv);
       // And none before that: it restarts again.
