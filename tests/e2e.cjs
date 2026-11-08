@@ -5855,7 +5855,9 @@ chrome.runtime.onMessage.addListener(m => {
     const t = a.effect && a.effect.target; return t && (t.closest('#ytc-player') === t || ['ytc-info', 'ytc-desc', 'ytc-list', 'ytc-pl'].includes(t.id) || (wc && t.classList.contains('ycm')) || t.classList.contains('upc'));
   }).map(a => [a.effect.target.id || a.effect.target.className, a.id || a.constructor.name, JSON.stringify(a.effect.getKeyframes()[0] || {})]), withComments);
   // The thumbnail of card `i` on a results page, and a pointer click on it (real mouse events).
-  const thumbAt = i => page.evaluate(i => { const r = document.querySelectorAll('#ytc-list .c[data-v] a.th')[i].getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; }, i);
+  // A card is content-visibility:auto: until its first frame paints, it reports a thumbnail rect but hit testing skips its
+  // contents, so a click lands on the card and opens nothing. A person can't aim at a card that isn't drawn yet; the test can.
+  const thumbAt = i => page.evaluate(async i => { await new Promise(f => requestAnimationFrame(() => requestAnimationFrame(f))); const r = document.querySelectorAll('#ytc-list .c[data-v] a.th')[i].getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; }, i);
   await step('motion: a pointer click morphs the player from the clicked thumbnail (spring, transform only); final and interactive on frame one', async () => {
     await page.goto('https://www.youtube.com/results?search_query=morph', { waitUntil: 'commit' });
     await page.waitForSelector('#ytc-list .c[data-v]');

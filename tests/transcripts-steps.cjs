@@ -851,6 +851,7 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
   await step('transcripts settings: importing asks before replacing a Deepgram key or visitor id and names them; junk in a file does not break the client', async () => {
     mock.reset(); await disable();
     const keep = await worker(() => chrome.storage.local.get(null));
+    await worker(() => chrome.storage.local.remove('shortsInFeeds'));
     await worker(() => chrome.storage.local.set({ ytcVoiceKeyV1: 'mine-deepgram', ytcConfigV1: { vd: 'MyVisitorData', v: '2.1', p: { sbo: true } } }));
     const file = path.join(os.tmpdir(), `ytc-crafted-${Date.now()}.json`);
     const write = (o, n) => { const f = `${file}.${n}.json`; fs.writeFileSync(f, JSON.stringify(o)); return f; };
