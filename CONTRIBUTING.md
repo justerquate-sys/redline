@@ -70,19 +70,25 @@ steps). `tests/live-*.cjs` talk to real YouTube or Deepgram: run them by hand, r
     `127.0.0.1`, no native-messaging attempt, and the worker does not even load its Wasm. Only opening settings probes.
     The trace is one quiet row in the toolbar popup. No nag, no badge, no page opened on install.
   - The gate is `chrome.storage.local` `ytcTranscriptsV1` (`{on:true}`): set only by the worker, after the helper said
-    Azure is configured. With it on: one batched status message per page render, nothing while idle, live stages
+    Azure is configured, and removed when settings says otherwise, when the person turns it off, or when the helper is
+    found removed (port down and native host not found). With it on: one batched status message per page render, nothing while idle, live stages
     pushed by the worker only while jobs run.
   - The Azure key stays in the helper's owner-only `.env`, never in browser storage. The pairing token lives in the
     worker's IndexedDB in the extension's own origin (`chrome.storage.local` is readable by content scripts, so never
     there) and is never given to a YouTube page, its Wasm, logs, incidents or the debug overlay. Requests from a page
     are messages to the worker, checked against a short allow-list (`transcripts/src/plan.rs`), and answers carry only
     what a card needs.
+  - Controls in a YouTube page act only on trusted events: a page script's click does nothing (`mods` bit 128).
+  - `chrome.storage.session` also holds `ytc:tr-session`, one marker with no data, so the toolbar can tell a new browser
+    session from a worker waking up.
   - `chrome.storage.local` gains `ytcTranscriptsV1` and `allZipExclusions:<root token>` (at most one list of folder names
     per save folder, bounded by the helper's 1,000). The worker's IndexedDB holds the pairing token, the toolbar's
-    lifecycle (counts and a batch id) and up to 200 channel-preview ownership records.
+    lifecycle (counts and a batch id), when a page last asked the native host, whether the person turned the feature off,
+    and up to 200 channel-preview ownership records.
   - The settings file (popup → Export all settings, settings → Import all settings) holds everything in
     `chrome.storage.local` but the pairing token and the switch, so it holds the Deepgram key, and both pages say so. The
-    values stay in JavaScript: Rust decides from key names and kinds only, and the key never enters Wasm.
+    values stay in JavaScript: Rust decides from key names and kinds only, and the key never enters Wasm. An import never
+    replaces a Deepgram key or visitor id without asking, and its notice names them when they arrive.
   - Never on TV: compiled out of the bundle (`tests/check-tv-bundle.cjs` fails the build otherwise) and off at runtime
     in TV mode.
   - `helper/` and `transcripts/` are public: `npm run check:public` scans them for personal paths, addresses, IPs and

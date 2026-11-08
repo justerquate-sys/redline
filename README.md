@@ -79,7 +79,12 @@ TXT, Markdown or JSON files in a folder you choose, in a library you can read, c
 - **If you don't set it up you pay nothing:** no controls on any page, no extra request, one quiet row in the toolbar
   popup. It is not part of the TV app.
 
-To set it up: install the helper, then open Redline's toolbar popup and choose **Transcripts: Set up**.
+To set it up: install the helper, then open Redline's toolbar popup and choose **Transcripts: Set up**. Settings has a
+**Turn off Transcripts** switch whenever you want the controls gone.
+
+- **A channel's All videos queues everything in one click.** Each video it finds joins the queue, the panel counts them
+  as it goes, and your Azure resource bills each one. Past year and Cancel discovery are right beside it; what is already
+  queued keeps going until you press Stop all.
 
 ## Screenshots
 
@@ -136,6 +141,13 @@ Voice search uses [Deepgram](https://deepgram.com/)'s speech recognition with **
 the mic in the search box (or focus it and press the context-menu key), paste the key, **Save**. The browser asks
 once for microphone access on youtube.com. Without a key the mic only offers this panel; nothing is sent anywhere.
 </details>
+
+**Updating from a version before Transcripts:** this version fixes the extension's id with a manifest `key`, so a browser
+sees it as a new extension with empty settings. Before you update, open the popup of your current Redline, choose
+**Export all settings** and keep the file (it holds your Deepgram key, so keep it private). After loading the new
+version, use **Import all settings** in Transcripts settings, then delete the file. If your current version has no such
+row, update to the commit that added it first (it keeps your id), or copy the settings from the old extension's service
+worker console as described in [docs/architecture.md](docs/architecture.md#one-extension-id-and-moving-to-it).
 
 ### Google TV / Android TV
 
@@ -239,6 +251,8 @@ It talks only to these services:
 | **Deepgram** (`api.deepgram.com`) | Only while you dictate a voice search, and only if you saved a key | Your microphone audio for that search and your key. The key never enters the YouTube page. |
 | **Google sign-in** (`oauth2.googleapis.com`), TV app only | While the sign-in code is shown, and to refresh or revoke the TV's access | YouTube's TV device sign-in. The tokens stay on the TV, sealed with the Android Keystore. |
 | **Your Azure Speech resource**, through the local helper | Only if you set up Transcripts, and only while a video you asked for is transcribing (or you press Test connection) | That video's audio. The key stays in the helper's settings on your computer. |
+| **YouTube, from the helper** (yt-dlp, on your computer) | Only if you set up Transcripts, and only for videos and channels you queue | Requests for that video's details and audio, or the channel's list, from your computer's address. Nothing about you beyond that, unless you turn on the next row. |
+| **Your Brave login, read by the helper** | Only if you turn on *Use my Brave login for YouTube downloads* in settings; off by default | The helper reads Brave's YouTube cookies on your computer and hands them to yt-dlp for its YouTube requests. They go to YouTube, never to Azure or anywhere else. |
 | **GitHub** (`api.github.com`, release downloads), TV app only | At launch and every 6 hours, sooner after a failed check | A request for this repository's releases and, when there is a newer one, its files. Nothing about you. |
 
 The extension's permissions: `storage`, `declarativeNetRequest` (the fixed rules in

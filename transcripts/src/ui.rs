@@ -42,9 +42,11 @@ pub fn put(id: &str, html: &str) {
         host::html(id, html);
     }
 }
-/// A parent was rewritten: forget what its children held.
-pub fn forget_all() {
-    WRITTEN.with(|w| w.borrow_mut().clear());
+/// `id` was changed in place: the next `put` writes it whatever it holds.
+pub fn forget(id: &str) {
+    WRITTEN.with(|w| {
+        w.borrow_mut().remove(id);
+    });
 }
 
 pub fn show(id: &str, shown: bool) {

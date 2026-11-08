@@ -41,6 +41,12 @@ extern "C" {
     /// The toolbar title; `""` restores the manifest's title.
     #[wasm_bindgen(js_namespace = TR)]
     fn title(text: &str) -> Promise;
+    /// Tells the extension's open pages something changed (the library refreshes).
+    #[wasm_bindgen(js_namespace = TR)]
+    pub fn pages_push();
+    /// True the first time it is asked in a browser session.
+    #[wasm_bindgen(js_namespace = TR)]
+    fn session_first() -> Promise;
     /// A string message to every YouTube tab.
     #[wasm_bindgen(js_namespace = TR)]
     pub fn tabs_push(message: &str);
@@ -64,6 +70,9 @@ extern "C" {
     pub fn text(id: &str, text: &str);
     #[wasm_bindgen(js_namespace = TR)]
     pub fn attr(id: &str, name: &str, value: Option<String>);
+    /// Sets the `style` of `id`'s `[data-segment=name]` child.
+    #[wasm_bindgen(js_namespace = TR)]
+    pub fn segment(id: &str, name: &str, style: &str);
     #[wasm_bindgen(js_namespace = TR)]
     pub fn body_attr(name: &str, value: &str);
     #[wasm_bindgen(js_namespace = TR)]
@@ -102,9 +111,14 @@ extern "C" {
     /// Reads input `id`'s file: `{"items":[{"k":key,"t":kind}]}` or `{"error":…}`. The values stay in the host.
     #[wasm_bindgen(js_namespace = TR)]
     fn file_peek(id: &str, max_bytes: f64) -> Promise;
-    /// Writes the chosen keys of the file last read to `chrome.storage.local`.
+    /// For each `[key, field]` of the file last read: `absent`, `new`, `same` or `replace`. Never the values.
     #[wasm_bindgen(js_namespace = TR)]
-    fn file_commit(keys: &str) -> Promise;
+    fn file_conflicts(list: &str) -> Promise;
+    /// Writes the chosen keys of the file last read; `hold` lists `[key, field]` to keep as they are here.
+    #[wasm_bindgen(js_namespace = TR)]
+    fn file_commit(keys: &str, hold: &str) -> Promise;
+    #[wasm_bindgen(js_namespace = TR)]
+    pub fn file_forget();
     /// Local date and time of an ISO string.
     #[wasm_bindgen(js_namespace = TR)]
     pub fn local_time(iso: &str) -> String;
@@ -154,6 +168,9 @@ pub async fn local_write(key: &str, json: &str) -> bool {
 pub async fn local_remove(key: &str) {
     let _ = JsFuture::from(local_del(key)).await;
 }
+pub async fn new_session() -> bool {
+    string(session_first()).await.is_some_and(|s| s == "first")
+}
 pub async fn wait(ms: f64) {
     let _ = JsFuture::from(sleep(ms)).await;
 }
@@ -175,8 +192,11 @@ pub async fn send_message(message: &str) -> String {
 pub async fn peek_file(id: &str, max_bytes: f64) -> String {
     string(file_peek(id, max_bytes)).await.unwrap_or_default()
 }
-pub async fn commit_file(keys: &str) -> bool {
-    JsFuture::from(file_commit(keys)).await.is_ok()
+pub async fn conflicts_of_file(list: &str) -> String {
+    string(file_conflicts(list)).await.unwrap_or_default()
+}
+pub async fn commit_file(keys: &str, hold: &str) -> bool {
+    JsFuture::from(file_commit(keys, hold)).await.is_ok()
 }
 pub async fn copy_text(text: &str) -> bool {
     JsFuture::from(clipboard(text)).await.is_ok()

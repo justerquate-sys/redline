@@ -130,6 +130,12 @@ async fn helper_running_at(client: &reqwest::Client, base: &str) -> bool {
 }
 
 pub async fn ensure_helper_running() -> Result<()> {
+    // A test build answers from its own temporary root: it must never probe or kickstart the helper installed on this
+    // machine, whose port and service name are fixed.
+    #[cfg(feature = "loopback-speech")]
+    if std::env::var_os("SCRIBE_NATIVE_NO_START").is_some() {
+        return Ok(());
+    }
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_millis(750))

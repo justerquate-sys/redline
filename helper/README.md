@@ -20,7 +20,8 @@ Build from source. A prebuilt release asset may come later.
    and key there. The key goes to the helper's owner-only `.env` and never into browser storage.
 
 The installed service knows its data folder. If a helper is already installed from another folder, these scripts keep
-using that folder (its `.env` and `.data`) rather than starting empty here.
+using that folder (its `.env` and `.data`) rather than starting empty here. That folder must keep its
+`extension/manifest.json`: the native host reads the extension id it allows from there, so deleting it breaks pairing.
 
 `Start.command` starts an installed helper. `Uninstall Helper.command` removes the service and browser registrations and
 keeps your transcripts and settings. Keep the checkout where it is; if you move it, run the installer again.

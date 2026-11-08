@@ -3,7 +3,7 @@
    Character: exact, quiet, readable. The one rich thing on the page is the transcript itself. */
 :root{color-scheme:dark;--bg:#0f0f0f;--pn:#181818;--rs:#212121;--cb:#272727;--hv:#3f3f3f;--on:#303030;--fi:#121212;--bd:#3f3f3f;--tk:#717171;--ln:rgba(255,255,255,.1);
   --tx:#f1f1f1;--mu:#aaa;--fa:#999;--ac:#f1f1f1;--er:#ff9a8f;--brand:#ff0033;--progress:#ff0033;--sh:0 8px 28px rgba(0,0,0,.55);
-  --e-out:cubic-bezier(.23,1,.32,1);--d-press:110ms;--d-hover:140ms;--d-pop:170ms;--mv:1}
+  --e-out:cubic-bezier(.23,1,.32,1);--e-io:cubic-bezier(.77,0,.175,1);--d-press:110ms;--d-hover:140ms;--d-pop:170ms;--mv:1}
 @media (prefers-reduced-motion:reduce){:root{--mv:0}}
 html{background:var(--bg)}
 #tr{margin:0;background:var(--bg);color:var(--tx);font:14px/20px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
@@ -43,7 +43,7 @@ html{background:var(--bg)}
 .tx-stack{display:grid;gap:16px}.tx-stack.tight{gap:4px}
 .tx-field label{display:block;margin-bottom:8px;color:var(--mu);font-size:13px;line-height:20px}
 .tx-field .tx-hint{margin-top:8px}
-#tr input[type=text],#tr input[type=url],#tr input[type=password],#tr select{display:block;width:100%;min-width:0;height:40px;padding:0 12px;border:1px solid var(--bd);border-radius:10px;background:var(--fi);color:var(--tx);font:inherit;transition:border-color var(--d-hover) var(--e-out)}
+#tr input[type=text],#tr input[type=url],#tr input[type=password],#tr select{display:block;width:100%;min-width:0;height:36px;padding:0 12px;border:1px solid var(--bd);border-radius:10px;background:var(--fi);color:var(--tx);font:inherit;transition:border-color var(--d-hover) var(--e-out)}
 #tr input::placeholder{color:var(--fa)}
 #tr input:focus-visible,#tr select:focus-visible{outline:0;border-color:var(--ac);transition:none}
 #tr input:disabled,#tr select:disabled{opacity:.5}
@@ -68,27 +68,31 @@ input[type=checkbox]{flex:none;width:16px;height:16px;margin:0;accent-color:var(
 .tx-bar i{display:block;height:100%;background:var(--progress);transform-origin:0 50%;transform:scaleX(0);transition:transform 220ms var(--e-out)}
 /* The library. */
 .tx-shell{flex:1;display:grid;grid-template-columns:320px minmax(0,1fr);min-height:0}
-.tx-lib{position:sticky;top:56px;display:flex;flex-direction:column;gap:12px;height:calc(100vh - 56px);padding:16px 12px 0;border-right:1px solid var(--ln);overflow:hidden}
-.tx-lib>*{flex:none;padding-inline:4px}
+.tx-lib{position:sticky;top:56px;display:flex;flex-direction:column;gap:12px;height:calc(100vh - 56px);padding:16px 16px 0;border-right:1px solid var(--ln);overflow:hidden}
+.tx-lib>*{flex:none}
+.tx-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.tx-field.grow{flex:1;min-width:0}
+.tx-fold summary{color:var(--mu);font-size:13px;line-height:20px;cursor:pointer;transition:color var(--d-hover) var(--e-out)}
+.tx-fold summary:hover{color:var(--tx);transition-duration:0s}
+.tx-fold .tx-folders{margin-top:8px}
 .tx-lib h2{font-size:16px;line-height:24px;font-weight:600}
 .tx-folders{display:grid;gap:8px}
 .tx-sel-tools .tx-row{gap:12px}
-.tx-jobs{flex:1 1 0;min-height:0;display:flex;flex-direction:column;gap:2px;margin-inline:-4px;padding:0 4px 12px;overflow:auto}
-.tx-job{flex:none;display:grid;grid-template-columns:16px minmax(0,1fr);gap:8px;padding:8px;border-radius:10px;content-visibility:auto;contain-intrinsic-size:auto 56px;transition:background-color var(--d-hover) var(--e-out)}
+.tx-jobs{flex:1 1 0;min-height:0;display:flex;flex-direction:column;gap:2px;margin-inline:-8px;padding:0 0 12px;overflow:auto}
+.tx-job{flex:none;display:grid;grid-template-columns:16px minmax(0,1fr);gap:8px;box-sizing:border-box;height:60px;padding:8px;border-radius:10px;content-visibility:auto;contain-intrinsic-size:auto 60px;transition:background-color var(--d-hover) var(--e-out)}
 .tx-job input{margin-top:2px}
 .tx-job input:disabled{opacity:.3;cursor:default}
 @media (hover:hover) and (pointer:fine){.tx-job:hover{background:var(--pn);transition-duration:0s}}
 .tx-job[data-selected=true]{background:var(--rs)}
 .tx-job.on{background:var(--on)}
-#tr .tx-job-t{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:14px;line-height:20px;text-decoration:none;overflow-wrap:anywhere}
-.tx-job-m{display:flex;align-items:center;gap:8px;margin-top:4px;min-width:0}
+#tr .tx-job-t{display:block;overflow:hidden;font-size:14px;line-height:20px;text-decoration:none;white-space:nowrap;text-overflow:ellipsis}
+.tx-job-m{display:flex;align-items:center;gap:8px;height:20px;margin-top:4px;min-width:0}
 .tx-job-meta{min-width:0;overflow:hidden;color:var(--mu);font-size:12px;line-height:16px;white-space:nowrap;text-overflow:ellipsis}
-[data-view=attention] .tx-job-meta{white-space:normal;overflow-wrap:anywhere}
-.tx-selbar{display:grid;gap:8px;margin-inline:-12px;padding:12px 16px 16px!important;border-top:1px solid var(--ln);background:var(--bg)}
-.tx-selbar select{flex:1}
+.tx-selbar{display:grid;gap:8px;margin-inline:-16px;padding:12px 16px 16px;border-top:1px solid var(--ln);background:var(--bg)}
+#tr .tx-selbar select{flex:1;height:32px}
 /* The reader. */
 .tx-main{min-width:0;padding:40px 48px 96px}
-.tx-blank{max-width:640px;margin:64px auto 0}
+.tx-blank{max-width:720px;margin:0 auto}
 .tx-blank h1{font-size:24px;line-height:32px;font-weight:600}
 .tx-blank p{margin-top:8px;color:var(--mu)}
 .tx-doc{max-width:720px;margin:0 auto}
@@ -104,11 +108,13 @@ input[type=checkbox]{flex:none;width:16px;height:16px;margin:0;accent-color:var(
 .tx-tools .tx-count{margin-left:auto}
 #export-state{margin-bottom:8px;overflow-wrap:anywhere}
 #reader-notice{margin-bottom:16px}
+.tx-source{display:grid;gap:4px;margin-top:24px;color:var(--mu);font-size:13px;line-height:20px;overflow-wrap:anywhere}
+.tx-source h2{margin-top:8px!important;color:var(--tx);font-size:13px;line-height:20px;font-weight:600}
 /* The moment: the transcript, set to be read. A book's measure and leading, its own serif, timestamps in the margin. */
-.tx-text{margin-top:32px;padding-top:32px;border-top:1px solid var(--ln);font:18px/30px Charter,"Bitstream Charter","Iowan Old Style",Georgia,Cambria,serif;overflow-wrap:break-word;user-select:text}
+.tx-text{margin-top:24px;padding-top:24px;border-top:1px solid var(--ln);font:18px/30px Charter,"Bitstream Charter","Iowan Old Style",Georgia,Cambria,serif;overflow-wrap:break-word;user-select:text}
 .tx-text p{max-width:68ch;margin:0 0 20px!important}
 .tx-text p.ts{position:relative;padding-left:72px}
-.tx-t{position:absolute;left:0;top:0;width:56px;color:var(--mu);font:12px/30px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;text-align:right;text-decoration:none}
+.tx-t{position:absolute;left:0;top:0;width:56px;color:var(--mu);font:12px/30px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;font-variant-numeric:tabular-nums;text-align:right;text-decoration:none}
 #tr a.tx-t{color:var(--mu);text-decoration:none;transition:color var(--d-hover) var(--e-out)}
 #tr a.tx-t:hover{color:var(--tx);transition-duration:0s}
 /* Settings. */
@@ -124,7 +130,7 @@ input[type=checkbox]{flex:none;width:16px;height:16px;margin:0;accent-color:var(
 .tx-panel summary{font-size:16px;line-height:24px;font-weight:600;cursor:pointer}
 details.tx-panel{display:block}
 details.tx-panel>*+*{margin-top:16px}
-.tx-path{font:13px/20px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere}
+.tx-path{font-size:13px;line-height:20px;overflow-wrap:anywhere}
 .tx-panel>.tx-b.primary{justify-self:start}
 .tx-facts{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;margin:0;font-size:13px;line-height:20px}
 .tx-facts:empty{display:none}
@@ -140,6 +146,7 @@ details.tx-panel>*+*{margin-top:16px}
   .tx-jobs{flex:none;overflow:visible}
   .tx-selbar{position:sticky;bottom:0}
   [data-open=true] .tx-lib{display:none}
+  #tr .tx-jobs{margin-inline:-8px}
   [data-open=false] .tx-main{display:none}
   [data-view=attention][data-open=false] .tx-main{display:block}
   .tx-main{padding:24px 16px 72px}

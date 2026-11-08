@@ -175,7 +175,12 @@ fn find_ffmpeg() -> Option<PathBuf> {
 fn has_ffmpeg() -> bool {
     let found = find_ffmpeg().is_some();
     if !found {
-        eprintln!("skipped: this test needs FFmpeg; put it on PATH or set SCRIBE_TEST_FFMPEG_DIR.");
+        // Directly to stderr: the test harness hides eprintln! of a passing test, and a skip must be seen.
+        use std::io::Write as _;
+        let _ = writeln!(
+            std::io::stderr(),
+            "SKIPPED (no FFmpeg): set SCRIBE_TEST_FFMPEG_DIR or put FFmpeg on PATH to run the real-audio tests."
+        );
     }
     found
 }

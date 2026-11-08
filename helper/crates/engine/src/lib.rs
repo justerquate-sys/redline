@@ -1,4 +1,4 @@
-//! Durable queue and channel-discovery engine for Scribe.
+//! Durable queue and channel-discovery engine of the transcript helper.
 mod channels;
 mod jobs;
 pub mod performance;

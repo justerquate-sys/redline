@@ -65,6 +65,8 @@ struct Channel {
     html: String,
     poll: bool,
     busy: bool,
+    /// The panel was closed: the import goes on in the helper, but this tab stops watching until it is asked again.
+    closed: bool,
 }
 
 #[derive(Default)]
@@ -211,7 +213,7 @@ fn look(v: Option<&Known>, offline: bool) -> Look {
         return Look { s: "on", chip, title: format!("{label}. Click to cancel this video’s transcript"), label, percent };
     }
     match status {
-        "completed" if saved => simple("ok", "", "Saved", "Saved. Show the file"),
+        "completed" if saved => simple("ok", "", "Transcript saved", "Transcript saved. Show the file"),
         "completed" => simple("ok", "", "Transcribed", "Transcribed. Save the existing text and show the file"),
         "cancelled" => simple("", "", "Transcript", "Cancelled. Click to transcribe this video again"),
         "failed" => simple("er", "", "Retry transcript", "This transcript needs attention. Click to try again"),
@@ -529,10 +531,16 @@ fn toast(message: &str) {
     bridge::timer(id, TOAST_MS);
 }
 
+/// A click a page script made, not a person (the bridge's bit): these acts spend the person's money, so it does nothing.
+const UNTRUSTED: u32 = 128;
+
 /// A click on a chip (`tsc`), the watch button (`tsc-w`) or the channel controls (`tsc-…`).
-pub fn on_click(act: &str, arg: &str) -> bool {
+pub fn on_click(act: &str, arg: &str, mods: u32) -> bool {
     if !enabled() {
         return false;
+    }
+    if mods & UNTRUSTED != 0 {
+        return true;
     }
     match act {
         "tsc" | "tsc-w" => video_click(arg, act == "tsc-w"),
@@ -754,7 +762,7 @@ fn channel_url() -> Option<String> {
 fn channel_markup(url: &str) -> String {
     let shorts = with(|t| t.channels.iter().any(|c| c.url == url && c.shorts));
     format!(
-        "<div id=\"{CHANNEL}\" class=\"tsc-ch\"><div class=\"tsc-chr\" role=\"group\" aria-label=\"Import channel transcripts\"><span class=\"m\">Transcribe channel</span><button type=\"button\" class=\"ya-b tsc-b\" data-act=\"tsc-import\" data-arg=\"all\" title=\"Queue all of this channel’s videos\">All videos</button><button type=\"button\" class=\"ya-b tsc-b\" data-act=\"tsc-import\" data-arg=\"year\" title=\"Queue this channel’s videos from the past year\">Past year</button><button type=\"button\" id=\"ytc-tsc-shorts\" class=\"tsc-sw\" data-act=\"tsc-shorts\" role=\"switch\" aria-checked=\"{shorts}\" title=\"Include Shorts in the next channel import\"><i aria-hidden=\"true\"></i>Include Shorts</button></div><section id=\"{PANEL}\" class=\"tsc-chp\" aria-label=\"Channel import progress\" hidden></section></div>"
+        "<div id=\"{CHANNEL}\" class=\"tsc-ch\"><div class=\"tsc-chr\" role=\"group\" aria-label=\"Import channel transcripts\"><span class=\"m\">Transcribe channel</span><button type=\"button\" class=\"ya-b tsc-b\" data-act=\"tsc-import\" data-arg=\"all\" title=\"Queue all of this channel’s videos\">All videos</button><button type=\"button\" class=\"ya-b tsc-b\" data-act=\"tsc-import\" data-arg=\"year\" title=\"Queue this channel’s videos from the past year\">Past year</button><button type=\"button\" id=\"ytc-tsc-shorts\" class=\"tsc-sw\" data-act=\"tsc-shorts\" role=\"switch\" aria-checked=\"{shorts}\" title=\"Include Shorts in the next channel import\"><i aria-hidden=\"true\"></i>Include Shorts</button></div><p class=\"m tsc-chnote\">Queues every video it finds, counted below as it goes. Your Azure resource bills each one.</p><section id=\"{PANEL}\" class=\"tsc-chp\" aria-label=\"Channel import progress\" hidden></section></div>"
     )
 }
 
@@ -805,22 +813,44 @@ fn channel_click(act: &str, arg: &str) {
             });
             bridge::attr("ytc-tsc-shorts", "aria-checked", if on { "true" } else { "false" });
         }
-        "tsc-chclose" => bridge::attr(PANEL, "hidden", ""),
+        "tsc-chclose" => close_panel(&url),
         "tsc-import" if matches!(arg, "all" | "year") => {
             if channel_of_page(&url, |c| c.busy) {
                 return;
             }
-            let shorts = channel_of_page(&url, |c| c.shorts);
+            let shorts = channel_of_page(&url, |c| {
+                c.closed = false;
+                c.shorts
+            });
             bridge::attr_remove(PANEL, "hidden");
             if !bridge::any(&format!("#{PANEL} .tsc-cht")) {
                 bridge::html(PANEL, "<p class=\"tsc-cht\" role=\"status\">Starting import</p>");
             }
             channel_send(&url, "start", &format!(",\"url\":\"{url}\",\"scope\":\"{arg}\",\"shorts\":{shorts}"));
         }
-        "tsc-chretry" => channel_send(&url, "retry", ""),
-        "tsc-chcancel" => channel_send(&url, "cancel", ""),
+        // One request at a time: a double click on Retry must not start a second import.
+        "tsc-chretry" if !channel_of_page(&url, |c| c.busy) => channel_send(&url, "retry", ""),
+        "tsc-chcancel" if !channel_of_page(&url, |c| c.busy) => channel_send(&url, "cancel", ""),
         _ => {}
     }
+}
+
+fn close_panel(url: &str) {
+    channel_of_page(url, |c| {
+        c.closed = true;
+        c.poll = false;
+    });
+    bridge::attr(PANEL, "hidden", "");
+}
+
+/// Escape closes an open channel panel; true when it did.
+pub fn on_escape() -> bool {
+    if !enabled() || !bridge::any(&format!("#{PANEL}:not([hidden])")) {
+        return false;
+    }
+    let Some(url) = channel_url() else { return false };
+    close_panel(&url);
+    true
 }
 
 fn channel_reply(url: &str, ok: bool, data: Option<&json::Value<'_>>, error: &str) {
@@ -832,7 +862,7 @@ fn channel_reply(url: &str, ok: bool, data: Option<&json::Value<'_>>, error: &st
         if ok {
             c.state = text("state");
             c.html = html.clone();
-            c.poll = again;
+            c.poll = again && !c.closed;
         } else {
             c.poll = false;
         }
@@ -841,7 +871,7 @@ fn channel_reply(url: &str, ok: bool, data: Option<&json::Value<'_>>, error: &st
         toast(&gone_message(error));
         return;
     }
-    if channel_url().as_deref() == Some(url) {
+    if channel_url().as_deref() == Some(url) && !channel_of_page(url, |c| c.closed) {
         show_panel(url);
         if !toast_text.is_empty() {
             toast(&toast_text);
@@ -886,8 +916,11 @@ fn channel_poll() {
 /// A page with this channel's slot is on screen again: its panel and its polling come back.
 fn render_channel_here() {
     let Some(url) = channel_url() else { return };
-    let (has, poll) = with(|t| t.channels.iter().find(|c| c.url == url).map_or((false, false), |c| (!c.html.is_empty(), c.poll)));
-    if has && bridge::any(&format!("#{PANEL}[hidden]")) && with(|t| t.channels.iter().any(|c| c.url == url && c.poll)) {
+    let (has, poll, closed) = with(|t| t.channels.iter().find(|c| c.url == url).map_or((false, false, false), |c| (!c.html.is_empty(), c.poll, c.closed)));
+    if closed {
+        return;
+    }
+    if has && poll && bridge::any(&format!("#{PANEL}[hidden]")) {
         bridge::attr_remove(PANEL, "hidden");
     }
     if has {
@@ -930,7 +963,7 @@ mod tests {
     }
     #[test]
     fn saved_transcribed_removed_and_failed() {
-        assert_eq!(look(Some(&k("completed", true, None)), false).label, "Saved");
+        assert_eq!(look(Some(&k("completed", true, None)), false).label, "Transcript saved");
         let t = look(Some(&k("completed", false, None)), false);
         assert_eq!(t.label, "Transcribed");
         assert!(t.title.contains("Save the existing text"));

@@ -76,7 +76,7 @@ struct PendingStatus {
     revision: String,
     generation: u64,
 }
-pub(crate) const PERSISTENCE_WARNING: &str = "The transcript result is retained, but its local job status could not be saved. Scribe is retrying that status write; new transcription requests and helper updates are paused until storage is writable.";
+pub(crate) const PERSISTENCE_WARNING: &str = "The transcript result is retained, but its local job status could not be saved. The helper is retrying that status write; new transcription requests and helper updates are paused until storage is writable.";
 pub(crate) struct State {
     pub jobs: BTreeMap<String, Value>,
     pub queue: VecDeque<String>,

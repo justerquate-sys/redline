@@ -146,14 +146,13 @@ fn shell() -> String {
     format!(
         r#"<div class="tx-app"><header class="tx-top"><a class="tx-brand" href="reader.html">{mark}<span>Transcripts</span></a><span id="connection" class="tx-state" role="status">Connecting</span><span class="tx-gap"></span><a class="tx-b quiet" href="settings.html#save-folder">Save folder</a><a class="tx-b quiet" href="settings.html">Settings</a></header>
 <div class="tx-shell"><aside class="tx-lib" aria-label="Transcript library">
-<div class="tx-row spread"><h2><span id="library-title">Library</span> <span id="library-count" class="tx-count"></span></h2><button type="button" id="refresh" class="tx-b icon quiet" data-tx="refresh" aria-label="Refresh library" title="Refresh library">{i_refresh}</button></div>
-<button type="button" id="attention-filter" class="tx-link" data-tx="attention" aria-pressed="false">Needs attention</button>
-<section class="tx-folders" aria-label="Transcript folders">
-<div class="tx-field"><label for="folder-filter">Folder</label><select id="folder-filter" data-tx-change="filter"></select></div>
+<div class="tx-row spread"><h2><span id="library-title">Library</span> <span id="library-count" class="tx-count"></span></h2><span class="tx-row"><button type="button" id="attention-filter" class="tx-link" data-tx="attention" aria-pressed="false">Needs attention</button><button type="button" id="refresh" class="tx-b icon quiet" data-tx="refresh" aria-label="Refresh library" title="Refresh library">{i_refresh}</button></span></div>
+<div class="tx-row"><div class="tx-field grow"><label for="folder-filter" class="tx-sr">Folder</label><select id="folder-filter" data-tx-change="filter" aria-label="Folder"></select></div></div>
+<details id="folder-tools" class="tx-fold"><summary>Folder tools</summary><div class="tx-folders" aria-label="Transcript folders">
 <form id="folder-form" class="tx-add" data-tx-submit="folder"><input id="folder-name" type="text" placeholder="New folder" aria-label="New folder name" maxlength="100" required><button type="submit" id="create-folder" class="tx-b icon" aria-label="Create folder" title="Create folder">{i_plus}</button></form>
 <div class="tx-row spread wrap"><span id="default-folder-label" class="tx-hint"></span><button type="button" id="set-default-folder" class="tx-link" data-tx="set-default" disabled>Use for new videos</button></div>
 <div class="tx-row"><button type="button" id="copy-folder" class="tx-b small" data-tx="copy-folder" disabled>Copy all</button><button type="button" id="save-folder" class="tx-b small" data-tx="save-folder" disabled>Save all</button></div>
-</section>
+</div></details>
 <div class="tx-row spread wrap tx-sel-tools"><label class="tx-check"><input type="checkbox" id="hover-select" data-tx-change="hover">Hover select</label><span class="tx-row"><button type="button" id="select-all" class="tx-link" data-tx="select-all">Select all</button><button type="button" id="clear-selection" class="tx-link" data-tx="clear" disabled>Clear</button></span></div>
 <p id="selection-hint" class="tx-hint" hidden>Hover to add. Hovering again keeps a video selected. Uncheck its box to remove it.</p>
 <div id="library-notice" class="tx-notice" role="status" hidden></div>
@@ -171,6 +170,7 @@ fn shell() -> String {
 <div id="document-tools" class="tx-tools" hidden><button type="button" id="copy-document" class="tx-b primary" data-tx="copy-document">Copy full transcript</button><button type="button" id="download-md" class="tx-b" data-tx="save-doc" data-arg="md">Save Markdown</button><button type="button" id="download-txt" class="tx-b quiet" data-tx="save-doc" data-arg="txt">Text</button><button type="button" id="download-json" class="tx-b quiet" data-tx="save-doc" data-arg="json">JSON</button><button type="button" id="show-file" class="tx-b quiet" data-tx="show-file">Show file</button><span id="word-count" class="tx-count"></span></div>
 <p id="export-state" class="tx-hint" hidden></p>
 <div id="reader-notice" class="tx-notice" role="status" hidden></div>
+<section id="doc-source" class="tx-source" aria-label="Source" hidden></section>
 <div id="transcript" class="tx-text" aria-label="Full transcript" hidden></div>
 </article>
 </main></div></div><div id="toast" class="tx-notice tx-toast" role="status" hidden></div>"#,
@@ -304,10 +304,10 @@ fn render_library() {
                     parts.join(" · ")
                 }
             };
-            let url = s.reader_url(Some(id));
+            let url = esc(&s.reader_url(Some(id)));
             let selected = s.selected.contains(id);
             rows.push_str(&format!(
-                "<article class=\"tx-job{active}\" id=\"job-{eid}\" data-selected=\"{selected}\" data-job-status=\"{status}\" data-tx-hover=\"job\" data-arg=\"{eid}\"><input type=\"checkbox\" class=\"select-job\" id=\"sel-{eid}\" data-tx-change=\"select\" data-arg=\"{eid}\" aria-label=\"Select full transcript: {etitle}\"{checked}{disabled}><div><a class=\"tx-job-t\" href=\"{url}\" data-tx=\"open\" data-arg=\"{eid}\">{etitle}</a><div class=\"tx-job-m\">{state}<span class=\"tx-job-meta\">{meta}</span></div></div></article>",
+                "<article class=\"tx-job{active}\" id=\"job-{eid}\" data-selected=\"{selected}\" data-job-status=\"{status}\" data-tx-hover=\"job\" data-arg=\"{eid}\"><input type=\"checkbox\" class=\"select-job\" id=\"sel-{eid}\" data-tx-change=\"select\" data-arg=\"{eid}\" aria-label=\"Select full transcript: {etitle}\"{checked}{disabled}><div><a class=\"tx-job-t\" href=\"{url}\" data-tx=\"open\" data-arg=\"{eid}\" title=\"{etitle}\">{etitle}</a><div class=\"tx-job-m\">{state}<span class=\"tx-job-meta\" title=\"{meta}\">{meta}</span></div></div></article>",
                 active = if s.current.as_deref() == Some(id) { " on" } else { "" },
                 eid = esc(id),
                 status = esc(text(job, "status")),
@@ -358,6 +358,7 @@ fn navigate(id: Option<String>, update_history: bool) {
     show("reader", id.is_some());
     show("transcript", false);
     put("transcript", "");
+    show("doc-source", false);
     show("document-tools", false);
     show("progress-panel", false);
     show("export-state", false);
@@ -466,6 +467,7 @@ fn render_job(job: Value) {
         with(|s| s.load += 1);
         put("transcript", "");
         show("transcript", false);
+        show("doc-source", false);
         show("document-tools", false);
         host::text("word-count", "");
         if status == "removed" {
@@ -496,6 +498,27 @@ async fn get_document(id: &str) -> Result<Doc, String> {
     let doc = Doc { content: content.to_owned(), sections };
     with(|s| s.docs.insert(id.to_owned(), doc.clone()));
     Ok(doc)
+}
+
+/// A line of text with its web addresses as links (`https://` and `http://` only; everything escaped).
+fn linked(line: &str) -> String {
+    line.split(' ').map(|w| if w.starts_with("https://") || w.starts_with("http://") { format!("<a href=\"{e}\" target=\"_blank\" rel=\"noopener noreferrer\">{e}</a>", e = esc(w)) } else { esc(w) }).collect::<Vec<_>>().join(" ")
+}
+
+/// The document's header as it was saved: the source lines, and the creator's links when it has them.
+fn source_html(content: &str) -> String {
+    let parts = core::document_parts(content);
+    let mut out = String::new();
+    for line in &parts.source {
+        out.push_str(&format!("<p>{}</p>", linked(line)));
+    }
+    if !parts.links.is_empty() {
+        out.push_str("<h2>Description links (creator-provided)</h2>");
+        for line in &parts.links {
+            out.push_str(&format!("<p>{}</p>", linked(line)));
+        }
+    }
+    out
 }
 
 /// The moment of this page: a measure that reads like a book, with a timestamp beside each section the helper knows
@@ -538,6 +561,8 @@ async fn load_document(id: String) {
     match r {
         Ok(doc) => {
             let video = with(|s| s.current_job.as_ref().map(|j| text(j, "video_id").to_owned()).unwrap_or_default());
+            put("doc-source", &source_html(&doc.content));
+            show("doc-source", true);
             put("transcript", &transcript_html(&doc, &video));
             show("transcript", true);
             show("document-tools", true);
@@ -656,6 +681,8 @@ fn select_job(id: &str, on: bool) {
     });
     set(&format!("job-{id}"), "data-selected", if on { "true" } else { "false" });
     host::set_checked(&format!("sel-{id}"), on);
+    // The row changed outside the list's cached markup: the next render must write it, whatever it holds.
+    ui::forget("job-list");
     if fetch {
         prefetch(id.to_owned());
     }
@@ -779,7 +806,7 @@ fn save_exports(scope: Value) {
 
 pub fn on_event(kind: &str, name: &str, arg: &str, value: &str) {
     match (kind, name) {
-        ("timer", "poll") => spawn_local(refresh()),
+        ("timer", "poll") | ("changed", _) => spawn_local(refresh()),
         ("timer", "toast") => show("toast", false),
         ("visible", _) if !host::hidden() => spawn_local(refresh()),
         ("popstate", _) => {
@@ -1075,6 +1102,12 @@ mod tests {
     fn a_transcript_is_escaped_and_paragraphed() {
         let doc = Doc { content: "# T\n\nPublished: Unknown\n\n<b>one</b>\n\ntwo\n".into(), sections: vec![] };
         assert_eq!(transcript_html(&doc, "abcdefghijk"), "<p>&lt;b&gt;one&lt;/b&gt;</p><p>two</p>");
+    }
+    #[test]
+    fn the_saved_header_shows_with_safe_links() {
+        let h = source_html("# T\n\nChannel: <C>\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\nSite https://example.com/?a=1&b=\"2\" javascript:alert(1)\n\nTranscript:\n\nBody\n");
+        assert!(h.contains("Channel: &lt;C&gt;") && h.contains("Description links") && h.contains("href=\"https://example.com/?a=1&amp;b=&quot;2&quot;\""));
+        assert!(!h.contains("href=\"javascript") && !h.contains("Body"));
     }
     #[test]
     fn timestamps_link_to_the_moment() {

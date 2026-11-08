@@ -66,8 +66,9 @@ const YTC = (() => {
       clicked = el; // click_rect: the source of a shared-element morph
       // 32: keyboard activation (Enter/Space on a focused control: click with detail 0 and no pointer position).
       // 64: and that key is being held (an auto-repeat activated it, not a press).
+      // 128: a page script made this event, no person did (`el.click()`, dispatchEvent). A real key press is trusted.
       const kbd = e.detail === 0 && !e.clientX && !e.clientY;
-      const mods = (e.ctrlKey ? 1 : 0) | (e.metaKey ? 2 : 0) | (e.shiftKey ? 4 : 0) | (e.altKey ? 8 : 0) | (el.target === '_blank' ? 16 : 0) | (kbd ? 32 : 0) | (kbd && keyHeld ? 64 : 0);
+      const mods = (e.ctrlKey ? 1 : 0) | (e.metaKey ? 2 : 0) | (e.shiftKey ? 4 : 0) | (e.altKey ? 8 : 0) | (el.target === '_blank' ? 16 : 0) | (kbd ? 32 : 0) | (kbd && keyHeld ? 64 : 0) | (e.isTrusted ? 0 : 128);
       if (call('on_click', el.getAttribute('href') || '', el.dataset.act || '', el.dataset.arg || '', mods)) e.preventDefault();
     });
     d.addEventListener('submit', e => {
@@ -121,7 +122,7 @@ const YTC = (() => {
     d.addEventListener('fullscreenchange', () => evt(0, 'fullscreenchange'));
     d.addEventListener('dblclick', e => {
       const el = e.target.closest && e.target.closest('[data-dbl]');
-      if (el && call('on_click', '', el.dataset.dbl, '', 0)) e.preventDefault();
+      if (el && call('on_click', '', el.dataset.dbl, '', e.isTrusted ? 0 : 128)) e.preventDefault();
     });
     // Drag on [data-drag]: on_drag(name, fraction 0..1 across the element, phase 0 down / 1 move / 2 up).
     d.addEventListener('pointerdown', e => {
@@ -174,6 +175,13 @@ const YTC = (() => {
       root.lang = (navigator.language || 'en').split('-')[0];
       setHTML(root, html);
       try { history.scrollRestoration = 'manual'; } catch {}
+      listen();
+    },
+    // An extension page whose head is already loaded (popup.html): only its body changes, so its stylesheets stay and
+    // nothing is ever painted, or transitioned, from an unstyled state.
+    doc_body(html, cls) {
+      d.body.className = cls;
+      setHTML(d.body, html);
       listen();
     },
     // The page's own document, still streaming in, kept out of the page (the loader does not stop it; `page_stop`

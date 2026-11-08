@@ -3,7 +3,7 @@
 // temporary root and an ephemeral port with a loopback Speech server. Nothing reaches a real helper or Azure.
 'use strict';
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
-const { spawn, execFileSync } = require('node:child_process');
+const { spawn, spawnSync, execFileSync } = require('node:child_process');
 const assert = require('node:assert/strict');
 const mockHelper = require('./transcripts-mock.cjs');
 
@@ -363,7 +363,7 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     await a.waitForTimeout(200);
     assert.equal(await a.locator(chip).first().evaluate(n => getComputedStyle(n).opacity), '1');
     await shot(a, 'card-saved-1400');
-    assert.match(await a.locator(chip).first().getAttribute('title'), /Saved/);
+    assert.match(await a.locator(chip).first().getAttribute('title'), /Transcript saved/);
     await waitFor(() => worker(() => chrome.action.getTitle({}).then(t => t.includes('Transcripts saved'))), 'the six-second success', 9000);
     await waitFor(() => worker(() => chrome.action.getTitle({}).then(t => t === 'Redline preferences')), 'the plain mark returns', 9000);
     assert.equal(await worker(() => self.__tr.icons.at(-1)), 'manifest');
@@ -380,7 +380,7 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     await a.waitForSelector(chip);
     await a.waitForFunction(s => /Transcribed/.test(document.querySelector(s)?.title || ''), chip);
     await a.click(chip);
-    await a.waitForFunction(s => /Saved/.test(document.querySelector(s)?.title || ''), chip);
+    await a.waitForFunction(s => /Transcript saved/.test(document.querySelector(s)?.title || ''), chip);
     assert.equal(j2.saved, true);
     assert.equal(mock.state.jobs.length, jobsBefore, 'no new transcription');
     // Removed: stays excluded; a click tells why and does nothing else.
@@ -441,7 +441,7 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     await shot(p, 'watch-active-1400');
     // Saved: it opens the reader for this video.
     j.status = 'completed'; j.progress = 100; j.document_available = true;
-    await p.waitForFunction(() => document.querySelector('.tsc-w')?.innerText === 'Saved', null, { timeout: 12000 });
+    await p.waitForFunction(() => document.querySelector('.tsc-w')?.innerText === 'Transcript saved', null, { timeout: 12000 });
     await shot(p, 'watch-saved-1400');
     const opened = ctx.waitForEvent('page');
     await p.click('.tsc-w');
@@ -639,6 +639,419 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     await worker(k => chrome.storage.local.clear().then(() => chrome.storage.local.set(k)), keep);
   });
 
+  // ---- the reviewer's adversarial cases, kept.
+  const stopWorkers = async () => {
+    const pg = await ctx.newPage();
+    // (A page that asks the worker nothing: anything else would wake it again right away.)
+    await pg.goto(ext('popup.html?file=export'), { waitUntil: 'commit' }).catch(() => {});
+    const cdp = await ctx.newCDPSession(pg);
+    await cdp.send('ServiceWorker.enable');
+    await cdp.send('ServiceWorker.stopAllWorkers');
+    await new Promise(r => setTimeout(r, 400));
+    await pg.close();
+  };
+  const paid = () => mock.log.filter(l => (l.path === '/jobs' && l.method === 'POST') || l.path === '/channels/import').length;
+
+  await step('transcripts: a page script cannot spend money: planted buttons, real chips, a synthetic double click or key press send nothing; a real click and real Enter still work', async () => {
+    mock.reset(); await enable();
+    const p = await home();
+    await p.waitForSelector('#ytc-list .tsc', { state: 'attached' });
+    const id = await p.locator('#ytc-list .c[data-v]:has(.tsc)').first().getAttribute('data-v');
+    const planted = await p.evaluate(v => {
+      let trusted = null;
+      addEventListener('click', e => { trusted = e.isTrusted; }, { capture: true, once: true });
+      const b = document.createElement('button'); b.dataset.act = 'tsc'; b.dataset.arg = 'PLANTEDvid1'; document.body.append(b); b.click(); b.remove();
+      // The real chip of a real card, clicked by a script.
+      document.querySelector(`.tsc[data-arg="${v}"]`).click();
+      document.querySelector(`.tsc[data-arg="${v}"]`).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1, clientX: 5, clientY: 5 }));
+      // Through the other route into on_click, and a key that claims to activate a focused chip.
+      const d = document.createElement('div'); d.dataset.dbl = 'tsc'; document.body.append(d); d.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); d.remove();
+      const chip = document.querySelector(`.tsc[data-arg="${v}"]`); chip.focus();
+      for (const type of ['keydown', 'keypress', 'keyup']) chip.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+      chip.blur();
+      return trusted;
+    }, id);
+    assert.equal(planted, false, 'the browser itself says it is not trusted');
+    await p.goto('https://www.youtube.com/@monkeydeveloper/videos', { waitUntil: 'commit' });
+    await p.waitForSelector('.tsc-ch');
+    await p.evaluate(() => {
+      for (const [act, arg] of [['tsc-import', 'all'], ['tsc-import', 'year'], ['tsc-chretry', ''], ['tsc-chcancel', ''], ['tsc-shorts', '']]) { const b = document.createElement('button'); b.dataset.act = act; b.dataset.arg = arg; document.body.append(b); b.click(); b.remove(); }
+      document.querySelector('[data-act="tsc-import"]').click();
+      const d = document.createElement('div'); d.dataset.dbl = 'tsc-chretry'; document.body.append(d); d.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); d.remove();
+    });
+    await p.waitForTimeout(900);
+    assert.equal(paid(), 0, 'nothing reached the helper: ' + JSON.stringify(mock.log.filter(l => l.method === 'POST' && l.path !== '/videos/status')));
+    assert.equal(await p.locator('#ytc-tsc-shorts').getAttribute('aria-checked'), 'false');
+    // A person can still do all of it.
+    await p.goto('https://www.youtube.com/', { waitUntil: 'commit' });
+    await p.waitForSelector(chipOf(id), { state: 'attached' });
+    await p.locator(`#ytc-list .c[data-v="${id}"] a.th`).hover();
+    await p.focus(chipOf(id));
+    await p.keyboard.press('Enter');
+    await waitFor(() => paid() === 1, 'a real Enter is trusted');
+    assert.equal(mock.log.find(l => l.path === '/jobs' && l.method === 'POST').body.url, `https://www.youtube.com/watch?v=${id}`);
+    await p.close();
+  });
+
+  await step('transcripts: someone who never set it up: a failed Pair automatically leaves the toolbar alone', async () => { try {
+    mock.reset(); await disable();
+    await worker(() => chrome.alarms.clearAll());
+    await worker(() => { self.__tr.nativeMode = 'missing'; });
+    await worker(() => TR.vault_del('pairingToken'));
+    await worker(() => Promise.all([chrome.action.setTitle({ title: 'Redline preferences' }), chrome.action.setIcon({ path: chrome.runtime.getManifest().action.default_icon })]));
+    await worker(() => { self.__tr.icons.length = 0; });
+    const p = await open(ext('settings.html'));
+    await p.waitForFunction(() => document.querySelector('#helper-status')?.textContent === 'Helper unavailable');
+    assert.equal(await p.locator('#switch').isVisible(), false, 'no switch for someone with nothing to turn off');
+    await p.evaluate(() => { document.querySelector('#pairing').open = true; });
+    await p.click('#auto-pair');
+    await p.waitForFunction(() => /cannot find/.test(document.querySelector('#pair-notice')?.textContent || ''));
+    await p.waitForTimeout(800);
+    assert.equal(await worker(() => chrome.action.getTitle({})), 'Redline preferences');
+    assert.deepEqual(await worker(() => self.__tr.icons), [], 'nothing painted');
+    assert.equal(await worker(() => chrome.alarms.getAll().then(a => a.length)), 0);
+    await p.close();
+  } finally { await worker(() => { self.__tr.nativeMode = 'ok'; }); } });
+
+  await step('transcripts: a helper removed for good clears the flag; a stopped one keeps it; Turn off holds until turned on again', async () => { try {
+    const flag = () => worker(() => chrome.storage.local.get('ytcTranscriptsV1').then(o => o.ytcTranscriptsV1 ?? null));
+    mock.reset(); await enable();
+    await worker(t => TR.vault_set('pairingToken', t), TOKEN);
+    // A stop: the port is down but the browser still finds the helper. The feature stays; its chips stay.
+    mock.down(true);
+    let s = await open(ext('settings.html'));
+    await s.waitForFunction(() => document.querySelector('#helper-status')?.textContent === 'Helper unavailable', null, { timeout: 25000 });
+    await s.waitForTimeout(500);
+    assert.deepEqual(await flag(), { on: true }, 'a transient stop keeps it');
+    await s.close();
+    // Removed: the port is down and the registration is gone. The chips leave an open page without a reload.
+    const p = await home();
+    await p.waitForSelector('#ytc-list .tsc', { state: 'attached', timeout: 8000 });
+    await worker(() => { self.__tr.nativeMode = 'missing'; });
+    s = await open(ext('settings.html'));
+    await s.waitForFunction(() => document.querySelector('#helper-status')?.textContent === 'Helper unavailable', null, { timeout: 25000 });
+    await waitFor(async () => (await flag()) === null, 'the flag is cleared', 8000);
+    await p.waitForFunction(() => !document.querySelector('.tsc'), null, { timeout: 8000 });
+    assert.equal(await worker(() => chrome.action.getTitle({})), 'Redline preferences');
+    await s.close();
+    // It comes back by itself the next time settings finds a configured helper.
+    mock.down(false);
+    await worker(() => { self.__tr.nativeMode = 'ok'; });
+    s = await open(ext('settings.html'));
+    await waitFor(async () => (await flag())?.on === true, 'on again', 10000);
+    await p.waitForSelector('#ytc-list .tsc', { state: 'attached', timeout: 8000 });
+    // The switch, for a helper that is fine: off everywhere at once, no request after, and settings does not undo it.
+    await s.waitForSelector('#turn-off:not([hidden])');
+    await s.locator('#switch').scrollIntoViewIfNeeded();
+    await shot(s, 'settings-switch-1400');
+    await s.click('#turn-off');
+    await p.waitForFunction(() => !document.querySelector('.tsc'), null, { timeout: 8000 });
+    assert.equal(await flag(), null);
+    await s.waitForSelector('#turn-on:not([hidden])');
+    await s.reload({ waitUntil: 'commit' });
+    await s.waitForFunction(() => document.querySelector('#helper-status')?.textContent === 'Helper connected', null, { timeout: 10000 });
+    assert.equal(await flag(), null, 'reopening settings does not turn it back on');
+    await p.waitForTimeout(300);
+    const before = mock.log.length;
+    await p.reload({ waitUntil: 'commit' });
+    await p.waitForSelector('#ytc-list .c[data-v] .t');
+    await p.waitForTimeout(600);
+    assert.equal(mock.log.length, before, 'no request from YouTube while off');
+    await s.waitForSelector('#turn-on:not([hidden])');
+    await s.click('#turn-on');
+    await waitFor(async () => (await flag())?.on === true, 'on again by asking', 8000);
+    await p.waitForSelector('#ytc-list .tsc', { state: 'attached', timeout: 8000 });
+    await s.close(); await p.close();
+  } finally { mock.down(false); await worker(() => { self.__tr.nativeMode = 'ok'; }); } });
+
+  await step('transcripts: one Set up click with an installed helper completes pairing: an open YouTube tab gets its controls, the popup its section; YouTube alone stays quiet', async () => {
+    await disable();
+    await worker(() => TR.vault_del('pairingToken'));
+    await new Promise(r => setTimeout(r, 300));
+    mock.reset();
+    mock.state.configured = true; mock.state.hasKey = true; mock.state.endpoint = 'https://resource.cognitiveservices.azure.com';
+    const n0 = await native();
+    const yt = await home();
+    await yt.waitForTimeout(600);
+    assert.equal(await yt.locator('.tsc').count(), 0);
+    assert.equal(await native(), n0, 'opening YouTube stays quiet');
+    assert.equal(mock.log.length, 0);
+    const pop = await open(ext('popup.html'), 420, 600);
+    await pop.waitForSelector('#popup-tr-setup');
+    assert.equal(await native(), n0, 'opening the popup stays quiet');
+    const opened = ctx.waitForEvent('page');
+    await pop.click('#popup-tr-setup');
+    const s = await opened;
+    await s.waitForFunction(() => document.querySelector('#helper-status')?.textContent === 'Helper connected', null, { timeout: 10000 });
+    await yt.waitForSelector('#ytc-list .tsc', { state: 'attached', timeout: 8000 });
+    assert.equal(await worker(() => TR.vault_get('pairingToken')), TOKEN);
+    await s.close(); await pop.close();
+    const again = await open(ext('popup.html'), 420, 600);
+    await again.waitForSelector('#popup-tr .ptr-card');
+    await again.close(); await yt.close();
+  });
+
+  await step('transcripts: the worker sleeping keeps the native rule (at most once in 5 minutes across wakes); a grey icon recovers; a batch that finished with the browser closed never replays its success', async () => { try {
+    mock.reset(); await enable();
+    await worker(() => TR.vault_del('lastReconnect'));
+    await worker(() => TR.vault_del('pairingToken'));
+    mock.down(true);
+    let total = 0;
+    for (let i = 0; i < 3; i++) {
+      await stopWorkers();
+      const p = await home();
+      await p.waitForSelector('#ytc-list .tsc', { state: 'attached', timeout: 8000 });
+      await p.waitForTimeout(1500);
+      total += await worker(() => self.__tr.native.length);
+      await p.close();
+    }
+    assert.ok(total <= 1, `native attempts across three page loads and worker restarts: ${total}`);
+    // Grey at start; the helper returns; the worker sleeps; the next page corrects it, with no click.
+    await worker(t => TR.vault_set('pairingToken', t), TOKEN);
+    await worker(() => tr().then(c => c.on_startup()));
+    await waitFor(() => worker(() => chrome.action.getTitle({}).then(t => /unavailable/.test(t))), 'grey', 12000);
+    await stopWorkers();
+    mock.down(false);
+    const q = await home();
+    await waitFor(() => worker(() => chrome.action.getTitle({}).then(t => t === 'Redline preferences')), 'the toolbar recovers', 15000);
+    await q.close();
+    // Work seen active, the browser closes (the session marker goes with it), it finishes meanwhile.
+    const j = mockHelper.job('job-closed', 'closedjob01', 'transcribing', { progress: 50 });
+    mock.state.jobs = [j];
+    await worker(() => tr().then(c => c.on_startup()));
+    await waitFor(() => worker(() => chrome.action.getTitle({}).then(t => t.startsWith('Transcripts: 1 transcribing'))), 'active', 12000);
+    await worker(() => chrome.storage.session.remove('ytc:tr-session'));
+    await stopWorkers();
+    j.status = 'completed'; j.progress = 100; j.document_available = true;
+    // A page wakes the new worker, whose first read finds the batch finished.
+    const woke = await home();
+    const titles = [];
+    for (let i = 0; i < 20; i++) { titles.push(await worker(() => chrome.action.getTitle({}))); await new Promise(r => setTimeout(r, 150)); }
+    await woke.close();
+    assert.ok(!titles.some(t => /Transcripts saved/.test(t)), 'no success replay: ' + [...new Set(titles)]);
+    assert.equal(titles.at(-1), 'Redline preferences', 'the read did happen, and found it finished');
+    // A sleep inside a session keeps what it saw: a real success still shows.
+    mock.state.jobs = [mockHelper.job('job-seen', 'seenjob0001', 'transcribing', { progress: 50 })];
+    mock.state.batch = 'batch-2';
+    await worker(() => tr().then(c => c.on_startup()));
+    await waitFor(() => worker(() => chrome.action.getTitle({}).then(t => t.startsWith('Transcripts: 1 transcribing'))), 'active again', 12000);
+    await stopWorkers();
+    Object.assign(mock.state.jobs[0], { status: 'completed', progress: 100, document_available: true });
+    const woke2 = await home();
+    await waitFor(() => worker(() => chrome.action.getTitle({}).then(t => t.includes('Transcripts saved'))), 'a seen success still shows after a sleep', 12000);
+    await woke2.close();
+  } finally { mock.down(false); } });
+
+  await step('transcripts: a leftover alarm from an older install is cleared', async () => {
+    await worker(() => chrome.alarms.create('full-transcript-status', { periodInMinutes: 1 }));
+    await worker(() => trTidy());
+    assert.equal(await worker(() => chrome.alarms.get('full-transcript-status').then(a => a ?? null)), null);
+  });
+
+  await step('transcripts settings: importing asks before replacing a Deepgram key or visitor id and names them; junk in a file does not break the client', async () => {
+    mock.reset(); await disable();
+    const keep = await worker(() => chrome.storage.local.get(null));
+    await worker(() => chrome.storage.local.set({ ytcVoiceKeyV1: 'mine-deepgram', ytcConfigV1: { vd: 'MyVisitorData', v: '2.1', p: { sbo: true } } }));
+    const file = path.join(os.tmpdir(), `ytc-crafted-${Date.now()}.json`);
+    const write = (o, n) => { const f = `${file}.${n}.json`; fs.writeFileSync(f, JSON.stringify(o)); return f; };
+    const crafted = { redlineSettings: 1, items: { ytcVoiceKeyV1: 'attacker-deepgram', ytcConfigV1: { vd: 'AttackerVisitor', v: '2.2', p: { sbo: false } }, shortsInFeeds: true } };
+    const s = await open(ext('settings.html'));
+    const stored = () => worker(() => chrome.storage.local.get(['ytcVoiceKeyV1', 'ytcConfigV1', 'shortsInFeeds']));
+    await s.setInputFiles('#import-file', write(crafted, 1));
+    await s.waitForSelector('#import-confirm:not([hidden])');
+    assert.match(await s.locator('#import-notice').textContent(), /replace your Deepgram key and your YouTube visitor id/);
+    assert.equal((await stored()).ytcVoiceKeyV1, 'mine-deepgram', 'nothing is written while it asks');
+    await s.locator('#settings-file').scrollIntoViewIfNeeded();
+    await shot(s, 'settings-import-confirm-1400');
+    await s.click('#import-cancel');
+    await s.waitForFunction(() => document.querySelector('#import-notice').textContent === 'Nothing changed.');
+    assert.equal((await stored()).shortsInFeeds, undefined);
+    // Import the rest: everything but what says who you are.
+    await s.setInputFiles('#import-file', write(crafted, 2));
+    await s.waitForSelector('#import-confirm:not([hidden])');
+    await s.click('#import-rest');
+    await s.waitForFunction(() => /Your Deepgram key and YouTube visitor id stayed as it was/.test(document.querySelector('#import-notice').textContent));
+    let now = await stored();
+    assert.equal(now.ytcVoiceKeyV1, 'mine-deepgram');
+    assert.equal(now.ytcConfigV1.vd, 'MyVisitorData');
+    assert.equal(now.ytcConfigV1.v, '2.2', 'the rest of that record came');
+    assert.equal(now.shortsInFeeds, true);
+    // Replace, on purpose.
+    await s.setInputFiles('#import-file', write(crafted, 3));
+    await s.waitForSelector('#import-confirm:not([hidden])');
+    await s.click('#import-replace');
+    await s.waitForFunction(() => /including a Deepgram key and a YouTube visitor id/.test(document.querySelector('#import-notice').textContent));
+    now = await stored();
+    assert.equal(now.ytcVoiceKeyV1, 'attacker-deepgram');
+    // Nothing to replace: no question, but the notice names what came.
+    await worker(() => chrome.storage.local.remove(['ytcVoiceKeyV1', 'ytcConfigV1']));
+    await s.setInputFiles('#import-file', write(crafted, 4));
+    await s.waitForFunction(() => /Imported 3 settings, including a Deepgram key and a YouTube visitor id/.test(document.querySelector('#import-notice').textContent));
+    // Junk in importable keys: Home still renders, nothing thrown.
+    await worker(() => chrome.storage.local.clear());
+    await s.setInputFiles('#import-file', write({ redlineSettings: 1, items: { ytcConfigV1: { p: 'x', v: 12, visitor: '<img src=x onerror=alert(1)>', vd: '<img src=x>', au: -5, sts: 'x' }, ytcVoiceKeyV1: '<b>', yourTubeHistoryV1: { entries: 'x' }, yourTubeProgressV1: [1, 2], yourTubeBlockedWebsitesV1: {}, yourTubeRecommendationTopicsV1: [{}], yourTubeNativeTopicsV1: [null], yourTubeMinimumHomeDurationV1: 'x', yourTubeHomeOrderV1: '<i>', shortsInFeeds: true } }, 5));
+    await s.waitForFunction(() => /Imported/.test(document.querySelector('#import-notice').textContent));
+    await s.close();
+    const p = await open('https://www.youtube.com/');
+    await p.waitForSelector('#ytc-list .c[data-v] .t', { timeout: 15000 });
+    assert.deepEqual(p.errors, []);
+    await p.close();
+    await worker(k => chrome.storage.local.clear().then(() => chrome.storage.local.set(k)), keep);
+    for (const f of fs.readdirSync(os.tmpdir())) if (f.startsWith(path.basename(file))) fs.rmSync(path.join(os.tmpdir(), f), { force: true });
+  });
+
+  await step('transcripts reader: Clear unchecks with no poll in between; a job queued elsewhere shows at once; the installed helper\'s old wording is replaced; a spoken "Transcript:" stays in the text; the source header shows', async () => {
+    mock.reset(); await enable();
+    mock.state.jobs.push(
+      mockHelper.job('job-a', 'aaaaaaaaaaa', 'completed', { title: 'One', text: 'First words.\nTranscript:\nStill speaking.', created_at: '2026-11-01T10:00:00Z' }),
+      mockHelper.job('job-b', 'bbbbbbbbbbb', 'completed', { title: 'Two', created_at: '2026-11-01T09:00:00Z' }),
+      mockHelper.job('job-c', 'ccccccccccc', 'failed', { title: 'Three', error: 'The transcript result is retained, but its local job status could not be saved. Scribe is retrying that status write; new transcriptions wait.', created_at: '2026-11-01T08:00:00Z' }));
+    const p = await open(ext('reader.html'));
+    await p.waitForSelector('.tx-job');
+    await p.check('#sel-job-a');
+    await p.waitForFunction(() => /ready to copy/.test(document.querySelector('#selection-count').textContent));
+    await p.click('#clear-selection');
+    await p.waitForTimeout(200);
+    assert.equal(await p.locator('#sel-job-a').isChecked(), false);
+    assert.equal(await p.locator('#selection-bar').isVisible(), false);
+    assert.equal(await p.locator('#job-job-a').getAttribute('data-selected'), 'false');
+    // The document: its saved header above the text; a spoken marker is the text.
+    await p.click('.tx-job[data-arg="job-a"] .tx-job-t');
+    await p.waitForSelector('#transcript p');
+    assert.match(await p.locator('#doc-source').innerText(), /Channel: Synthetic channel/);
+    assert.match(await p.locator('#doc-source').innerText(), /Source: https:\/\/www\.youtube\.com\/watch\?v=aaaaaaaaaaa/);
+    assert.match(await p.locator('#transcript').innerText(), /First words\.[\s\S]*Transcript:[\s\S]*Still speaking\./);
+    // Old wording from an installed helper never shows.
+    await p.click('.tx-job[data-arg="job-c"] .tx-job-t');
+    await p.waitForFunction(() => /retrying that status write/.test(document.querySelector('#progress-message').textContent));
+    assert.match(await p.locator('#progress-message').textContent(), /The helper is retrying/);
+    assert.ok(!(await p.content()).includes('Scribe'), 'not anywhere on the page');
+    // Queued from a YouTube tab: the library follows at once, not at its slow idle poll.
+    const n = mock.log.filter(l => l.path === '/jobs' && l.method === 'GET').length;
+    await p.waitForTimeout(300);
+    const r = JSON.parse(await worker(() => wasm_bindgen.on_message(JSON.stringify({ action: 'startJob', url: 'https://www.youtube.com/watch?v=dddddddddd1' }), JSON.stringify({ id: chrome.runtime.id, url: 'https://www.youtube.com/', tab: { id: 1 }, frameId: 0 }))));
+    assert.equal(r.ok, true);
+    await p.waitForSelector('.tx-job[data-job-status="queued"]', { timeout: 2500 });
+    assert.ok(mock.log.filter(l => l.path === '/jobs' && l.method === 'GET').length > n);
+    await p.close();
+  });
+
+  await step('transcripts channel panel: close sticks and stops polling; a chip click does not bring it back; Escape closes; a double click on Retry sends one import', async () => {
+    mock.reset(); await enable();
+    const p = await open('https://www.youtube.com/@monkeydeveloper/videos');
+    await p.waitForSelector('.tsc-ch');
+    await p.click('[data-act="tsc-import"][data-arg="year"]');
+    await p.waitForFunction(() => /Finding videos/.test(document.querySelector('#ytc-tsc-cht')?.textContent || ''), null, { timeout: 8000 });
+    assert.equal(await p.locator('#ytc-tsc-chb').getAttribute('data-state'), 'discovering');
+    await p.click('[data-act="tsc-chclose"]');
+    assert.equal(await p.locator('#ytc-tsc-chp').isHidden(), true);
+    await p.waitForTimeout(400);
+    const polls = () => mock.log.filter(l => l.path.startsWith('/channels/previews/')).length;
+    const p0 = polls();
+    await p.waitForTimeout(3200);
+    assert.equal(polls(), p0, 'no polling after close');
+    await p.waitForSelector('#ytc-list .c[data-v] .tsc', { state: 'attached' });
+    const id = await p.locator('#ytc-list .c[data-v]:has(.tsc)').first().getAttribute('data-v');
+    await p.locator(`#ytc-list .c[data-v="${id}"] a.th`).hover();
+    await p.click(chipOf(id));
+    await p.waitForTimeout(800);
+    assert.equal(await p.locator('#ytc-tsc-chp').isVisible(), false, 'a chip click does not reopen it');
+    // Asking again opens it; Escape closes it.
+    await p.click('[data-act="tsc-import"][data-arg="year"]');
+    await p.waitForFunction(() => !document.querySelector('#ytc-tsc-chp').hidden, null, { timeout: 8000 });
+    assert.equal(mock.log.filter(l => l.path === '/channels/import').length, 1, 'watches the running import rather than starting another');
+    await p.mouse.move(2, 2);
+    await p.evaluate(() => document.activeElement && document.activeElement.blur());
+    await p.keyboard.press('Escape');
+    await p.waitForFunction(() => document.querySelector('#ytc-tsc-chp').hidden, null, { timeout: 3000 });
+    // A failed import offers Retry; two quick clicks are one import.
+    mock.state.previewFail = true;
+    await p.goto('https://www.youtube.com/@othercreator/videos', { waitUntil: 'commit' }).catch(() => {});
+    await p.waitForSelector('.tsc-ch', { timeout: 15000 });
+    const n0 = mock.log.filter(l => l.path === '/channels/import').length;
+    await p.click('[data-act="tsc-import"][data-arg="all"]');
+    await p.waitForSelector('#ytc-tsc-chr', { timeout: 8000 });
+    await waitFor(() => mock.log.filter(l => l.path === '/channels/import').length === n0 + 1, 'first try');
+    mock.state.previewFail = false;
+    mock.log.length = 0;
+    await p.locator('#ytc-tsc-chr').dblclick();
+    await p.waitForTimeout(1200);
+    assert.equal(mock.log.filter(l => l.path === '/channels/import').length, 1, 'a double click is one import');
+    await p.close();
+  });
+
+  await step('transcripts look: one control height per row, one left edge, one row height, two font families, the list leads', async () => {
+    mock.reset(); await enable();
+    mock.state.jobs.push(
+      mockHelper.job('job-a', 'aaaaaaaaaaa', 'completed', { title: 'A title long enough to wrap onto a second line if the row were allowed to grow at all, which it is not', created_at: '2026-11-01T10:00:00Z' }),
+      mockHelper.job('job-b', 'bbbbbbbbbbb', 'transcribing', { progress: 64, created_at: '2026-11-01T09:00:00Z' }),
+      mockHelper.job('job-c', 'ccccccccccc', 'completed', { title: 'Short', created_at: '2026-11-01T08:00:00Z' }));
+    const p = await open(ext('reader.html'));
+    await p.waitForSelector('.tx-job');
+    const h = sel => p.locator(sel).evaluate(n => n.getBoundingClientRect().height);
+    const x = sel => p.locator(sel).evaluate(n => Math.round(n.getBoundingClientRect().x));
+    assert.equal(await h('#start-url'), await h('#start-button'));
+    assert.deepEqual([...new Set(await p.locator('.tx-job').evaluateAll(a => a.map(n => n.getBoundingClientRect().height)))], [60]);
+    assert.equal(await x('#hover-select'), await x('#sel-job-a'));
+    assert.equal(await x('#folder-filter'), await x('#sel-job-a'));
+    const empty = await x('#welcome h1');
+    await p.click('.tx-job[data-arg="job-c"] .tx-job-t');
+    await p.waitForSelector('#transcript p');
+    assert.equal(await x('#video-title'), empty, 'the edge does not jump when opening one');
+    assert.equal(await p.locator('#folder-name').isVisible(), false);
+    await p.click('#folder-tools summary');
+    assert.equal(await h('#folder-name'), await h('#create-folder'), 'New folder and +');
+    await p.click('#folder-tools summary');
+    await p.check('#sel-job-c');
+    await p.waitForSelector('#selection-bar:not([hidden])');
+    assert.deepEqual([...new Set([await h('#save-selected'), await h('#move-folder'), await h('#move-selected')])], [32]);
+    await p.uncheck('#sel-job-c');
+    mock.state.jobs[2].sections = [{ offset_ms: 0, text: 'Words.' }];
+    await p.reload({ waitUntil: 'commit' });
+    await p.waitForSelector('.tx-job');
+    await p.click('.tx-job[data-arg="job-c"] .tx-job-t');
+    await p.waitForSelector('#transcript p.ts');
+    const families = await p.evaluate(() => [...new Set([...document.querySelectorAll('#tr *')].filter(n => n.childNodes.length && n.getClientRects().length).map(n => getComputedStyle(n).fontFamily))]);
+    assert.ok(families.length <= 2, 'font families: ' + families.join(' | '));
+    assert.ok(!families.some(f => /mono/i.test(f)));
+    assert.equal(await p.locator('#transcript .tx-t').evaluate(n => getComputedStyle(n).fontVariantNumeric), 'tabular-nums');
+    await shot(p, 'reader-1400');
+    await p.setViewportSize({ width: 480, height: 900 });
+    await p.click('#back');
+    await p.waitForSelector('.tx-job:visible');
+    const y = await p.locator('.tx-job').first().evaluate(n => n.getBoundingClientRect().y);
+    assert.ok(y < 260, `the list starts at y=${y}`);
+    await shot(p, 'reader-library-480');
+    await p.close();
+    mock.state.jobs = [];
+    const pop = await open(ext('popup.html'), 400, 700);
+    await pop.waitForSelector('[data-tx="zip-open"]');
+    await pop.click('[data-tx="zip-open"]');
+    await pop.waitForSelector('#zip-choices input');
+    await pop.waitForTimeout(500);
+    assert.equal(await pop.locator('#zip-choices input').first().evaluate(n => Math.round(n.getBoundingClientRect().x)), await pop.locator('#zip-title').evaluate(n => Math.round(n.getBoundingClientRect().x)));
+    await pop.close();
+  });
+
+  await step('transcripts popup: the sponsor row never flashes the browser\'s default button colour as the popup opens', async () => {
+    await disable();
+    const p = await ctx.newPage();
+    await p.addInitScript(() => {
+      window.__bg = [];
+      const tick = () => { const b = document.querySelector('#popup-sponsor'); if (b) { const c = getComputedStyle(b).backgroundColor; if (!window.__bg.includes(c)) window.__bg.push(c); } if (performance.now() < 800) requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+    });
+    for (let i = 0; i < 3; i++) {
+      await p.goto(ext('popup.html'), { waitUntil: 'commit' });
+      await p.waitForSelector('#ytc-popup[data-ready=true]');
+      await p.waitForTimeout(850);
+      const seen = await p.evaluate(() => window.__bg);
+      assert.ok(seen.length > 0, 'the row was watched');
+      assert.deepEqual(seen.filter(c => c !== 'rgba(0, 0, 0, 0)'), [], `colours seen: ${seen}`);
+    }
+    await p.close();
+  });
+
   // ---- the popup.
   await step('transcripts popup: batch status, Stop all, folder cards (destination, All and named, create with Enter or +, counts, Browse files, Copy as ZIP, Folders, Show file), channel folders kept out', async () => {
     mock.reset();
@@ -648,6 +1061,11 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     await p.waitForSelector('#popup-tr .ptr-card');
     assert.equal(await p.locator('#queue-stage').textContent(), '1 transcribing');
     assert.equal(await p.locator('#queue-summary').textContent(), '1 / 3');
+    assert.equal(await p.locator('#queue-headline').textContent(), '2', 'N left');
+    assert.equal(await p.locator('#queue-headline-label').textContent(), 'left');
+    assert.equal(await p.locator('#connection-label').textContent(), 'Connected');
+    assert.equal(await p.locator('#queue-progress').getAttribute('data-state'), 'working');
+    assert.equal(await p.locator('#queue-progress [data-segment="saved"]').evaluate(n => n.style.width.startsWith('33')), true);
     assert.equal(await p.locator('#queue-counts').textContent(), '1 queued');
     await p.waitForFunction(() => document.querySelector('.ptr-card[data-folder-id=""] .ptr-count')?.textContent === '1');
     assert.deepEqual(await p.locator('.ptr-choice b').allTextContents(), ['All', 'Motion'], 'channel-created folders stay out of the chooser');
@@ -674,7 +1092,7 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     // Copy as ZIP: a file attachment, confirmed; Show file appears.
     await p.click('.ptr-card[data-folder-id="f-motion"] .folder-copy');
     await waitFor(() => mock.state.copies.length === 1, 'copied');
-    await p.waitForFunction(() => /ZIP copied/.test(document.querySelector('.ptr-card[data-folder-id="f-motion"] .ptr-note')?.textContent || ''));
+    await p.waitForFunction(() => /ZIP copied.*Paste to attach/.test(document.querySelector('.ptr-card[data-folder-id="f-motion"] .ptr-note')?.textContent || ''));
     await p.click('.ptr-card[data-folder-id="f-motion"] [data-tx="show-zip"]');
     await waitFor(() => mock.state.reveal.includes('b'.repeat(32)), 'Show file');
     // Folders: include/exclude for All, remembered per save root; the choice travels with the All ZIP.
@@ -732,6 +1150,8 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     mock.down(true);
     await p.waitForFunction(() => !document.querySelector('#queue-retry').hidden, null, { timeout: 8000 });
     assert.equal(await p.locator('#queue-stage').textContent(), 'Last confirmed counts');
+    assert.equal(await p.locator('#connection-label').textContent(), 'Offline');
+    assert.equal(await p.locator('#queue-headline-label').textContent(), 'connection lost');
     await shot(p, 'popup-offline');
     mock.down(false);
     await p.click('#queue-retry');
@@ -816,6 +1236,7 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     await p.waitForFunction(() => document.querySelectorAll('.tx-job').length === 3);
     await p.selectOption('#folder-filter', 'f-motion');
     await p.waitForFunction(() => document.querySelectorAll('.tx-job').length === 3);
+    await p.click('#folder-tools summary');
     assert.equal(await p.locator('#copy-folder').textContent(), 'Copy folder');
     await p.click('#copy-folder');
     await p.waitForFunction(() => /Copied 2 full transcripts/.test(document.querySelector('#toast')?.textContent || ''), null, { timeout: 8000 });
@@ -891,15 +1312,22 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     await p.waitForSelector('.tsc-ch');
     assert.equal(await p.locator('.tsc-ch [data-act="tsc-import"]').count(), 2);
     assert.equal(await p.locator('#ytc-tsc-shorts').getAttribute('aria-checked'), 'false', 'Shorts excluded by default');
+    assert.match(await p.locator('.tsc-chnote').textContent(), /every video it finds.*Azure resource bills each one/, 'said before anything starts');
     await shot(p, 'channel-1400');
     await p.click('[data-act="tsc-import"][data-arg="year"]');
     await p.waitForFunction(() => document.querySelector('#ytc-tsc-chp') && !document.querySelector('#ytc-tsc-chp').hidden);
     await waitFor(() => mock.log.some(l => l.path === '/channels/import'), 'the import started');
     const first = mock.log.find(l => l.path === '/channels/import').body;
     assert.deepEqual(first, { url: 'https://www.youtube.com/@monkeydeveloper', scope: 'year', include_shorts: false });
-    await p.waitForFunction(() => /Finding videos: 4 checked, 2 found/.test(document.querySelector('#ytc-tsc-cht').textContent), null, { timeout: 8000 }).catch(async e => { throw new Error(e.message + ' | ' + await p.locator('#ytc-tsc-chp').innerText() + ' | ' + JSON.stringify(mock.log.slice(-4))); });
+    await p.waitForFunction(() => /Finding videos: 4 checked, 2 found/.test(document.querySelector('#ytc-tsc-cht')?.textContent || ''), null, { timeout: 8000 });
+    assert.match(await p.locator('#ytc-tsc-chq').textContent(), /2 queued so far\. Your Azure resource bills each one/);
+    assert.deepEqual(await p.locator('#ytc-tsc-tot span').allTextContents(), ['Queued', 'Processing', 'Saved', 'Failed']);
+    assert.equal(await p.locator('#ytc-tsc-tot [data-count="queued"]').textContent(), '2');
+    assert.equal(await p.locator('#ytc-tsc-chp .tsc-chl').getAttribute('href'), 'https://www.youtube.com/@monkeydeveloper');
     assert.match(await p.locator('#ytc-tsc-chs').textContent(), /Past year, Shorts excluded/);
     assert.match(await p.locator('#ytc-tsc-chc').textContent(), /0 saved, 0 failed, 2 remaining/);
+    await p.waitForTimeout(350);
+    assert.equal(await p.locator('#ytc-tsc-chp').evaluate(n => getComputedStyle(n).opacity), '1', 'the panel settles');
     await shot(p, 'channel-active-1400');
     // Cancel discovery: it stops finding; queued videos go on.
     await p.click('#ytc-tsc-chk');
@@ -916,7 +1344,7 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     const v = mock.state.previews.pv2;
     v.status = 'ready'; v.progress = { total: 2, saved: 2, queued: 0, processing: 0, saving: 0, discovery_complete: true, finished: true };
     await p.waitForFunction(() => /All transcripts saved/.test(document.querySelector('#ytc-tsc-cht').textContent), null, { timeout: 8000 });
-    assert.equal(await p.locator('#ytc-tsc-chf').evaluate(n => n.style.transform), 'scaleX(1)');
+    assert.equal(await p.locator('#ytc-tsc-chb [data-segment="saved"]').evaluate(n => n.style.width), '100%');
     await p.click('[data-act="tsc-chclose"]');
     assert.equal(await p.locator('#ytc-tsc-chp').isVisible(), false);
     // Another tab's preview id is refused: previews belong to the tab that started them.
@@ -935,7 +1363,7 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
   await step('transcripts TV mode: never, even with the flag on: no chips, no button, no message, no request', async () => {
     mock.reset();
     await enable();
-    const [f0, n0] = [await fetches(), await native()];
+    const n0 = await native();
     const tv = await ctx.newPage();
     await tv.setViewportSize({ width: 1280, height: 720 });
     await tv.addInitScript(() => { try { localStorage.setItem('ytc:platform', 'tv'); localStorage.setItem('ytc-test-noready', '1'); } catch {} });
@@ -943,8 +1371,7 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     await tv.waitForSelector('#ytc-list .c[data-v] .t', { timeout: 20000 });
     await tv.waitForTimeout(500);
     assert.equal(await tv.locator('.tsc,.tsc-w,.tsc-ch').count(), 0);
-    assert.equal(mock.log.length, 0, 'the helper saw nothing');
-    assert.equal(await fetches(), f0);
+    assert.deepEqual(mock.log.filter(l => l.path === '/videos/status' || l.method === 'POST'), [], 'nothing asked from the TV page (the worker\'s own toolbar read is not the page)');
     assert.equal(await native(), n0);
     await tv.evaluate(() => { for (const k of ['ytc:platform', 'ytc-test-noready']) localStorage.removeItem(k); }).catch(() => {});
     await tv.close();
@@ -973,9 +1400,15 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
       fs.mkdirSync(path.join(root, 'extension'));
       fs.copyFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), path.join(root, 'extension', 'manifest.json'));
       await start(`AZURE_SPEECH_ENDPOINT=\nAZURE_SPEECH_KEY=\nHELPER_TOKEN='${token}'\n`);
-      // The native host's own origin check agrees with the fixed extension id, from a Redline-shaped root.
-      const framed = execFileSync(bin, ['--root', root, 'native-host', `chrome-extension://${EXT_ID}/`], { input: (() => { const b = Buffer.from('{"action":"getConnection"}'); const h = Buffer.alloc(4); h.writeUInt32LE(b.length); return Buffer.concat([h, b]); })(), env: { ...process.env, SCRIBE_NATIVE_NO_START: '1' }, timeout: 15000 }).toString('utf8');
-      assert.match(framed, /pairingToken|ok/, 'the native host answers this extension');
+      // The native host, framed as a browser calls it, from a Redline-shaped root. SCRIBE_NATIVE_NO_START (a test-build
+      // feature; never in a release) keeps this from probing or kickstarting the service installed on this machine.
+      const frame = () => { const b = Buffer.from('{"action":"getConnection"}'); const h = Buffer.alloc(4); h.writeUInt32LE(b.length); return Buffer.concat([h, b]); };
+      const host = origin_ => { const r = spawnSync(bin, ['--root', root, 'native-host', origin_], { input: frame(), env: { ...process.env, SCRIBE_NATIVE_NO_START: '1' }, timeout: 15000 }); return JSON.parse(r.stdout.subarray(4).toString('utf8')); };
+      const answered = host(`chrome-extension://${EXT_ID}/`);
+      assert.deepEqual([answered.ok, answered.pairingToken, answered.url], [true, token, 'http://127.0.0.1:8765'], 'this extension pairs');
+      const refused = host('chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/');
+      assert.equal(refused.ok, false, 'another extension does not');
+      assert.equal(refused.pairingToken, undefined);
       await worker(([o, t]) => { TR_HELPER = o; wasm_bindgen.worker_boot(o); self.__tr.token = t; return TR.vault_del('pairingToken'); }, [origin, token]);
       await disable();
       // Settings pairs with it and reads the blank configuration: the feature stays off.

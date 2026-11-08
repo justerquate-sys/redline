@@ -43,7 +43,12 @@ function trAdopt() {
     if (typeof o.pairingToken === 'string') return tr().then(c => c.adopt_token(o.pairingToken));
   }).catch(() => {});
 }
-chrome.runtime.onInstalled.addListener(() => { trAdopt(); trStartup(); });
+// A leftover from the older install under this id: its alarm would wake this worker for nothing.
+function trTidy() { return chrome.alarms.clear('full-transcript-status').catch(() => {}); }
+chrome.runtime.onInstalled.addListener(() => { trAdopt(); trTidy(); });
+// Every worker start, for someone who set it up: its memory of the toolbar slept with the last worker. Passive: this read
+// never starts or pairs the helper.
+trStartup();
 
 /* @dev-start */
 // ---- Auto-update (development builds). Open YouTube tabs ping this worker. When the files on

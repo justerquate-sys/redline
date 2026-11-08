@@ -1863,10 +1863,10 @@ impl App {
     }
 
     pub fn on_click(&mut self, href: &str, act: &str, arg: &str, mods: u32) -> bool {
-        // Bit 32 = keyboard activation, 64 = by a held key's auto-repeat (not modifiers).
+        // Bit 32 = keyboard activation, 64 = by a held key's auto-repeat, 128 = made by a page script (not modifiers).
         let kbd = mods & 32 != 0;
         self.last_input = bridge::now();
-        if mods & !(32 | 64) != 0 {
+        if mods & !(32 | 64 | 128) != 0 {
             return false;
         }
         // TV: holding OK is one press (it never unsubscribes past the question, or opens what the page it opened focuses).
@@ -1874,7 +1874,7 @@ impl App {
             return true;
         }
         if act.starts_with("tsc") {
-            return crate::features::transcribe::on_click(act, arg);
+            return crate::features::transcribe::on_click(act, arg, mods);
         }
         crate::telemetry::input(if kbd { "keyboard" } else { "pointer" });
         if act.starts_with("tv-kb-") {

@@ -20,6 +20,10 @@ const HOST_NAME: &str = "com.fulltranscript.helper";
 const ALARM: &str = "ytc-transcripts-status";
 const TOOLBAR_RECORD: &str = "toolbar";
 const PREVIEWS_RECORD: &str = "previews";
+/// When a page load last asked the native host to start the helper. The worker sleeps between pages, so memory forgets.
+const RECONNECT_RECORD: &str = "lastReconnect";
+/// The person turned Transcripts off; a settings read must not turn it back on by itself.
+const OFF_RECORD: &str = "turnedOff";
 const MAX_PREVIEWS: usize = 200;
 /// Passive status reads may ask the native host to start a stopped helper at most this often.
 const RECONNECT_EVERY_MS: f64 = 5.0 * 60.0 * 1000.0;
@@ -35,6 +39,8 @@ struct Worker {
     queue_cancel: Option<Promise>,
     pairing: Option<Promise>,
     last_reconnect: f64,
+    /// A status has been answered since this worker started (the first one corrects the toolbar).
+    answered: bool,
     toolbar: Toolbar,
     live: Value,
     last_push: String,
@@ -176,6 +182,8 @@ pub async fn helper(path: &str, o: Options) -> Result<Value, Failure> {
                     return Err("The helper is not connected yet.".into());
                 }
                 token = pair().await?;
+                // That was this request's one try at the native host (it can kickstart a helper stopped on purpose).
+                can_reconnect = false;
             }
         }
         let mut headers = json!({"Accept":"application/json"});
@@ -200,7 +208,8 @@ pub async fn helper(path: &str, o: Options) -> Result<Value, Failure> {
             return Err(unreachable_message());
         }
         let status = r["status"].as_u64().unwrap_or(0) as u16;
-        let Ok(data) = serde_json::from_str::<Value>(r["text"].as_str().unwrap_or("")) else {
+        let text = core::modern_wording(r["text"].as_str().unwrap_or(""));
+        let Ok(data) = serde_json::from_str::<Value>(&text) else {
             return Err("The helper returned an unexpected response. Check that the correct helper is running on port 8765.".into());
         };
         if (200..300).contains(&status) {
@@ -489,21 +498,51 @@ async fn channel_panel(message: &Value, sender: &Value, trusted: bool) -> Result
     Ok(json!({"html":channel::panel(&state),"poll":again,"state":state.to_string(),"toast":toast}))
 }
 
-/// Keeps the flag YouTube tabs read in step with what the helper says. Called whenever settings are read or saved.
+async fn flag_on() -> bool {
+    !host::local_read(ENABLED_KEY).await.is_empty()
+}
+
+/// The toolbar back to the manifest's own mark, title and silence.
+async fn quiet_toolbar() {
+    with(|w| {
+        w.toolbar.view = Value::Null;
+        w.toolbar.timer += 1;
+        w.toolbar.last_paint.clear();
+    });
+    host::alarm_off(ALARM);
+    host::set_icon(&[], &[]).await;
+    host::set_title("").await;
+}
+
+/// Keeps the flag YouTube tabs read in step with what the helper says. Called whenever settings are read or saved. A
+/// person's own Turn off holds until they turn it on again or save a connection.
 async fn set_enabled(on: bool) {
-    let was = !host::local_read(ENABLED_KEY).await.is_empty();
+    let on = on && host::vault_read(OFF_RECORD).await.is_empty();
+    let was = flag_on().await;
     if on && !was {
         host::local_write(ENABLED_KEY, r#"{"on":true}"#).await;
         let _ = refresh_toolbar().await;
     } else if !on && was {
         host::local_remove(ENABLED_KEY).await;
-        with(|w| {
-            w.toolbar.view = Value::Null;
-            w.toolbar.timer += 1;
-        });
-        host::alarm_off(ALARM);
-        host::set_icon(&[], &[]).await;
-        host::set_title("").await;
+        quiet_toolbar().await;
+    }
+}
+
+/// An explicit check failed. The helper is gone, not just stopped, only when the port is down AND the browser no longer
+/// finds its registration: then the controls would fail forever, so the flag goes. A stopped helper that may return
+/// keeps the feature.
+async fn clear_flag_if_removed() {
+    if !flag_on().await {
+        return;
+    }
+    let port_down = helper("/health", Options { public: true, can_reconnect: false, timeout_ms: 2000., ..Options::default() }).await.is_err();
+    if !port_down {
+        return;
+    }
+    let answer = host::native_call(HOST_NAME, r#"{"action":"getConnection"}"#).await;
+    let v: Value = serde_json::from_str(&answer).unwrap_or(Value::Null);
+    if v["native_error"].as_str().is_some_and(|e| e.to_ascii_lowercase().contains("not found")) {
+        set_enabled(false).await;
     }
 }
 
@@ -528,10 +567,16 @@ async fn route(message: &Value, sender: &Value, trusted: bool) -> Result<Value, 
         };
         let not_found = p["notFoundMessage"].as_str().map(str::to_owned);
         if action == "getAzureSettings" {
-            return settings_read(o).await;
+            let result = settings_read(o).await;
+            if result.is_err() {
+                clear_flag_if_removed().await;
+            }
+            return result;
         }
         let result = helper(&path, o).await;
         if action == "saveAzureSettings" && let Ok(saved) = &result {
+            // Saving a connection is asking for the feature.
+            host::vault_remove(OFF_RECORD).await;
             set_enabled(saved["configured"] == true && saved["has_api_key"] == true).await;
         }
         return match result {
@@ -553,22 +598,27 @@ async fn route(message: &Value, sender: &Value, trusted: bool) -> Result<Value, 
                 }
                 a
             });
-            // A page load asks at most once in a while to start a stopped helper; the card stays quiet either way.
+            // A page load asks at most once in a while to start a stopped helper (it may be stopped on purpose); the
+            // card stays quiet either way. Across sleeps too: the worker sleeps between pages.
             let now = host::epoch();
+            let stored = host::vault_read(RECONNECT_RECORD).await.parse::<f64>().unwrap_or(0.);
             let may_start = with(|w| {
-                let due = now - w.last_reconnect > RECONNECT_EVERY_MS;
-                if due {
-                    w.last_reconnect = now;
-                }
+                let last = w.last_reconnect.max(stored);
+                let due = now - last > RECONNECT_EVERY_MS;
+                w.last_reconnect = if due { now } else { last };
                 due
             });
+            if may_start {
+                host::vault_write(RECONNECT_RECORD, &now.to_string()).await;
+            }
             let o = Options { can_reconnect: may_start, can_pair: may_start, timeout_ms: 8000., ..Options::default() };
             let mut r = video_statuses(ids, o).await?;
             let active = r["statuses"].as_object().is_some_and(|m| m.values().any(|s| matches!(s["status"].as_str(), Some("queued" | "downloading" | "preparing" | "transcribing"))));
             r["live"] = with(|w| w.live.clone());
-            // Work the toolbar has not seen, or a helper that answers again: it catches up.
-            let (watching, was_offline) = with(|w| (matches!(w.toolbar.view["kind"].as_str(), Some("processing" | "queued")), w.toolbar.view["kind"] == "offline"));
-            if (active && !watching) || was_offline {
+            // Work the toolbar has not seen, a helper that answers again, or the first answer since this worker woke: it
+            // catches up (its memory of a grey icon went with the last worker).
+            let (watching, was_offline, first) = with(|w| (matches!(w.toolbar.view["kind"].as_str(), Some("processing" | "queued")), w.toolbar.view["kind"] == "offline", !std::mem::replace(&mut w.answered, true)));
+            if (active && !watching) || was_offline || first {
                 spawn_local(async {
                     let _ = refresh_toolbar().await;
                 });
@@ -652,11 +702,24 @@ async fn route(message: &Value, sender: &Value, trusted: bool) -> Result<Value, 
             Ok(Value::Null)
         }
         "connectHelper" => {
-            pair().await?;
+            if let Err(e) = pair().await {
+                clear_flag_if_removed().await;
+                return Err(e.into());
+            }
             let _ = settings_read(Options::default()).await;
             Ok(json!({"paired":true}))
         }
-        "getSettings" => Ok(json!({"paired":!host::vault_read(TOKEN_KEY).await.is_empty()})),
+        "getSettings" => Ok(json!({"paired":!host::vault_read(TOKEN_KEY).await.is_empty(),"on":flag_on().await,"turned_off":!host::vault_read(OFF_RECORD).await.is_empty()})),
+        "turnOff" => {
+            host::vault_write(OFF_RECORD, "1").await;
+            set_enabled(false).await;
+            Ok(json!({"on":false,"turned_off":true}))
+        }
+        "turnOn" => {
+            host::vault_remove(OFF_RECORD).await;
+            settings_read(Options::default()).await?;
+            Ok(json!({"on":flag_on().await,"turned_off":false}))
+        }
         "saveSettings" => {
             let token = message["pairingToken"].as_str().unwrap_or("").trim();
             host::vault_write(TOKEN_KEY, token).await;
@@ -679,11 +742,16 @@ pub async fn on_message(message: &str, sender: &str) -> String {
         Err(e) => return json!({"ok":false,"error":e}).to_string(),
     };
     let result = route(&message, &sender, trusted).await;
-    let refreshes = matches!(message["action"].as_str(), Some("startJob" | "startChannelImport" | "queueChannelPreview" | "cancelChannelPreview" | "cancelJob" | "cancelVideo" | "cancelQueue" | "exportJobs" | "connectHelper" | "saveSettings"));
+    let refreshes = matches!(message["action"].as_str(), Some("startJob" | "startChannelImport" | "queueChannelPreview" | "cancelChannelPreview" | "cancelJob" | "cancelVideo" | "cancelQueue" | "exportJobs" | "connectHelper" | "saveSettings" | "channelPanel"));
     if refreshes {
         spawn_local(async {
             let _ = refresh_invalidate().await;
         });
+    }
+    // An open library follows what happened elsewhere at once, rather than at its slow idle poll.
+    let changes = refreshes || matches!(message["action"].as_str(), Some("moveJobs" | "createFolder" | "setDefaultFolder" | "revealVideoFile"));
+    if changes && result.is_ok() {
+        host::pages_push();
     }
     match result {
         Ok(data) => json!({"ok":true,"data":data}).to_string(),
@@ -698,7 +766,9 @@ async fn init_toolbar() {
         return;
     }
     let stored: Value = serde_json::from_str(&host::vault_read(TOOLBAR_RECORD).await).unwrap_or(Value::Null);
-    let life = core::lifecycle_restore(&stored, host::epoch());
+    // A new browser session starts clean: work that finished while the browser was closed earns no success.
+    let fresh_session = host::new_session().await;
+    let life = core::lifecycle_restore(if fresh_session { &Value::Null } else { &stored }, host::epoch());
     with(|w| {
         if !w.toolbar.initialized {
             w.toolbar.life = life;
@@ -785,6 +855,7 @@ fn schedule() {
 /// Accepts a status (`None` with `unavailable`: the helper did not answer). False when a newer state won meanwhile.
 async fn accept(value: Option<Value>, unavailable: bool, expected: Option<u64>) -> bool {
     init_toolbar().await;
+    let on = flag_on().await;
     let current = with(|w| {
         if expected.is_some_and(|e| e != w.toolbar.revision) {
             return false;
@@ -804,9 +875,12 @@ async fn accept(value: Option<Value>, unavailable: bool, expected: Option<u64>) 
     if !current {
         return false;
     }
-    commit().await;
-    schedule();
-    push_live().await;
+    // Only someone who set it up ever sees the toolbar change.
+    if on {
+        commit().await;
+        schedule();
+        push_live().await;
+    }
     true
 }
 
@@ -837,6 +911,7 @@ async fn push_live() {
     // A tab has nothing to learn from "still nothing" (the first read of an idle queue).
     if changed && (had || offline || live.as_object().is_some_and(|m| !m.is_empty())) {
         host::tabs_push(&format!("tsc:{message}"));
+        host::pages_push();
     }
 }
 
@@ -857,6 +932,9 @@ async fn read_once() {
 }
 
 async fn refresh_invalidate() -> Result<(), Failure> {
+    if !flag_on().await {
+        return Ok(());
+    }
     with(|w| {
         w.toolbar.revision += 1;
         w.toolbar.again = true;
@@ -867,6 +945,15 @@ async fn refresh_invalidate() -> Result<(), Failure> {
 /// Reads the queue once; concurrent callers share the read and an invalidation queues one fresh read behind it, so a
 /// slow poll cannot hide a newly accepted batch.
 async fn refresh_toolbar() -> Result<(), Failure> {
+    if !flag_on().await {
+        // Turned off from elsewhere: a toolbar still showing work goes quiet, and nothing else happens. (This worker may
+        // be newer than the alarm that woke it.)
+        host::alarm_off(ALARM);
+        if with(|w| !w.toolbar.view.is_null()) {
+            quiet_toolbar().await;
+        }
+        return Ok(());
+    }
     init_toolbar().await;
     let shared = with(|w| {
         if let Some(p) = &w.toolbar.pending {

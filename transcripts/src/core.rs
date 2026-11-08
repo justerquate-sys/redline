@@ -105,7 +105,7 @@ pub fn lifecycle(view: &Value, state: &Value, now: f64) -> Value {
 pub fn lifecycle_restore(stored: &Value, now: f64) -> Value {
     let active = stored["activeSeen"] == true;
     let baseline = &stored["activeBaseline"];
-    let valid = active && ["saved", "cancelled", "removed"].iter().all(|k| baseline[k].as_u64().is_some());
+    let valid = active && ["saved", "cancelled", "removed"].iter().all(|k| baseline[k].as_f64().is_some_and(|n| n >= 0. && n.fract() == 0.));
     let until = stored["completionUntil"].as_f64().filter(|u| *u > now && *u <= now + COMPLETION_MS).unwrap_or(0.);
     json!({"activeSeen":active,"activeBaseline":if valid { baseline.clone() } else { Value::Null },"completionUntil":until,"completionBatchId":stored["completionBatchId"].as_str()})
 }
@@ -329,35 +329,63 @@ pub fn word_count(text: &str) -> usize {
     text.split_whitespace().count()
 }
 
-/// The reader's view of a saved Markdown document: the transcript's own text, without the source header the helper
-/// writes above it (title, channel, published, source, description links). The header stays in what is copied.
-pub fn document_body(content: &str) -> &str {
-    if let Some(i) = content.find("\nTranscript:\n") {
-        return content[i + 13..].trim_start_matches('\n');
-    }
+/// A saved Markdown document's parts, as the helper writes them: `# title`, source lines (`Channel:`, `Published:`,
+/// `Source:`, a partial notice), optionally a `Description links (creator-provided):` block closed by the marker line
+/// `Transcript:`, then the transcript. Only the header's own position counts: a speaker saying "Transcript:" in the text
+/// is the text.
+pub struct DocumentParts<'a> {
+    pub source: Vec<&'a str>,
+    pub links: Vec<&'a str>,
+    pub body: &'a str,
+}
+
+pub fn document_parts(content: &str) -> DocumentParts<'_> {
+    let mut parts = DocumentParts { source: vec![], links: vec![], body: "" };
     let mut rest = content;
-    if rest.starts_with("# ")
-        && let Some(i) = rest.find('\n')
-    {
-        rest = rest[i + 1..].trim_start_matches('\n');
+    let line = |r: &'_ str| -> usize { r.find('\n').map_or(r.len(), |i| i + 1) };
+    if rest.starts_with("# ") {
+        rest = &rest[line(rest)..];
     }
-    let mut lines = rest.split_inclusive('\n');
-    let mut skipped = 0;
-    for line in &mut lines {
-        let t = line.trim_end();
-        if t.starts_with("Channel: ") || t.starts_with("Published: ") || t.starts_with("Source: ") || t.starts_with("PARTIAL —") || t.is_empty() {
-            skipped += line.len();
+    // The source block: blank lines and known lines until anything else.
+    loop {
+        let n = line(rest);
+        let l = rest[..n].trim_end();
+        if n == 0 {
+            break;
+        }
+        if l.is_empty() {
+            rest = &rest[n..];
+        } else if l.starts_with("Channel: ") || l.starts_with("Published: ") || l.starts_with("Source: ") || l.starts_with("PARTIAL —") {
+            parts.source.push(l);
+            rest = &rest[n..];
         } else {
             break;
         }
     }
-    rest[skipped..].trim_start_matches('\n')
+    if rest.starts_with("Description links (creator-provided):")
+        && let Some(end) = rest.find("\nTranscript:\n")
+    {
+        parts.links = rest[..end].lines().skip(1).filter(|l| !l.trim().is_empty()).collect();
+        rest = &rest[end + "\nTranscript:\n".len()..];
+    }
+    parts.body = rest.trim_start_matches('\n');
+    parts
+}
+
+/// The transcript's own text, without the header above it.
+pub fn document_body(content: &str) -> &str {
+    document_parts(content).body
 }
 
 /// Paragraphs of a transcript body: blank lines separate them; long unbroken runs of sentences stay one paragraph per
 /// recognized section as the helper wrote them.
 pub fn paragraphs(body: &str) -> Vec<&str> {
     body.split("\n\n").map(str::trim).filter(|p| !p.is_empty()).collect()
+}
+
+/// An installed helper keeps its older wording for this one message.
+pub fn modern_wording(text: &str) -> String {
+    if text.contains("Scribe is retrying that status write") { text.replace("Scribe is retrying that status write", "The helper is retrying that status write") } else { text.to_owned() }
 }
 
 /// A live snapshot for the tabs from `/jobs`: only unfinished jobs, only `{video: {s: status, p: percent}}`.
@@ -396,6 +424,10 @@ const IMPORTABLE: &[(&str, &[&str])] = &[
     ("yourTubeShowMembersV1", &["boolean"]),
     ("shortsInFeeds", &["boolean"]),
 ];
+
+/// Values that say who you are or where your audio goes. An import never replaces one without asking: a crafted file
+/// could send future dictation to someone else's project, or browse as someone else. `(key, field, name)`.
+pub const SENSITIVE: &[(&str, Option<&str>, &str)] = &[("ytcVoiceKeyV1", None, "Deepgram key"), ("ytcConfigV1", Some("vd"), "YouTube visitor id")];
 
 /// Decides from a file's manifest (`[{"k":key,"t":kind}]`: names and kinds only, the values stay out of Wasm because a
 /// Deepgram key is among them) which keys to write: `(keep, skipped)`.
@@ -478,6 +510,12 @@ mod tests {
         assert_eq!(s["completionUntil"], json!(0.0));
         let s = lifecycle_restore(&json!({"activeSeen":true,"activeBaseline":{"saved":1,"cancelled":0,"removed":0,"batchId":"b"},"completionUntil":5000}), 10.);
         assert_eq!(s["completionUntil"], json!(5000.0));
+        // As `lifecycle` itself writes it: whole numbers stored as floats. A sleeping worker's baseline survives.
+        let written = lifecycle(&json!({"kind":"processing","saved":0.0,"cancelled":0.0,"removed":0.0,"batchId":"b"}), &json!({}), 0.);
+        let back = lifecycle_restore(&serde_json::from_str(&written.to_string()).unwrap(), 10.);
+        assert!(back["activeBaseline"].is_object(), "{back}");
+        let done = lifecycle(&json!({"kind":"complete","saved":1.0,"cancelled":0.0,"removed":0.0,"batchId":"b"}), &back, 20.);
+        assert_eq!(done["completionUntil"].as_f64(), Some(6020.));
     }
     #[test]
     fn video_urls_canonicalize_to_the_whole_recording() {
@@ -571,6 +609,17 @@ mod tests {
         let idle = queue_state(&json!({"total":0,"finished":true,"discovery_complete":true,"discovering_channels":0,"waiting_channels":0}), false);
         assert_eq!(toolbar_title(&idle, false), "");
         assert!(toolbar_title(&queue_state(&Value::Null, true), false).contains("unavailable"));
+    }
+    #[test]
+    fn a_spoken_transcript_line_is_the_text() {
+        let doc = "# T\n\nPublished: Unknown\n\nFirst words.\nTranscript:\nStill speaking.\n";
+        assert!(document_body(doc).contains("Still speaking") && document_body(doc).starts_with("First words."));
+        let p = document_parts("# T\n\nChannel: C\nPublished: 2026-01-02\nSource: https://www.youtube.com/watch?v=abcdefghijk\n\nDescription links (creator-provided):\nSite https://example.com\n\nTranscript:\n\nBody.\nTranscript:\nMore.\n");
+        assert_eq!(p.source.len(), 3);
+        assert_eq!(p.links, vec!["Site https://example.com"]);
+        assert!(p.body.starts_with("Body.") && p.body.contains("More."));
+        assert_eq!(modern_wording("Scribe is retrying that status write; x"), "The helper is retrying that status write; x");
+        assert_eq!(modern_wording("A talk about Scribe"), "A talk about Scribe");
     }
     #[test]
     fn the_reader_body_leaves_out_the_source_header() {

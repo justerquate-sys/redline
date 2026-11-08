@@ -51,6 +51,14 @@ const TR = (() => {
     tabs_push(message) {
       chrome.tabs.query({ url: 'https://www.youtube.com/*' }).then(tabs => { for (const t of tabs) chrome.tabs.sendMessage(t.id, message).catch(() => {}); }).catch(() => {});
     },
+    pages_push() { try { chrome.runtime.sendMessage({ tscChanged: true }).catch(() => {}); } catch {} },
+    // A marker in the browser's memory-only storage: gone when the browser closes, kept while the worker sleeps.
+    session_first() {
+      return chrome.storage.session.get('ytc:tr-session').then(o => {
+        if (o['ytc:tr-session']) return '';
+        return chrome.storage.session.set({ 'ytc:tr-session': '1' }).then(() => 'first');
+      }).catch(() => '');
+    },
     open_page(path) {
       const url = chrome.runtime.getURL(path), base = chrome.runtime.getURL(path.split('?')[0]);
       return chrome.runtime.getContexts({ contextTypes: ['TAB'] }).then(list => {
@@ -82,6 +90,7 @@ const TR = (() => {
       if (value === undefined || value === null) n.removeAttribute(name);
       else if (n.getAttribute(name) !== value) n.setAttribute(name, value);
     },
+    segment(id, name, style) { const n = el(id), c = n && n.querySelector(`[data-segment="${name}"]`); if (c && c.getAttribute('style') !== style) c.setAttribute('style', style); },
     body_attr(name, value) { document.body.setAttribute(name, value); },
     doc_title(text) { document.title = text; },
     set_value(id, value) { const n = el(id); if (n && n.value !== value) n.value = value; },
@@ -115,12 +124,31 @@ const TR = (() => {
         return JSON.stringify({ items: Object.keys(items).map(k => ({ k, t: kind(items[k]) })) });
       }).catch(() => '{"error":"shape"}');
     },
-    file_commit(keys) {
-      const items = pending, out = {};
+    // For each [key, field]: 'absent' (not in the file), 'new', 'same' or 'replace'. Never the values.
+    file_conflicts(list) {
+      const wanted = JSON.parse(list), items = pending || {};
+      return chrome.storage.local.get(wanted.map(w => w[0])).then(now => JSON.stringify(wanted.map(([k, f]) => {
+        const pick = o => (f ? (o && typeof o === 'object' ? o[f] : undefined) : o);
+        const inc = pick(items[k]), old = pick(now[k]);
+        if (inc === undefined || inc === null || inc === '') return 'absent';
+        if (old === undefined || old === null || old === '') return 'new';
+        return JSON.stringify(inc) === JSON.stringify(old) ? 'same' : 'replace';
+      })));
+    },
+    // Writes `keys` from the file; `hold` ([key, field]) keeps what is here now instead.
+    file_commit(keys, hold) {
+      const items = pending, out = {}, held = JSON.parse(hold);
       pending = null;
       for (const k of JSON.parse(keys)) if (items && Object.hasOwn(items, k)) out[k] = items[k];
-      return chrome.storage.local.set(out).then(() => '');
+      return chrome.storage.local.get(held.map(h => h[0])).then(now => {
+        for (const [k, f] of held) {
+          if (!f) delete out[k];
+          else if (out[k] && typeof out[k] === 'object') { if (now[k] && now[k][f] !== undefined) out[k][f] = now[k][f]; else delete out[k][f]; }
+        }
+        return chrome.storage.local.set(out);
+      }).then(() => '');
     },
+    file_forget() { pending = null; },
     local_time(iso) { const t = iso ? new Date(iso) : null; return t && !Number.isNaN(t.getTime()) ? t.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : ''; },
     number(n) { return Number(n).toLocaleString(); },
     manifest_version() { return chrome.runtime.getManifest().version; },
@@ -147,9 +175,11 @@ const TR = (() => {
       if (listening) return;
       listening = true;
       const d = document;
+      // The worker: something changed elsewhere (a video queued from a YouTube tab).
+      try { chrome.runtime.onMessage.addListener(m => { if (m && m.tscChanged) on('on_event', 'changed', '', '', ''); }); } catch {}
       d.addEventListener('click', e => {
         const t = e.target.closest && e.target.closest('[data-tx]');
-        if (!t || t.disabled || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        if (!t || !e.isTrusted || t.disabled || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
         on('on_event', 'click', t.dataset.tx, t.dataset.arg || '', '');
       });
@@ -340,9 +370,16 @@ let wasm_bindgen = (function(exports) {
                 const ret = TR.epoch();
                 return ret;
             },
-            __wbg_file_commit_c0f782d7a82c8fc7: function(arg0, arg1) {
-                const ret = TR.file_commit(getStringFromWasm0(arg0, arg1));
+            __wbg_file_commit_3c74c84bb7302988: function(arg0, arg1, arg2, arg3) {
+                const ret = TR.file_commit(getStringFromWasm0(arg0, arg1), getStringFromWasm0(arg2, arg3));
                 return ret;
+            },
+            __wbg_file_conflicts_1be14e7b6a0f02f1: function(arg0, arg1) {
+                const ret = TR.file_conflicts(getStringFromWasm0(arg0, arg1));
+                return ret;
+            },
+            __wbg_file_forget_5ab3bdd59d1516a5: function() {
+                TR.file_forget();
             },
             __wbg_file_peek_ea6907141a0eb718: function(arg0, arg1, arg2) {
                 const ret = TR.file_peek(getStringFromWasm0(arg0, arg1), arg2);
@@ -449,6 +486,9 @@ let wasm_bindgen = (function(exports) {
                 const ret = TR.open_page(getStringFromWasm0(arg0, arg1));
                 return ret;
             },
+            __wbg_pages_push_21003975bd5dceed: function() {
+                TR.pages_push();
+            },
             __wbg_pick_a6b6cad28276b2a9: function(arg0, arg1) {
                 TR.pick(getStringFromWasm0(arg0, arg1));
             },
@@ -501,8 +541,15 @@ let wasm_bindgen = (function(exports) {
                 getDataViewMemory0().setInt32((arg0 >>> 0) + 4 * 1, len1, true);
                 getDataViewMemory0().setInt32((arg0 >>> 0) + 4 * 0, ptr1, true);
             },
+            __wbg_segment_35421340d55916a2: function(arg0, arg1, arg2, arg3, arg4, arg5) {
+                TR.segment(getStringFromWasm0(arg0, arg1), getStringFromWasm0(arg2, arg3), getStringFromWasm0(arg4, arg5));
+            },
             __wbg_send_07b9440bb3a17952: function(arg0, arg1) {
                 const ret = TR.send(getStringFromWasm0(arg0, arg1));
+                return ret;
+            },
+            __wbg_session_first_b84bc8a9fffb1606: function() {
+                const ret = TR.session_first();
                 return ret;
             },
             __wbg_set_checked_dee93ee2cd65ba8b: function(arg0, arg1, arg2) {
@@ -562,7 +609,7 @@ let wasm_bindgen = (function(exports) {
                 return ret;
             },
             __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-                // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 200, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+                // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 208, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
                 const ret = makeMutClosure(arg0, arg1, wasm_bindgen_3d0bd8a515793b3f___convert__closures_____invoke___wasm_bindgen_3d0bd8a515793b3f___JsValue__core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_3d0bd8a515793b3f___JsError___true_);
                 return ret;
             },

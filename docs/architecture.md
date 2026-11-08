@@ -1296,10 +1296,26 @@ ambiguous failure: a POST can cost money.
 **The channel panel** is written by the worker (`transcripts/src/channel.rs`): the tab holds an opaque state, sends it back
 with each step and shows the markup it gets, so the page's Wasm carries none of that logic.
 
+**Off, and gone.** Settings has Turn off Transcripts, which holds (`turnedOff` in the worker's IndexedDB) until Turn on or a
+saved connection; a settings read won't undo it. The flag also clears itself when an explicit check finds the port
+down AND the browser reports the native host not found: the helper was removed. A stopped helper that may return keeps the
+feature. **Clicks** on these controls carry the bridge's untrusted bit when a page script made them, and do nothing:
+they can spend the person's money. **The native host** can kickstart a helper someone stopped on purpose, so a page load
+asks at most once in 5 minutes, remembered across the worker's sleeps (`lastReconnect`); explicit acts may ask each time.
+A settings read after that is one attempt, not two: a request that just paired does not pair again.
+
 **The toolbar.** `transcripts/src/icon.rs` paints RGBA pixels from the mark's path, with no canvas: a progress line of
 the batch's verified saved fraction, a dot for attention, grey offline, six seconds of check after work this worker saw
 active finished (`core::lifecycle`, shared with the popup so reopening never replays it). Idle restores the manifest's
 icons and title.
+
+The toolbar's lifecycle is kept across the worker's sleeps but not across a browser session (`ytc:tr-session`, a marker in
+`chrome.storage.session`): work that finished while the browser was closed earns no success. Each worker start reads the
+queue once, passively, for someone who set it up.
+
+**The library's polling.** 2.5 s while a job is active. Idle it looks every 15 s (30 s hidden), because the worker now tells
+open pages at once when something changes through it (`tscChanged`). The slow look only covers what happens outside the
+extension, such as a file deleted in Finder.
 
 **Reader timestamps.** The helper's document route adds `sections` (start time and text per recognized segment, from the
 saved `transcript.json`); the rendered documents and exports are unchanged, and a helper without it shows plain
@@ -1336,6 +1352,11 @@ reads such a file (or a plain object of keys, as a console dump gives). The valu
 `TR.file_peek`, `TR.file_commit`): Rust sees only key names and kinds and decides by a fixed list which to write
 (`core::import_choice`), because a Deepgram key is among them and it never enters Wasm. A pairing token, the switch,
 debug keys and anything unknown stay out; a wrong file changes nothing. The page says the file holds the Deepgram key.
+
+**What the installed helper needs afterwards.** Its native host derives the id it allows from `<root>/extension/manifest.json`
+(`native::extension_id`), and its `.env` and `.data` live in that root. So an installed helper's folder must stay, with that
+manifest in it: deleting `extension/` from it breaks pairing even though the extension in the browser is fine. New installs
+from a Redline checkout have that file in place.
 
 **Before the id changes.** A build with the manifest's `key` has the new id from its first load, so it can't read the old
 id's storage. The export therefore landed first, in a commit without the `key`: a Redline reloaded from the same folder

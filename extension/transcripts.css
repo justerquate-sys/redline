@@ -53,8 +53,24 @@
 #ytc .tsc-chx:hover{background:var(--hv);color:var(--tx)}
 .tsc-chx svg{display:block;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
 .tsc-cht{margin:8px 0;color:var(--tx)}
-.tsc-bar{height:4px;margin-bottom:8px;overflow:hidden;border-radius:2px;background:var(--cb)}
-.tsc-bar i{display:block;height:100%;background:var(--progress);transform-origin:0 50%;transform:scaleX(0);transition:transform var(--d-panel) var(--e-out)}
+/* Saved, failed, remaining. Red is progress; a failure is the error tone; what is left is a surface step. */
+.tsc-bar{position:relative;display:flex;height:4px;margin-bottom:8px;overflow:hidden;border-radius:2px;background:var(--cb)}
+.tsc-bar span{display:block;flex:none;height:100%}
+.tsc-bar [data-segment=saved]{background:var(--progress)}
+.tsc-bar [data-segment=failed]{background:var(--er)}
+.tsc-bar [data-segment=remaining]{background:var(--hv)}
+.tsc-bar[data-state=unavailable]{opacity:.5}
+.tsc-bar[data-state=finished] [data-segment=saved]{background:var(--tx)}
+.tsc-bar[data-state=settled] [data-segment=saved],.tsc-bar[data-state=attention] [data-segment=saved]{background:var(--mu)}
+/* Discovery with nothing to measure yet: live work, so it may move; reduced motion holds it still. */
+.tsc-bar[data-moving=true]::before{content:"";position:absolute;inset:0 auto 0 0;width:30%;border-radius:inherit;background:var(--mu);animation:tscmove 1.4s var(--e-io) infinite alternate}
+@keyframes tscmove{from{transform:translateX(calc(-70% * var(--mv)))}to{transform:translateX(calc(310% * var(--mv)))}}
+.tsc-tot{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0}
+.tsc-tot div{display:grid;gap:0}
+.tsc-tot b{font-size:16px;line-height:24px;font-weight:600;font-variant-numeric:tabular-nums}
+.tsc-tot span{color:var(--mu);font-size:12px;line-height:16px}
+.tsc-chnote{flex-basis:100%;margin:8px 0 0;font-size:12px;line-height:16px}
+#ytc .tsc-chl{color:var(--mu);text-decoration:underline}
 .tsc-chp .m{margin:0}
 .tsc-che{margin:8px 0 0;color:var(--er)}
 #ytc .tsc-che[hidden],#ytc .tsc-chp button[hidden]{display:none}

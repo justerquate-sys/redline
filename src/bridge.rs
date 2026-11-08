@@ -88,6 +88,9 @@ extern "C" {
     /// Replaces the whole document content and installs delegated listeners.
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn doc(html: &str);
+    /// Replaces an extension page's body (and its class), keeping its head and installs delegated listeners.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn doc_body(html: &str, class: &str);
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn html(id: &str, html: &str);
     #[wasm_bindgen(js_namespace = YTC)]

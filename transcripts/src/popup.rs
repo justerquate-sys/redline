@@ -81,7 +81,7 @@ pub fn boot() {
 fn shell() -> String {
     format!(
         r##"<div class="ptr-head"><b>Transcripts</b><span class="ptr-tools"><button type="button" id="settings" class="ptr-i" data-tx="settings" aria-label="Transcripts settings" title="Settings">{i_settings}</button><button type="button" id="library" class="ptr-link" data-tx="library" title="Read, copy and save your transcripts">Library</button></span></div>
-<div id="ptr-main"><section id="queue-card" class="ptr-queue" aria-label="Current batch"><div class="ptr-line"><span id="queue-stage" role="status">Connecting</span><span id="queue-summary" class="ptr-num"></span></div><div id="queue-progress" class="tx-bar" role="progressbar" aria-label="Saved transcripts in the current batch" aria-valuemin="0"><i id="queue-fill"></i></div><div class="ptr-line"><span id="queue-counts" class="ptr-sub"></span><button type="button" id="queue-stop" class="ptr-link" data-tx="stop" title="Stop channel discovery and all unfinished transcriptions. Saved files stay" hidden>Stop all</button></div><div id="queue-attention" class="ptr-line" hidden><span id="queue-issues" class="ptr-err"></span><button type="button" id="queue-view" class="ptr-link" data-tx="view-issues" hidden></button></div><div id="queue-errors" class="ptr-errors" tabindex="0" aria-label="Videos needing attention" hidden></div><button type="button" id="queue-retry" class="ptr-link" data-tx="retry" hidden>Retry connection</button></section>
+<div id="ptr-main"><section id="queue-card" class="ptr-queue" aria-label="Current batch"><div class="ptr-line"><span class="ptr-left"><b id="queue-headline">–</b> <span id="queue-headline-label">checking queue</span></span><span id="connection-label" class="ptr-sub">Checking</span></div><div id="queue-progress" class="tx-bar" role="progressbar" aria-label="Saved transcripts in the current batch" aria-valuemin="0"><span data-segment="saved"></span><span data-segment="failed"></span><span data-segment="remaining"></span></div><div class="ptr-line"><span id="queue-stage" role="status">Connecting</span><span class="ptr-num"><span id="queue-summary"></span> <span id="queue-percent"></span></span></div><div class="ptr-line"><span id="queue-counts" class="ptr-sub"></span><button type="button" id="queue-stop" class="ptr-link" data-tx="stop" title="Stop channel discovery and all unfinished transcriptions. Saved files stay" hidden>Stop all</button></div><div id="queue-attention" class="ptr-line" hidden><span id="queue-issues" class="ptr-err"></span><button type="button" id="queue-view" class="ptr-link" data-tx="view-issues" hidden></button></div><div id="queue-errors" class="ptr-errors" tabindex="0" aria-label="Videos needing attention" hidden></div><button type="button" id="queue-retry" class="ptr-link" data-tx="retry" hidden>Retry connection</button></section>
 <section id="folder-picker" aria-label="Save folder"><p id="destination" class="ptr-sub" hidden></p><div id="folder-choices" class="ptr-folders" role="group" aria-label="Choose a folder" tabindex="0" data-tx-scroll="folders"></div><span id="copy-status" class="ptr-sr" role="status" aria-live="polite"></span><form id="folder-create" class="ptr-new" data-tx-submit="create"><input id="folder-name" type="text" maxlength="80" placeholder="New folder" aria-label="New folder name" required disabled><button type="submit" id="create-folder" class="ptr-i" aria-label="Create folder" title="Create folder" disabled>{i_plus}</button></form></section>
 <div id="notice" class="tx-notice" role="status" hidden></div></div>
 <section id="zip-view" aria-labelledby="zip-title" hidden><div class="ptr-line"><b id="zip-title">Folders in All</b><span id="zip-summary" class="ptr-num" role="status"></span></div><p class="ptr-sub">Files directly in the save folder are always included.</p><div class="ptr-line ptr-gap"><span><button type="button" id="zip-all" class="ptr-link" data-tx="zip-all">All</button> <button type="button" id="zip-none" class="ptr-link" data-tx="zip-none">None</button> <button type="button" id="zip-retry" class="ptr-link" data-tx="zip-retry" hidden>Retry</button></span><button type="button" id="zip-done" class="ptr-link" data-tx="zip-done">Done</button></div><div id="zip-choices" class="ptr-folders" role="group" aria-label="Folders included in All" tabindex="0"></div><p id="zip-empty" class="ptr-sub" hidden>No subfolders</p><div id="zip-notice" class="tx-notice" role="status" hidden></div></section>"##,
@@ -166,12 +166,38 @@ fn render() {
     host::text("queue-stage", &stage);
     host::text("queue-summary", &if has_snapshot { format!("{} / {}", host::number(g("saved")), host::number(g("total"))) } else { String::new() });
     set("queue-summary", "title", &format!("{} of {} videos saved in the current batch", host::number(g("saved")), host::number(g("total"))));
-    let bar_state = if unavailable { "unavailable" } else if !has_snapshot { "loading" } else if g("discovering") > 0. && g("total") == 0. { "discovering" } else if kind == "attention" { "attention" } else { "working" };
+    let left = g("queued") + g("processing") + g("saving");
+    let finding = g("discovering") > 0. && left == 0.;
+    host::text("queue-headline", &if unavailable || !has_snapshot || finding { "–".to_owned() } else { host::number(left) });
+    host::text("queue-headline-label", if unavailable { "connection lost" } else if !has_snapshot { "checking queue" } else if finding { "finding videos" } else { "left" });
+    host::text("connection-label", if unavailable { "Offline" } else if has_snapshot { "Connected" } else { "Checking" });
+    let bar_state = if unavailable {
+        "unavailable"
+    } else if !has_snapshot {
+        "loading"
+    } else if g("discovering") > 0. {
+        "discovering"
+    } else if g("waiting") > 0. {
+        "waiting"
+    } else {
+        match kind.as_str() {
+            "complete" => "finished",
+            "settled" => "settled",
+            "idle" => "empty",
+            "attention" => "attention",
+            "unknown" => "unknown",
+            _ => "working",
+        }
+    };
     set("queue-progress", "data-state", bar_state);
+    set("queue-progress", "data-moving", if !unavailable && g("discovering") > 0. && g("total") == 0. { "true" } else { "false" });
     set("queue-progress", "aria-busy", if !unavailable && active { "true" } else { "false" });
-    let ratio = if g("total") > 0. { g("saved") / g("total") } else { 0. };
-    set("queue-fill", "style", &format!("transform:scaleX({ratio})"));
+    let share = |v: f64| if g("total") > 0. { format!("width:{}%", v / g("total") * 100.) } else { "width:0%".to_owned() };
+    host::segment("queue-progress", "saved", &share(g("saved")));
+    host::segment("queue-progress", "failed", &share(g("failed")));
+    host::segment("queue-progress", "remaining", &share(g("remaining")));
     let final_denominator = has_snapshot && !unavailable && state["discoveryUnknown"] != true && state["discoveryComplete"] == true && g("total") > 0.;
+    host::text("queue-percent", &if final_denominator { format!("{}%", (g("saved") / g("total") * 100.).floor()) } else { String::new() });
     host::attr("queue-progress", "aria-valuenow", final_denominator.then(|| g("saved").to_string()));
     host::attr("queue-progress", "aria-valuemax", final_denominator.then(|| g("total").to_string()));
     set("queue-progress", "aria-valuetext", &format!("{stage}. {} of {} saved. {} failed, {} remaining.", g("saved"), g("total"), g("failed"), g("remaining")));
@@ -667,7 +693,7 @@ fn copy_folder(id: String, name: String) {
         match result {
             Ok(Some(prepared)) if current && (!id.is_empty() || selection_rev == Some(with(|p| p.select_rev))) => {
                 let count = num(&prepared["count"]);
-                let message = format!("ZIP copied, {}", plural(count, "file"));
+                let message = format!("ZIP copied, {}. Paste to attach, or use Show file.", plural(count, "file"));
                 let seq = with(|p| {
                     p.seq += 1;
                     let seq = p.seq;

@@ -33,7 +33,8 @@ futures-util.workspace = true
 [features]
 default = ["engine"]
 engine = ["dep:scribe-engine"]
-# End-to-end tests only: lets `.env` name a Speech server on 127.0.0.1. Never in a release.
+# End-to-end tests only: lets `.env` name a Speech server on 127.0.0.1, and lets the native host answer without touching
+# the installed service (SCRIBE_NATIVE_NO_START). Never in a release.
 loopback-speech = ["scribe-common/loopback-speech"]
 
 [[bin]]

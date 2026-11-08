@@ -304,7 +304,7 @@ pub fn on_key(key: &str, editable: bool) -> bool {
     if let Some(n) = name {
         telemetry::act_begin(n, if editable { "field" } else { "key" }.into(), "keyboard", app::route_now(), false);
     }
-    let r = app::with_ret(|a| a.on_key(key, editable));
+    let r = app::with_ret(|a| a.on_key(key, editable)) || (key == "Escape" && !editable && features::transcribe::on_escape());
     if tel {
         telemetry::act_end(r);
     }
