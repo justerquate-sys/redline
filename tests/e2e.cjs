@@ -274,6 +274,17 @@ function visionFixture(v) {
   // An auto-dubbed video (dubaudio…): the audio format twice, the dub listed first, its file with other offsets.
   // Each track its own contentLength, as files of different content have. dublen…: the original's file changes after
   // the first response (a re-encode: its index no longer applies). dubmid…: a healthy third track.
+  // dubtv…: Russian (the original), English and French; dubtw…: no French (the TV's Audio panel).
+  if (/^dubt[vw]/.test(v)) {
+    const track = (f, lang, name, audioIsDefault, more = 0) => ({ ...f, url: `${f.url}&lang=${lang}`, contentLength: String(+f.contentLength + more), audioTrack: { id: `${lang}.3`, displayName: name, audioIsDefault } });
+    const a = adaptiveFormats.filter(f => f.mimeType.startsWith('audio/'));
+    adaptiveFormats = [...adaptiveFormats.filter(f => !f.mimeType.startsWith('audio/')), ...a.map(f => track(f, 'en', 'English', false, 1000)), ...(v.startsWith('dubtv') ? a.map(f => track(f, 'fr', 'French', false, 2000)) : []), ...a.map(f => track(f, 'ru', 'Russian (original)', true))];
+  }
+  // dubmany…: as many languages as YouTube's auto-dubbing gives a video.
+  if (v.startsWith('dubmany')) {
+    const a = adaptiveFormats.filter(f => f.mimeType.startsWith('audio/')), langs = ['en', 'bn', 'de', 'es', 'fr', 'hi', 'it', 'he', 'ja', 'ko', 'ml', 'nl', 'pt', 'ru', 'ta', 'uk', 'pl', 'tr'];
+    adaptiveFormats = [...adaptiveFormats.filter(f => !f.mimeType.startsWith('audio/')), ...langs.flatMap((l, i) => a.map(f => ({ ...f, url: `${f.url}&lang=${l}`, audioTrack: { id: `${l}.3`, displayName: `Language ${l}`, audioIsDefault: i === 0 } })))];
+  }
   if (/^dub(audio|mid|len)/.test(v)) {
     const track = (f, lang, name, audioIsDefault, more = 0) => ({ ...f, url: `${f.url}&lang=${lang}`, contentLength: String(+f.contentLength + more), audioTrack: { id: `${lang}.3`, displayName: name, audioIsDefault } });
     const a = adaptiveFormats.filter(f => f.mimeType.startsWith('audio/'));
@@ -282,13 +293,14 @@ function visionFixture(v) {
   // staleurl… and dubaudio… (first response) and expirenoext (every response): URLs that run out in 20 minutes.
   const life = ((v.startsWith('staleurl') || v.startsWith('dubaudio') || v.startsWith('dublen')) && gen === 1) || v === 'expirenoext' || v === 'expirehang1' ? '1200' : '21540';
   return { responseContext: {}, playabilityStatus: { status: 'OK' }, streamingData: { expiresInSeconds: life, adaptiveFormats },
-    videoDetails: { videoId: v, title: 'Fixture video', lengthSeconds: String(SECONDS), author: 'Fixture' } };
+    // shortmedia…: YouTube's length is more than the media really has.
+    videoDetails: { videoId: v, title: 'Fixture video', lengthSeconds: String(v.startsWith('shortmedia') ? SECONDS + 30 : SECONDS), author: 'Fixture' } };
 }
 // A Japanese video: ASR + human Japanese tracks, YouTube can translate to English.
 const CC_JA = { captionTracks: ['a.ja', '.ja'].map(id => ({ baseUrl: `https://www.youtube.com/api/timedtext?v=ccjapanese1&ei=E2E&lang=ja${id[0] === 'a' ? '&kind=asr' : ''}`,
   name: { simpleText: id[0] === 'a' ? 'Japanese (auto-generated)' : 'Japanese' }, vssId: id, languageCode: 'ja', kind: id[0] === 'a' ? 'asr' : undefined, isTranslatable: true })),
   audioTracks: [{ captionTrackIndices: [0, 1], defaultCaptionTrackIndex: 1 }], defaultAudioTrackIndex: 0,
-  translationLanguages: [{ languageCode: 'de', languageName: { simpleText: 'German' } }, { languageCode: 'en', languageName: { simpleText: 'English' } }] };
+  translationLanguages: [{ languageCode: 'de', languageName: { simpleText: 'German' } }, { languageCode: 'en', languageName: { simpleText: 'English' } }, { languageCode: 'ru', languageName: { simpleText: 'Russian' } }] };
 // Storyboards (the WEB response's seek-preview sprite sheets, real spec format): every VOD fixture but
 // descnochap1 has one; frames every 1 s. The sheets are served as SVGs whose cells show their frame number.
 const SB_LEVELS = [[48, 27, 100, 10, 10, 0, 'default'], [80, 45, SECONDS, 10, 10, 1000, 'M$M'], [160, 90, SECONDS, 5, 5, 1000, 'M$M'], [320, 180, SECONDS, 3, 3, 1000, 'M$M']];
@@ -310,9 +322,9 @@ function webFixture(v) {
   return { playabilityStatus: { status: 'OK' }, streamingData: { serverAbrStreamingUrl: 'https://rr1---sn-fixture.googlevideo.com/sabr' },
     playbackTracking: { videostatsPlaybackUrl: { baseUrl: `https://s.youtube.com/api/stats/playback?${q}` }, videostatsWatchtimeUrl: { baseUrl: `https://s.youtube.com/api/stats/watchtime?${q}` },
       videostatsScheduledFlushWalltimeSeconds: [10, 20, 30], videostatsDefaultFlushIntervalSeconds: 40 },
-    captions: { playerCaptionsTracklistRenderer: v === 'ccjapanese1' ? CC_JA : { captionTracks: [{ baseUrl: `https://www.youtube.com/api/timedtext?v=${v}&ei=E2E&lang=en&e2e=1`, name: { runs: [{ text: 'English' }] }, vssId: '.en', languageCode: 'en' }] } },
+    captions: { playerCaptionsTracklistRenderer: v.startsWith('ccjapanese') ? CC_JA : { captionTracks: [{ baseUrl: `https://www.youtube.com/api/timedtext?v=${v}&ei=E2E&lang=en&e2e=1`, name: { runs: [{ text: 'English' }] }, vssId: '.en', languageCode: 'en' }] } },
     ...(v === 'descnochap1' ? {} : { storyboards: { playerStoryboardSpecRenderer: { spec: sbSpec(v), recommendedLevel: 2 } } }),
-    videoDetails: { videoId: v, title: 'Fixture video', lengthSeconds: String(SECONDS) } };
+    videoDetails: { videoId: v, title: 'Fixture video', lengthSeconds: String(v.startsWith('shortmedia') ? SECONDS + 30 : SECONDS) } };
 }
 const json3 = JSON.stringify({ wireMagic: 'pb3', events: [{ tStartMs: 0, dDurationMs: SECONDS * 1000, id: 1, wpWinPosId: 1, wsWinStyleId: 1 },
   ...Array.from({ length: SECONDS / 2 }, (_, i) => ({ tStartMs: i * 2000, dDurationMs: 2000, wWinId: 1, segs: [{ utf8: `Caption line ${i}` }, { utf8: ` <b>&amp;</b>`, tOffsetMs: 300 }] }))] });
@@ -4574,6 +4586,44 @@ chrome.runtime.onMessage.addListener(m => {
     assert.deepEqual(kinds, [], 'no error, no recovery');
   }, true));
 
+  // A short video fully buffered (the end of stream signalled) can freeze too; the true end never counts.
+  await step('own player: a frozen, fully buffered video recovers by itself; a normal end never counts as frozen, also when the media is shorter than lengthSeconds', () => noHedge(async () => {
+    const v = 'frozenfull1', inc0 = incidents.length;
+    await page.goto(`https://www.youtube.com/watch?v=${v}&t=20`, { waitUntil: 'commit' });
+    await waitT(() => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video').currentTime > 20.5, null, 15000);
+    // Everything is fetched: the stream ended (this used to end the watch).
+    for (let i = 0; i < 100 && !/end of stream/.test(await playerNotes()); i++) await page.waitForTimeout(200);
+    assert.match(await playerNotes(), /end of stream/);
+    // The decoder stops: the playhead stays where it is, with the media still ahead and the element not paused.
+    // (Rate 0: the element is playing and its time stands still. A new MediaSource starts at the default rate.)
+    await page.evaluate(() => { document.getElementById('ytc-video').playbackRate = 0; });
+    const t0 = await page.evaluate(() => document.getElementById('ytc-video').currentTime);
+    await page.waitForTimeout(6500);
+    assert.doesNotMatch(await playerNotes(), /decoder stopped/, 'not before its time');
+    let notes = '';
+    for (let i = 0; i < 40 && !/decoder stopped/.test(notes = await playerNotes()); i++) await page.waitForTimeout(250);
+    assert.match(notes, /decoder stopped: the playhead stayed at/, 'noticed, with everything buffered');
+    await waitT(t => document.getElementById('ytc-video').currentTime > t + 1, t0, 15000);
+    await waitT(() => !document.getElementById('ytc-video').paused, null, 5000);
+    for (let i = 0; i < 100 && !incidents.slice(inc0).some(x => x.kind === 'player-recovered'); i++) await page.waitForTimeout(100);
+    const rec = incidents.slice(inc0).find(x => x.kind === 'player-recovered');
+    assert.ok(rec && /decoder stopped/.test(rec.reason), 'one recovery: ' + JSON.stringify(incidents.slice(inc0).map(x => [x.kind, x.reason])));
+    assert.equal(await page.locator('#ytc-player.failed').count(), 0);
+    // True ends: played out to the end, resting there as long as the watch would need; no recovery.
+    for (const u of ['frozenend01', 'shortmedia1']) {
+      const inc1 = incidents.length;
+      await page.goto(`https://www.youtube.com/watch?v=${u}&t=34`, { waitUntil: 'commit' });
+      await waitT(() => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video').ended, null, 25000);
+      // (No next video: it rests at its end.)
+      await page.click('#ytc-up [data-act=up-cancel]');
+      await page.waitForTimeout(9000);
+      const notes = await playerNotes();
+      assert.doesNotMatch(notes, /decoder stopped/, u);
+      assert.deepEqual(incidents.slice(inc1).filter(x => ['player-recovered', 'player-failed', 'player-stuck'].includes(x.kind)).map(x => x.reason), [], u);
+      assert.equal(await page.evaluate(() => document.getElementById('ytc-video').ended), true, `${u}: still at its end`);
+    }
+  }));
+
   // Healthy playback never loops on refreshes: URLs that stay short-lived (every answer's expiresInSeconds is
   // 20 min: a refresh that does not lengthen them) get exactly one proactive refresh, then none, and playing
   // is never held for it.
@@ -4655,7 +4705,7 @@ chrome.runtime.onMessage.addListener(m => {
       const v = document.getElementById('ytc-video'), f = n.matches('canvas.pwf') ? n : null, x = f && f.getContext('2d').getImageData(0, 0, f.width, f.height).data;
       let lit = 0; if (x) for (let i = 0; i < x.length; i += 4) if (x[i] + x[i + 1] + x[i + 2] > 30) lit++;
       w.added.push({ tag: n.tagName, cls: n.className, w: f && f.width, h: f && f.height, lit: x ? lit / (x.length / 4) : null, afterVideo: n.previousElementSibling === v,
-        poster: v && v.getAttribute('poster'), imgs: document.querySelectorAll('#ytc-player img').length, zooming: !!document.getElementById('ytc-player')?.getAnimations().some(a => a.id === 'flip'),
+        poster: v && v.getAttribute('poster'), imgs: document.querySelectorAll('#ytc-player img:not(.av)').length, zooming: !!document.getElementById('ytc-player')?.getAnimations().some(a => a.id === 'flip'),
         frameShown: !!d.dataset.ytcFirstFrame && +d.dataset.ytcFirstFrame > 0 && v && v.readyState >= 2 });
     } }).observe(document.body, { childList: true, subtree: true });
   });
@@ -8470,9 +8520,10 @@ chrome.runtime.onMessage.addListener(m => {
     const worst = Math.max(0, ...d), at = d.indexOf(worst);
     assert.ok(worst <= 1, `${what}: the 960×540 and 1920×1080 layouts differ by ${worst.toFixed(2)} px (at 960×540) at box ${at}: ${JSON.stringify([a[at], b[at]])}`);
   };
-  const tvChecks = { step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TVSIZES, tvWalk, focusedInfo, calls, log, ACTS, T_FIRST, T_TOP, T_NEW, T_PAGE2, T_REP, incidents, telBatches };
+  const tvChecks = { step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TVSIZES, tvWalk, focusedInfo, calls, log, ACTS, T_FIRST, T_TOP, T_NEW, T_PAGE2, T_REP, incidents, telBatches, sw, MIDERR, midRelease, noHedge };
   await require('./tv-keyboard.cjs')(tvChecks);
   await require('./tv-watch.cjs')(tvChecks);
+  await require('./tv-actions.cjs')(tvChecks);
   await require('./tv-motion.cjs')(tvChecks);
   await step('TV browsing (960×540 and 1920×1080): rail, Home signed out and in, topic chips, the grid walk with its fixed row, Search screen and results, channel, playlist, a failed page; every screen inside the safe area, ≥ 17 px type, rings never clipped, no dead ends, Back rules', async () => {
     const tv = await tvOpen();
@@ -9332,9 +9383,9 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
           const c = await tv.evaluate(async n => { const c = document.querySelector('#ytc-info .wc'), was = c.textContent; c.textContent = n; await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); const s = getComputedStyle(c), rg = document.createRange(); rg.selectNodeContents(c); const out = { tw: rg.getBoundingClientRect().width, sw: c.scrollWidth, cw: c.clientWidth, sh: c.scrollHeight, ch: c.clientHeight, fs: parseFloat(s.fontSize), lh: parseFloat(s.lineHeight) }; c.textContent = was; return out; }, name);
           assert.ok(c.sw <= c.cw && c.sh <= c.ch && c.lh >= c.fs && c.cw > c.tw + H * 0.1, `the channel name ${name} shown whole: ${JSON.stringify(c)}`);
         }
-        assert.deepEqual(lay.row, ['Play/pause', 'Captions', 'Speed', 'Quality', 'I like this', 'Save to Watch later', 'Comments', 'More info'], JSON.stringify(lay.row));
+        assert.deepEqual(lay.row, ['Play/pause', 'Captions', 'Speed', 'Quality', 'I like this', 'I dislike this', 'Save to Watch later', 'Save to playlist', 'Comments', 'More info'], JSON.stringify(lay.row));
         assert.deepEqual(await tvAudit(tv, `overlay ${W}`), []);
-        const wk = await tvWalk(tv, '#ytc-seek,#ytc-player .prow :is(.pb,.wl)', 20);
+        const wk = await tvWalk(tv, '#ytc-seek,#ytc-player .prow :is(.pb,.wl)', 24);
         assert.deepEqual([wk.dead, wk.missing], [[], []], `overlay walk ${W}`);
         await tv.focus('#ytc-seek');
         await tv.keyboard.press('ArrowUp');

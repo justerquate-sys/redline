@@ -9,6 +9,12 @@ use crate::{bridge, tv};
 impl App {
     pub(super) fn tv_keyboard_open(&mut self) {
         self.tv.keyboard.typed = false;
+        if self.tv.keyboard.layout.is_empty() {
+            // (The configuration is in by the time anyone can open this; the page itself renders plain a–z.)
+            let locale = bridge::lang();
+            self.tv.keyboard.layout = keyboard::initial(&self.cfg.kb, &locale);
+            bridge::html(ID, &keyboard::keys(self.tv.keyboard.layout, &locale));
+        }
         bridge::attr(ID, "aria-hidden", "false");
         bridge::attr(ID, "class", "tvk on");
         bridge::attr("ytc", "data-tvk", "1");
@@ -84,8 +90,11 @@ impl App {
             "tv-kb-delete" => self.tv_keyboard_edit(Edit::Delete),
             "tv-kb-clear" => self.tv_keyboard_edit(Edit::Clear),
             "tv-kb-layout" => {
-                self.tv.keyboard.symbols = !self.tv.keyboard.symbols;
-                bridge::html(ID, &keyboard::keys(self.tv.keyboard.symbols));
+                let locale = bridge::lang();
+                self.tv.keyboard.layout = keyboard::next(self.tv.keyboard.layout, &locale);
+                self.cfg.kb = self.tv.keyboard.layout.to_string();
+                self.save_cfg();
+                bridge::html(ID, &keyboard::keys(self.tv.keyboard.layout, &locale));
                 bridge::focus_sel(ID, "[data-act=tv-kb-layout]");
             }
             "tv-kb-search" => {

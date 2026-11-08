@@ -103,7 +103,7 @@ impl App {
         }
     }
 
-    fn up_open(&mut self, n: Next) {
+    pub(super) fn up_open(&mut self, n: Next) {
         let route = Route::Watch { v: n.v, t: 0, list: n.list };
         let url = route.url();
         self.navigate(route, url, Mode::Push);

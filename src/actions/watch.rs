@@ -178,6 +178,29 @@ pub fn parse(v: &Value) -> Acts {
     a
 }
 
+/// TV: the rating and subscription an answer of the account's own client states, wherever it states them (`None`: it
+/// does not say). The watch and channel pages themselves are anonymous WEB calls on TV, so they cannot know these.
+/// Read loosely on purpose: the TV client's shapes are not those of WEB, and only a real sign-in shows them; a shape
+/// not recognised changes nothing.
+pub fn account_state(v: &Value, ch: Option<&str>) -> (Option<Like>, Option<bool>) {
+    let (mut like, mut sub) = (None, None);
+    super::walk(v, &mut |k, x| match k {
+        "likeStatus" if like.is_none() => like = x.as_str().and_then(Like::from_status),
+        // A toggle button's own state, on the endpoint it would send (LIKE or DISLIKE).
+        "toggleButtonRenderer" if like.is_none() && x.get("isToggled").and_then(Value::as_bool) == Some(true) => {
+            like = find_all(x, "likeEndpoint").iter().find_map(|e| st(e, &["status"])).and_then(Like::from_status).filter(|l| *l != Like::None);
+        }
+        "subscribeButtonRenderer" | "subscribeButtonViewModel" | "subscriptionButton" | "subscriptionStateEntity" if sub.is_none() => {
+            let other = st(x, &["channelId"]).is_some_and(|id| ch.is_some_and(|c| c != id));
+            if !other {
+                sub = x.get("subscribed").and_then(Value::as_bool);
+            }
+        }
+        _ => {}
+    });
+    (like, sub)
+}
+
 // ------------------------------------------------- description timecodes
 
 /// Separators between a timestamp and its title ("0:00 - Intro", "Intro | 0:00").
@@ -341,6 +364,22 @@ pub fn row_html(like: Option<(Like, &str)>, share: &str, save: &str) -> String {
     s.push_str(super::MSG);
     s.push_str("\" class=\"ya-msg\" role=\"status\"></span>");
     s
+}
+
+/// A person with a plus, and with a check mark once subscribed (TV's player row: both drawn, `.on` picks one).
+const I_SUB: &str = "<svg class=\"o tvs0\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M10 11.5a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5zM3 20c0-3.6 3-6 7-6s7 2.4 7 6M19 7.5v6M16 10.5h6\"/></svg><svg class=\"o tvs1\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M10 11.5a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5zM3 20c0-3.6 3-6 7-6s7 2.4 7 6M15.5 10.5l2.5 2.5 4.5-5\"/></svg>";
+
+/// TV's player row: the Subscribe action's class and focused label.
+pub fn tv_row_sub_view(shown: bool, busy: bool, confirm: bool) -> (String, &'static str) {
+    let (_, label, _) = sub_view(shown, busy, confirm, "");
+    (format!("pb tvsb{}{}{}", if shown { " on" } else { "" }, if shown && confirm { " confirm" } else { "" }, if busy { " busy" } else { "" }), label)
+}
+
+/// TV's player row: the Subscribe action (later state changes flip its attributes in place).
+pub fn tv_row_sub(id: &str, label_id: &str, shown: bool, busy: bool, confirm: bool, channel: &str) -> String {
+    let (cls, label) = tv_row_sub_view(shown, busy, confirm);
+    let (_, _, aria) = sub_view(shown, busy, confirm, channel);
+    format!("<button type=\"button\" id=\"{id}\" class=\"{cls}\" data-act=\"a-sub\" aria-pressed=\"{shown}\" aria-label=\"{}\">{I_SUB}<span id=\"{label_id}\" class=\"tvpl\" aria-hidden=\"true\">{label}</span></button>", esc(&aria))
 }
 
 pub fn like_class(on: bool, dis: bool) -> &'static str {
@@ -571,6 +610,28 @@ mod tests {
         assert!(a.comments.is_none());
         // Garbage never panics.
         assert_eq!(parse(&crate::json::jv!([1, {"contents": null}])), Acts::default());
+    }
+    #[test]
+    fn the_accounts_own_answer_states_rating_and_subscription() {
+        let ch = Some("UCabc");
+        // WEB's shapes (the fixture: signed out, not subscribed, no rating).
+        assert_eq!(account_state(&fixture("next.json"), Some("UCaZO-66UcqyVT9btiqdDryA")), (Some(Like::None), Some(false)));
+        // The shapes seen from TV clients, wherever they sit.
+        let j = crate::json::jv!({"contents": {"singleColumnWatchNextResults": {"results": [{"videoOwnerRenderer": {"subscriptionButton": {"subscribed": true}}}]}}, "transportControls": {"promotedActions": [
+            {"button": {"toggleButtonRenderer": {"isToggled": false, "defaultServiceEndpoint": {"likeEndpoint": {"status": "LIKE"}}}}},
+            {"button": {"toggleButtonRenderer": {"isToggled": true, "defaultServiceEndpoint": {"likeEndpoint": {"status": "DISLIKE"}}, "toggledServiceEndpoint": {"likeEndpoint": {"status": "INDIFFERENT"}}}}}]}});
+        assert_eq!(account_state(&j, ch), (Some(Like::Dislike), Some(true)));
+        let j = crate::json::jv!({"a": [{"subscribeButtonRenderer": {"channelId": "UCother", "subscribed": true}}, {"subscribeButtonRenderer": {"channelId": "UCabc", "subscribed": false}}, {"likeStatus": "LIKE"}]});
+        assert_eq!(account_state(&j, ch), (Some(Like::Like), Some(false)), "another channel's button is not this one's");
+        // Nothing stated, nothing known.
+        assert_eq!(account_state(&crate::json::jv!({"responseContext": {}, "likeStatus": "UNKNOWN", "toggleButtonRenderer": {"isToggled": false}}), ch), (None, None));
+    }
+    #[test]
+    fn tv_row_subscribe() {
+        let h = tv_row_sub("b", "l", true, false, true, "a\"b");
+        assert!(h.contains("class=\"pb tvsb on confirm\"") && h.contains("data-act=\"a-sub\"") && h.contains(">Unsubscribe?</span>") && h.contains("a&quot;b"), "{h}");
+        assert_eq!(tv_row_sub_view(false, true, false), ("pb tvsb busy".to_string(), "Subscribe"));
+        assert_eq!(tv_row_sub_view(true, false, false), ("pb tvsb on".to_string(), "Subscribed"));
     }
     #[test]
     fn markup() {

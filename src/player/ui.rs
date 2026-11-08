@@ -138,14 +138,27 @@ pub fn shell() -> String {
 pub const TREM: &str = "ytc-trem";
 /// TV: the slot the Watch later toggle is written into (the app owns that button, `features::watch_later`).
 pub const TVWL: &str = "ytc-tvwl";
+/// TV: the slots of the Channel and Subscribe actions (they come with the watch page's data).
+pub const TVCH: &str = "ytc-tvch";
+pub const TVSUB: &str = "ytc-tvsubr";
+/// TV: the Audio action (`.on` while the video has several tracks), Like/Dislike and Save to playlist.
+pub const AUB: &str = "ytc-aub";
+pub const TVLK: &str = "ytc-tvlk";
+pub const TVDL: &str = "ytc-tvdl";
+pub const TVSV: &str = "ytc-tvsv";
 const I_LIKE: &str = "<svg class=\"o\" viewBox=\"0 0 24 24\"><path d=\"M7.5 10.5V20H4v-9.5zm0 0 3.8-6.5c1.4 0 2.4 1 2.1 2.5l-.7 3.5H19a2 2 0 0 1 2 2.3l-1.1 6a2 2 0 0 1-2 1.7H7.5\"/></svg>";
 const I_INFO: &str = "<svg class=\"o\" viewBox=\"0 0 24 24\"><path d=\"M20.5 12a8.5 8.5 0 1 1-17 0 8.5 8.5 0 0 1 17 0zM12 11v5.5M12 7.6v.1\"/></svg>";
+/// Headphones (the Audio action).
+const I_AUDIO: &str = "<svg class=\"o\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 15v-3a8 8 0 0 1 16 0v3M4 14.5h3.5V20H5a1 1 0 0 1-1-1zM20 14.5h-3.5V20H19a1 1 0 0 0 1-1z\"/></svg>";
+/// A list with a plus (Save to playlist).
+const I_SAVE: &str = "<svg class=\"o\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 6h14M4 11h14M4 16h8M17 14v6M14 17h6\"/></svg>";
 const I_COMMENTS: &str = "<svg class=\"o\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 4H4v13h4v4l5-4h7zM8 8h8M8 12h6\"/></svg>";
 
 /// The TV player (10-foot overlay): the same ids as `shell` where the glue updates them, laid out for the
 /// remote. Over the picture: the time row (elapsed · chapter · remaining), the thick seek bar (a focus stop:
-/// ←/→ scrub it), and one row of large round buttons (play/pause, captions, speed, quality, like, Watch later,
-/// more info). No volume, theater, fullscreen, hover tooltips or caption sizing (pointer-only on desktop).
+/// ←/→ scrub it), and one row of round buttons (channel, subscribe, play/pause, captions, audio, speed, quality, like,
+/// dislike, Watch later, save, comments, more info). No volume, theater, fullscreen, hover tooltips or caption sizing
+/// (pointer-only on desktop).
 pub fn shell_tv() -> String {
     format!(
         "<video id=\"{VIDEO}\" playsinline preload=\"auto\"></video>\
@@ -159,13 +172,16 @@ pub fn shell_tv() -> String {
 <div class=\"ptr\"><span id=\"{TIME}\" class=\"ptime\">0:00</span><span id=\"{CHB}\" class=\"pchap\" data-n=\"0\"><span id=\"{CHL}\" class=\"pchl\"></span></span><button type=\"button\" class=\"plive\" data-act=\"p-live\" aria-label=\"Jump to live\">LIVE</button><span id=\"{TREM}\" class=\"prem\"></span></div>\
 <div id=\"{SEEK}\" class=\"pseek\" tabindex=\"0\" role=\"slider\" aria-label=\"Seek: ← and → move 10 s, OK plays or pauses\" data-drag=\"seek\"><div id=\"{SEGS}\" class=\"psegs\">{BAR}</div><i id=\"{RIP}\" class=\"prip\"></i><b class=\"pknob\"></b>\
 <div id=\"{TIP}\" class=\"ptip\" aria-hidden=\"true\"><div id=\"{TIPI}\" class=\"pti\"><i class=\"sbf ptf\"><i id=\"{TIPF}\"></i></i><em id=\"{TIPK}\" class=\"ptk\"></em><b id=\"{TIPC}\"></b><span id=\"{TIPT}\"></span></div></div></div>\
-<div class=\"prow\">\
+<div class=\"prow\"><span id=\"{TVCH}\" class=\"pslot\"></span><span id=\"{TVSUB}\" class=\"pslot\"></span>\
 <button type=\"button\" class=\"pb\" data-act=\"p-toggle\" aria-label=\"Play/pause\">{PLAYPAUSE}<span class=\"tvpl\" aria-hidden=\"true\">Play / pause</span></button>\
 <button type=\"button\" class=\"pb\" id=\"{CCB}\" data-act=\"p-menu\" data-arg=\"cc\" aria-haspopup=\"true\" aria-label=\"Captions\">{CC_OFF}{CC_ON}<span class=\"tvpl\" aria-hidden=\"true\">Captions</span></button>\
+<button type=\"button\" class=\"pb tvau\" id=\"{AUB}\" data-act=\"p-menu\" data-arg=\"audio\" aria-haspopup=\"true\" aria-label=\"Audio\">{I_AUDIO}<span class=\"tvpl\" aria-hidden=\"true\">Audio</span></button>\
 <button type=\"button\" class=\"pb pw\" id=\"{SPEED}\" data-act=\"p-menu\" data-arg=\"speed\" aria-haspopup=\"true\" aria-label=\"Speed\"><span id=\"{RATEB}\" class=\"plbl\">1×</span><span class=\"tvpl\" aria-hidden=\"true\">Speed</span></button>\
 <button type=\"button\" class=\"pb pw\" id=\"{QUAL}\" data-act=\"p-menu\" data-arg=\"quality\" aria-haspopup=\"true\" aria-label=\"Quality\"><span id=\"{QLBL}\" class=\"plbl pq\">Auto</span><span class=\"tvpl\" aria-hidden=\"true\">Quality</span></button>\
-<button type=\"button\" class=\"pb tvlk\" data-act=\"a-like\" aria-label=\"I like this\">{I_LIKE}<span class=\"tvpl\" aria-hidden=\"true\">Like</span></button>\
+<button type=\"button\" class=\"pb tvlk tvac\" id=\"{TVLK}\" data-act=\"a-like\" aria-pressed=\"false\" aria-label=\"I like this\">{I_LIKE}<span class=\"tvpl\" aria-hidden=\"true\">Like</span></button>\
+<button type=\"button\" class=\"pb tvlk tvac tvdl\" id=\"{TVDL}\" data-act=\"a-dislike\" aria-pressed=\"false\" aria-label=\"I dislike this\">{I_LIKE}<span class=\"tvpl\" aria-hidden=\"true\">Dislike</span></button>\
 <span id=\"{TVWL}\" class=\"pslot\"></span>\
+<button type=\"button\" class=\"pb tvac\" id=\"{TVSV}\" data-act=\"tv-save\" aria-haspopup=\"dialog\" aria-label=\"Save to playlist\">{I_SAVE}<span class=\"tvpl\" aria-hidden=\"true\">Save</span></button>\
 <button type=\"button\" class=\"pb\" data-act=\"tv-comments\" aria-label=\"Comments\" aria-haspopup=\"dialog\">{I_COMMENTS}<span class=\"tvpl\" aria-hidden=\"true\">Comments</span></button>\
 <button type=\"button\" class=\"pb\" data-act=\"tv-info\" aria-label=\"More info\" aria-haspopup=\"dialog\">{I_INFO}<span class=\"tvpl\" aria-hidden=\"true\">More info</span></button>\
 </div></div><div id=\"{MENU}\" class=\"pmenu\" role=\"dialog\"><div id=\"{MENUI}\" class=\"pmi\"></div></div>"
@@ -487,11 +503,23 @@ pub fn quality_menu(rungs: &[Rung], pref: u32, cur: u32, codecs: &[(&str, &str)]
     out
 }
 
+/// TV: the Audio panel, the tracks by YouTube's names with the playing one marked.
+pub fn audio_menu(audio: &[(String, String)], audio_sel: &str) -> String {
+    let mut out = format!("<div class=\"mcc\"><div id=\"{MLS}\" class=\"mls\">");
+    for (id, name) in audio {
+        choice(&mut out, &format!("au:{id}"), name, if id == audio_sel { "on" } else { "" }, false);
+    }
+    out.push_str("</div></div>");
+    out
+}
+
 /// CC popup. Tabs only when there are several audio tracks; hovering a tab
 /// switches it. `toggle`: keep the remembered On/Off row for a TV remote without hover.
 /// `tracks` = caption names (selected = `sel` while captions are on),
 /// `audio` = (id, name) with `audio_sel` the playing id.
-pub fn cc_menu(audio_tab: bool, tracks: &[String], sel: Option<usize>, on: bool, audio: &[(String, String)], audio_sel: &str, toggle: bool) -> String {
+/// `translated`: the first Auto-translate row (TV), where its heading goes.
+#[allow(clippy::too_many_arguments)]
+pub fn cc_menu(audio_tab: bool, tracks: &[String], sel: Option<usize>, on: bool, audio: &[(String, String)], audio_sel: &str, toggle: bool, translated: Option<usize>) -> String {
     let mut out = String::from("<div class=\"mcc\">");
     let tabs = audio.len() > 1;
     let audio_tab = tabs && audio_tab;
@@ -514,6 +542,9 @@ pub fn cc_menu(audio_tab: bool, tracks: &[String], sel: Option<usize>, on: bool,
         out.push_str("<p class=\"mno\">No captions for this video</p>");
     } else {
         for (i, t) in tracks.iter().enumerate() {
+            if translated == Some(i) {
+                out.push_str("<p class=\"msec\">Auto-translate</p>");
+            }
             choice(&mut out, &format!("cc:{i}"), t, if on && sel == Some(i) { "on" } else { "" }, false);
         }
     }
@@ -585,6 +616,8 @@ pub fn menu_name(arg: &str) -> Option<&'static str> {
         "cc" => Some("cc"),
         // The watch page's Save chooser (`actions`, its own `MenuCtl`; zones `sv`/`svm`).
         "save" => Some("save"),
+        // TV's own Audio action (the desktop has it as a tab of the CC popup).
+        "audio" => Some("audio"),
         _ => None,
     }
 }
@@ -723,6 +756,12 @@ mod tests {
         let tv = super::shell_tv();
         assert!(tv.contains("data-act=\"tv-comments\"") && tv.contains("class=\"tvpl\""));
         assert!(!sh.contains("tv-comments") && !sh.contains("tvpl"), "TV actions do not alter desktop controls");
+        let row = &tv[tv.find("class=\"prow\"").unwrap()..];
+        let order: Vec<usize> = ["ytc-tvch", "ytc-tvsubr", "p-toggle", "ytc-ccb", "ytc-aub", "ytc-speed", "ytc-qual", "a-like", "a-dislike", "ytc-tvwl", "tv-save", "tv-comments", "tv-info"].iter().map(|k| row.find(k).unwrap_or_else(|| panic!("{k}"))).collect();
+        assert!(order.windows(2).all(|w| w[0] < w[1]), "one row, in this order: {order:?}");
+        for k in ["ytc-aub", "tv-save", "a-dislike", "ytc-tvch"] {
+            assert!(!sh.contains(k), "{k} is TV only");
+        }
     }
 
     use super::*;
@@ -931,22 +970,31 @@ mod tests {
     #[test]
     fn cc_popup() {
         let tr = vec!["English".to_string(), "Deutsch <b>".to_string()];
-        let m = cc_menu(false, &tr, Some(1), true, &[], "", false);
+        let m = cc_menu(false, &tr, Some(1), true, &[], "", false, None);
         assert!(!m.contains("mtab"), "caption-only: no tabs");
         assert!(m.contains("data-arg=\"cc:1\" class=\"on\">Deutsch &lt;b&gt;<"));
         assert!(!m.contains("cc:toggle") && !m.contains("role=\"switch\""), "desktop uses the CC shortcut");
-        let off = cc_menu(false, &tr, Some(1), false, &[], "", false);
+        let off = cc_menu(false, &tr, Some(1), false, &[], "", false, None);
         assert!(!off.contains("class=\"on\""));
-        assert!(cc_menu(false, &[], None, true, &[], "", false).contains("No captions"));
+        assert!(cc_menu(false, &[], None, true, &[], "", false, None).contains("No captions"));
         let au = vec![("en.4".to_string(), "English original".to_string()), ("de.3".to_string(), "German".to_string())];
-        let m = cc_menu(true, &tr, Some(0), true, &au, "de.3", false);
+        let m = cc_menu(true, &tr, Some(0), true, &au, "de.3", false, None);
         assert!(m.contains("data-hov=\"tab\" data-arg=\"audio\" class=\"on\">Audio<"));
         assert!(m.contains("data-arg=\"au:de.3\" class=\"on\">German<") && !m.contains("cc:0"));
         assert!(!m.contains("cc:toggle"), "no desktop switch in the Audio view either");
-        let tv = cc_menu(false, &tr, Some(0), false, &au, "de.3", true);
+        let tv = cc_menu(false, &tr, Some(0), false, &au, "de.3", true, None);
         assert!(tv.contains("id=\"ytc-msw\"") && tv.contains("aria-checked=\"false\""), "TV retains its remote toggle");
         // One audio track: Audio view requested but there is no Audio tab.
-        assert!(!cc_menu(true, &tr, None, true, &au[..1], "en.4", false).contains("au:"));
+        assert!(!cc_menu(true, &tr, None, true, &au[..1], "en.4", false, None).contains("au:"));
+        // TV: captions alone (no tabs), the Auto-translate heading over its first row; Audio is its own panel.
+        let tv = cc_menu(false, &tr, Some(0), true, &[], "", true, Some(1));
+        assert!(!tv.contains("mtab") && !tv.contains("au:"));
+        let (head, row) = (tv.find("class=\"msec\">Auto-translate<").unwrap(), tv.find("data-arg=\"cc:1\"").unwrap());
+        assert!(tv.find("data-arg=\"cc:0\"").unwrap() < head && head < row);
+        assert!(!cc_menu(false, &tr, Some(0), true, &[], "", false, None).contains("msec"), "desktop: as before");
+        let a = audio_menu(&au, "de.3");
+        assert!(a.contains("data-arg=\"au:de.3\" class=\"on\">German<") && a.contains(">English original<") && !a.contains("cc:"));
+        assert_eq!(menu_name("audio"), Some("audio"));
     }
 
     #[test]

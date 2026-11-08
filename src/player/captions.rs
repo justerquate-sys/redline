@@ -54,6 +54,77 @@ pub fn list(player: &Value) -> List {
     List { tracks, default }
 }
 
+/// TV: how many languages Auto-translate offers.
+const TARGETS_MAX: usize = 8;
+/// TV: what fills Auto-translate after the device's language, Russian and English, when YouTube offers it.
+const TARGETS_MORE: [&str; 9] = ["es", "de", "fr", "pt", "uk", "it", "tr", "ja", "ko"];
+
+/// The Auto-translate list from what YouTube offers (`languages`: code, name): the device's language, Russian,
+/// English, then the common ones, each once.
+fn targets(languages: &[(String, String)], locale: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let device = locale.replace('_', "-");
+    let wanted = [device.as_str(), "ru", "en"].into_iter().chain(TARGETS_MORE);
+    for w in wanted {
+        if w.is_empty() {
+            continue;
+        }
+        let found = languages.iter().find(|(c, _)| c.eq_ignore_ascii_case(w)).or_else(|| languages.iter().find(|(c, _)| primary(c).eq_ignore_ascii_case(primary(w))));
+        if let Some(l) = found {
+            if !out.iter().any(|(c, _)| primary(c).eq_ignore_ascii_case(primary(&l.0))) {
+                out.push(l.clone());
+            }
+        }
+    }
+    out
+}
+
+/// The track YouTube translates from: the spoken language's, human before ASR, else YouTube's default, else any.
+fn translation_base(l: &List) -> Option<usize> {
+    let ts = &l.tracks;
+    let spoken = source(ts);
+    let of = |asr: bool| ts.iter().position(|t| t.translatable && t.asr == asr && spoken.is_some_and(|s| primary(&t.lang) == s));
+    of(false).or_else(|| of(true)).or_else(|| l.default.filter(|d| ts.get(*d).is_some_and(|t| t.translatable))).or_else(|| ts.iter().position(|t| t.translatable))
+}
+
+/// TV: the tracks, then one entry per Auto-translate language that has no track of its own (`tlang`; the entries
+/// come last, so `List::default` and the track indices stay valid).
+pub fn list_tv(player: &Value, locale: &str) -> List {
+    let mut l = list(player);
+    l.tracks.retain(|t| t.tlang.is_none());
+    let languages: Vec<(String, String)> = player
+        .pointer("/captions/playerCaptionsTracklistRenderer/translationLanguages")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|t| {
+                    let code = t.get("languageCode").and_then(Value::as_str).filter(|c| crate::config::is_lang_tag(c))?;
+                    let name = t.get("languageName").and_then(crate::parse::text).filter(|n| !n.trim().is_empty()).unwrap_or_else(|| code.to_string());
+                    Some((code.to_string(), name))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let Some(base) = translation_base(&l).map(|b| l.tracks[b].clone()) else { return l };
+    let own: Vec<String> = l.tracks.iter().map(|t| primary(&t.lang).to_ascii_lowercase()).collect();
+    for (code, name) in targets(&languages, locale).into_iter().filter(|(c, _)| !own.contains(&primary(c).to_ascii_lowercase())).take(TARGETS_MAX) {
+        l.tracks.push(Track { url: format!("{}&tlang={code}", base.url), lang: code.clone(), name, asr: base.asr, translatable: false, tlang: Some(code) });
+    }
+    l
+}
+
+/// The first Auto-translate entry (`list_tv`), where the panel's heading goes.
+pub fn first_translated(l: &List) -> Option<usize> {
+    l.tracks.iter().position(|t| t.tlang.is_some())
+}
+
+/// TV: the remembered Auto-translate language in `l`: a track of its own (human first) beats a translation.
+pub fn prefer_lang(l: &List, lang: &str) -> Option<usize> {
+    let is = |t: &Track| primary(&t.lang).eq_ignore_ascii_case(primary(lang));
+    let ts = &l.tracks;
+    ts.iter().position(|t| t.tlang.is_none() && !t.asr && is(t)).or_else(|| ts.iter().position(|t| t.tlang.is_none() && is(t))).or_else(|| ts.iter().position(|t| t.tlang.is_some() && is(t)))
+}
+
 /// The video's spoken language from YouTube's speech recognition (the ASR
 /// track's language): the only evidence we use. None when there is no ASR
 /// track or they disagree.
@@ -270,6 +341,55 @@ mod tests {
         assert_eq!(prefer(&List::default(), "en"), None);
         // An English track exists → no translation entry is added.
         assert_eq!(list(&player(vec![tr("de", true), tr("en", true)], None, true)).tracks.len(), 2);
+    }
+
+    fn tv_list(ts: Vec<Value>, default: Option<usize>, langs: &[(&str, &str)], locale: &str) -> List {
+        let mut p = player(ts, default, false);
+        p["captions"]["playerCaptionsTracklistRenderer"]["translationLanguages"] = langs.iter().map(|(c, n)| json!({"languageCode": c, "languageName": {"simpleText": n}})).collect();
+        list_tv(&crate::json::Value::from_serde(&p), locale)
+    }
+
+    #[test]
+    fn auto_translate_is_led_by_the_device_then_russian_then_english() {
+        let all = [("en", "English"), ("de", "German"), ("ru", "Russian"), ("ko", "Korean"), ("hu", "Hungarian"), ("es", "Spanish"), ("fr", "French"), ("pt-BR", "Portuguese"), ("uk", "Ukrainian"), ("it", "Italian"), ("tr", "Turkish"), ("ja", "Japanese")];
+        let names = |l: &List| l.tracks.iter().filter(|t| t.tlang.is_some()).map(|t| t.name.clone()).collect::<Vec<_>>();
+        let l = tv_list(vec![tr("fi", true), tr("fi", false)], None, &all, "hu-HU");
+        assert_eq!(names(&l), ["Hungarian", "Russian", "English", "Spanish", "German", "French", "Portuguese", "Ukrainian"], "short, device first");
+        assert_eq!(first_translated(&l), Some(2));
+        assert_eq!(l.tracks[2].url, "https://www.youtube.com/api/timedtext?v=x&lang=fi&tlang=hu", "from the spoken language's human track");
+        assert_eq!(json3_url(&l.tracks[3]), "https://www.youtube.com/api/timedtext?v=x&lang=fi&tlang=ru&fmt=json3");
+        // A language that has a track gets no translation; the device's language counts once.
+        let l = tv_list(vec![tr("fi", true), tr("en", false)], None, &all, "ru");
+        assert_eq!(names(&l), ["Russian", "Spanish", "German", "French", "Portuguese", "Ukrainian", "Italian", "Turkish"]);
+        // Only what YouTube offers; nothing to translate from, no entries.
+        assert_eq!(names(&tv_list(vec![tr("fi", true)], None, &[("ru", "Russian")], "en")), ["Russian"]);
+        let mut plain = tr("fi", false);
+        plain["isTranslatable"] = false.into();
+        assert!(names(&tv_list(vec![plain], None, &all, "en")).is_empty());
+        // pt-PT on the device takes YouTube's pt-BR; an ASR-only source translates from ASR.
+        let l = tv_list(vec![tr("ko", true)], None, &all, "pt-PT");
+        assert_eq!(l.tracks[1].tlang.as_deref(), Some("pt-BR"));
+        assert!(l.tracks[1].url.contains("kind=asr&tlang=pt-BR"));
+        assert!(l.tracks[1].asr);
+        // No speech-recognition evidence: YouTube's default track is the base.
+        let l = tv_list(vec![tr("de", false), tr("fr", false)], Some(1), &all, "ru");
+        assert!(l.tracks[2].url.contains("lang=fr&tlang=ru"));
+        // A strange code never reaches a URL.
+        let l = tv_list(vec![tr("fi", false)], None, &[("r&u=", "Bad"), ("ru", "Russian")], "en");
+        assert_eq!(names(&l), ["Russian"]);
+    }
+
+    #[test]
+    fn a_remembered_translation_finds_its_language_again() {
+        let langs = [("ru", "Russian"), ("en", "English")];
+        let l = tv_list(vec![tr("fi", true), tr("fi", false)], None, &langs, "en");
+        assert_eq!(l.tracks[prefer_lang(&l, "ru").unwrap()].tlang.as_deref(), Some("ru"));
+        let l = tv_list(vec![tr("ru", true), tr("en", false)], None, &langs, "en");
+        assert_eq!(prefer_lang(&l, "ru"), Some(0), "its own track, ASR too, before a translation");
+        let l = tv_list(vec![tr("ru", true), tr("ru-RU", false)], None, &langs, "en");
+        assert_eq!(prefer_lang(&l, "ru"), Some(1), "human first");
+        assert_eq!(prefer_lang(&l, "ko"), None);
+        assert_eq!(prefer_lang(&List::default(), "ru"), None);
     }
 
     #[test]

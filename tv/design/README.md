@@ -33,9 +33,11 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
   first row's place while the remote walks the grid (instant scroll, so a held key never waits); a fixed scrim
   fades what scrolled under the top edge.
 - **Search**: a full-screen remote keyboard, independent of the installed Android input method. The 2.5 rem query
-  button (centred on the logo's row) stays above a 21 rem-wide six-column alphabet/symbol grid on the left and recent
-  searches / YouTube's suggestions on the right. Keys are 2.25 rem tall with .375 rem gaps; Space, Delete, Clear, alphabet/symbol switch
-  and Search use the same focus frame. Back first collapses the keyboard, then closes Search. Results keep the
+  button (centred on the logo's row) stays above a 21 rem-wide grid of six columns × six rows on the left and recent
+  searches / YouTube's suggestions on the right. Every layout (`tv/keyboard.rs LAYOUTS`, data: a–z with äöüßñé, Russian
+  in ЙЦУКЕН order with all 33 letters, Ukrainian on a Ukrainian device, numbers and symbols) fills all 36 keys, so
+  the editing keys never move when the layout changes. Keys are 2.25 rem tall with .375 rem gaps; Space, Delete, Clear,
+  the language key (it names the layout that comes next) and Search use the same focus frame. Back first collapses the keyboard, then closes Search. Results keep the
   query on top (↑ reaches it). Edit opens the keyboard again; a physical keyboard can also type. Search opens
   above the playing video and its drawers too, then returns to the originating focus when closed.
   **Mic control** (app 0.6.0, only while the shell reports a recognizer): a round 2.5 rem icon button (1.1875 rem
@@ -47,19 +49,28 @@ stylesheet is the block `/* ===== TV app` at the end of `extension/client.css` (
 - **Player**: full screen at once. The overlay (any key; hidden 4 s after the last one while playing): title
   1.375 rem (33 px) and channel (22.5 px white, the name across the row's width, never cut while it fits) top-left over
   a scrim at least .82 opaque down past the channel row (10:1 over a white frame, measured), on the same left edge (2.5 rem) as the time row (elapsed · chapter · remaining, 19.5 px), the bar (4 px, 6 px
-  focused, chapter gaps, an 18 px knob) and the 2.5 rem (60 px) round buttons with 28.5 px icons (play/pause,
-  captions, speed, quality, like, Watch later, comments, more info; the speed and quality pills as tall). The focused
-  action has a visible 19.5 px label below it. ←/→ on the bar scrub 10 s per press (30, 60, 120 s while held)
+  focused, chapter gaps, an 18 px knob) and the 2.5 rem (60 px) round buttons with 28.5 px icons (channel, with the
+  channel's picture; subscribe; play/pause, where ↓ from the bar lands; captions; audio, only with several tracks; speed;
+  quality; like; dislike; Watch later; save; comments; more info; the speed and quality pills as tall). All thirteen fit
+  one row (about 1020 px of the 1800 px between the safe edges at 1080p, clear of the skip notice), so nothing hides behind a
+  More control. The focused action has a visible 19.5 px label below it, the row's first one from the safe edge. ←/→ on the bar scrub 10 s per press (30, 60, 120 s while held)
   with the storyboard frame above the target; the seek goes out once, when the remote rests. ↓ from the buttons
   moves the overlay up 10 rem immediately for the Up next row (11 rem cards, about six on screen). Menus, More info
   and Comments are panels from the right edge (18.5 / 25 / 28.5 rem: 444 / 600 / 684 px; 22.5 px text, 57 px menu
-  rows; content inside the safe area), visible immediately. More info has Back to video,
+  rows; content inside the safe area), visible immediately. Captions lists the tracks, then Auto-translate under a small
+  heading (19.5 px), then the on/off switch; Audio has its own panel; Save to playlist is as wide as More info (25 rem), a
+  checkbox row per playlist with its privacy on the right (no new-playlist form: a name needs a keyboard). A list longer than the screen (a dubbed video can have sixteen languages and more) scrolls under the focus, the focused row inside the safe area, the first one with the panel's title. More info has Back to video,
   channel/subscription actions, a readable linked description and chapter buttons. Comments keeps a fixed
   header above a scrolling list with Top/Newest, replies, loading/error notices and focusable comment text. Captions bottom-centre at
   1.8125 rem (43.5 px), 8 rem higher while the overlay shows, clear of the time and chapter row; an open settings menu keeps captions in the visible picture
   to its left. The skip notice sits to the right of the action row (↑ or → from the last button), below the time
   row and captions. It follows the controls above Up next, and idle captions make room for a visible notice.
   Menu switches and seek-category labels use the same rem scale as the rest of the TV interface.
+- **Channel page**: the header (3 rem avatar, name, details), Subscribe under it on the content edge (2.25 rem tall,
+  over the first card, so ↑ from the first row reaches it; solid white, neutral once subscribed), then the grid. The
+  scrim ends above the first row as on every page; the first card keeps the default focus, so OK never subscribes by accident.
+- **Notice**: an account action YouTube refused says why top right over the page or picture (21 px, 28 rem at most,
+  on the safe edge, clear of a two-line title), for 6 s; inside a panel the panel's own line says it.
 - **Sign in / Account**: full screen: the steps on the left from the content edge (the URL the device flow
   returned, the code at 3.5 rem = 84 px), the QR code of that URL on a light 15 rem tile on the right, as far from the
   right edge as the steps are from the left (`src/qr.rs`), Back first and focused.

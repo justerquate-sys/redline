@@ -12,6 +12,7 @@ use crate::{
 const INFO: &str = "ytc-tvinfo";
 const INFO_BODY: &str = "ytc-tvinfo-body";
 const COMMENTS: &str = render::COMMENTS;
+const SAVE: &str = actions::TV_SAVE;
 const STOPS: &str = "a[href]:not([tabindex='-1']),button:not([disabled]):not([tabindex='-1']),[tabindex='0']";
 // Enter the text before its inline links: a short nested link otherwise beats its tall reader
 // in directional scoring. Once inside the reader, Right/Left can enter and leave those links.
@@ -51,6 +52,7 @@ impl App {
             return;
         }
         self.tv.info = render::tv_info(w, v);
+        bridge::html(crate::player::ui::TVCH, &render::tv_channel(w));
         if bridge::any("#ytc-tvinfo.on") {
             bridge::html(INFO, &self.tv.info);
             self.acts.tv_info_refresh();
@@ -90,6 +92,30 @@ impl App {
         }
         bridge::attr(INFO, "class", "tvi");
         if !bridge::focus_load("info") {
+            bridge::focus("ytc-seek");
+        }
+        if let Some(p) = self.player.as_mut() {
+            p.wake();
+        }
+    }
+
+    pub(super) fn tv_save_open(&mut self) {
+        if !bridge::any("#ytc-tvsave.on") {
+            bridge::focus_save("save");
+        }
+        bridge::attr(SAVE, "class", "tvi on");
+        bridge::focus_sel(SAVE, "[data-act=tv-save-close]");
+        self.acts.tv_save_open(&actions::Net { cfg: &self.cfg, hl: &self.hl, url: &self.url });
+        self.tv_drawer_focus();
+    }
+
+    pub(super) fn tv_save_close(&mut self) {
+        if !bridge::any("#ytc-tvsave.on") {
+            return;
+        }
+        self.acts.tv_save_close();
+        bridge::attr(SAVE, "class", "tvi");
+        if !bridge::focus_load("save") {
             bridge::focus("ytc-seek");
         }
         if let Some(p) = self.player.as_mut() {
@@ -139,6 +165,8 @@ impl App {
         bridge::attr(INFO, "class", "tvi");
         bridge::html(INFO, "");
         self.tv.info.clear();
+        bridge::attr(SAVE, "class", "tvi");
+        bridge::html(actions::TV_SAVE_BODY, "");
     }
 
     pub(super) fn tv_drawer_back(&mut self) -> bool {
@@ -147,6 +175,9 @@ impl App {
             true
         } else if bridge::any("#ytc-tvinfo.on") {
             self.tv_info_close();
+            true
+        } else if bridge::any("#ytc-tvsave.on") {
+            self.tv_save_close();
             true
         } else {
             false
@@ -160,6 +191,8 @@ impl App {
             Some((COMMENTS, actions::TV_CM_BODY))
         } else if bridge::any("#ytc-tvinfo.on") {
             Some((INFO, INFO_BODY))
+        } else if bridge::any("#ytc-tvsave.on") {
+            Some((SAVE, actions::TV_SAVE_BODY))
         } else {
             None
         }
@@ -169,7 +202,7 @@ impl App {
     pub(super) fn tv_drawer_focus(&mut self) -> bool {
         let Some((id, _)) = self.tv_drawer() else { return false };
         if !bridge::any(&format!("#{id} {FOCUSED_STOP}")) {
-            bridge::focus_sel(id, "[data-act=tv-comments-close],[data-act=tv-info-close]");
+            bridge::focus_sel(id, "[data-act=tv-comments-close],[data-act=tv-info-close],[data-act=tv-save-close]");
         }
         true
     }
@@ -204,6 +237,14 @@ impl App {
         if let Some(view) = view.filter(|_| bridge::any(&format!("#{id} :is(.yct,.tvd):focus"))) {
             if read_before_move(rects[cur], view, dir) {
                 bridge::scroll_box(scroller, if dir == Dir::Up { -0.55 } else { 0.55 });
+                return Some(true);
+            }
+        }
+        // More info: the first ↑ from the description reaches View channel, whatever sits beside it in that row.
+        if dir == Dir::Up && bridge::any("#ytc-tvinfo .tvd:focus") {
+            let flat = bridge::spatial_rects(&format!("#{id}"), STOPS, READER_SKIP, ".tvia a", "");
+            if let Some(i) = super::tvglue::split(&flat).and_then(|(_, marks, _)| marks.iter().position(|m| *m == 1)) {
+                bridge::spatial_focus(i as u32, -1.0);
                 return Some(true);
             }
         }

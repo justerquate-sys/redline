@@ -272,6 +272,26 @@ pub fn remote_player_key(r: Remote, paused: bool) -> Option<&'static str> {
     }
 }
 
+/// The session's trail of videos: a video opened goes on the end (not twice in a row, bounded).
+pub fn trail_push<T: PartialEq>(trail: &mut Vec<T>, r: T, max: usize) {
+    if trail.last() != Some(&r) {
+        trail.push(r);
+    }
+    if trail.len() > max {
+        trail.remove(0);
+    }
+}
+
+/// The remote's Previous: leaves the current video and returns the one before it, which opening puts back on the
+/// trail's end. Nothing before it: the trail stays.
+pub fn trail_back<T>(trail: &mut Vec<T>) -> Option<T> {
+    if trail.len() < 2 {
+        return None;
+    }
+    trail.pop();
+    trail.pop()
+}
+
 // ------------------------------------------------------------- updates (About & updates)
 
 /// The shell's `shell_info` / `shell_check` answer (tv/shell/src-tauri/src/shell.rs).
@@ -593,6 +613,29 @@ pub const DEV_TAPS: u32 = 5;
 
 #[cfg(test)]
 mod tests {
+    use super::{trail_back, trail_push};
+
+    #[test]
+    fn previous_walks_the_sessions_videos() {
+        let mut t = Vec::new();
+        trail_push(&mut t, "a", 3);
+        assert_eq!(trail_back(&mut t), None, "nothing before the first: it restarts, and stays on the trail");
+        assert_eq!(t, ["a"]);
+        trail_push(&mut t, "a", 3);
+        assert_eq!(t, ["a"], "a retry of the same video is not a new step");
+        trail_push(&mut t, "b", 3);
+        trail_push(&mut t, "c", 3);
+        assert_eq!(trail_back(&mut t), Some("b"));
+        trail_push(&mut t, "b", 3);
+        assert_eq!(trail_back(&mut t), Some("a"));
+        trail_push(&mut t, "a", 3);
+        assert_eq!(trail_back(&mut t), None);
+        for x in ["b", "c", "d", "e"] {
+            trail_push(&mut t, x, 3);
+        }
+        assert_eq!(t, ["c", "d", "e"], "bounded");
+    }
+
     use super::*;
 
     fn r(x: f64, y: f64, w: f64, h: f64) -> Rect {

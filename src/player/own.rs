@@ -702,6 +702,11 @@ fn vol_ui(v: f64) {
     bridge::css_var(ui::VOL, "--v", &format!("{:.3}", v.clamp(0.0, 1.0)));
 }
 
+/// A `player` response's caption tracks; on TV with the Auto-translate languages.
+fn cc_list_of(json: &Value) -> captions::List {
+    if crate::tv::on() { captions::list_tv(json, &bridge::lang()) } else { captions::list(json) }
+}
+
 /// Menu panel content order along the toolbar (CC · Speed · Quality): the new menu slides in from its side.
 fn menu_order(kind: &str) -> f64 {
     match kind {
@@ -1339,7 +1344,7 @@ impl Own {
             self.vision_ok = Some(std::rc::Rc::new(body.to_vec()));
         }
         self.duration = json.pointer("/videoDetails/lengthSeconds").and_then(Value::as_str).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
-        self.cc_vision = captions::list(&json);
+        self.cc_vision = cc_list_of(&json);
         // Live (and post-live DVR without byte-range files yet): HLS timeline,
         // fMP4 segments by sequence number.
         let is_live = json.pointer("/videoDetails/isLive").and_then(Value::as_bool) == Some(true);
@@ -1404,8 +1409,19 @@ impl Own {
             }
         }
         let usable: Vec<Format> = self.formats.iter().filter(|f| !bad.contains(&f.itag)).cloned().collect();
+        let tv = crate::tv::on();
+        let tracks = if tv { formats::audio_tracks(&usable, &ok) } else { Vec::new() };
+        // TV: a track picked on this video earlier in the session counts as picked now.
+        if tv && self.audio_sel.is_empty() {
+            self.audio_sel = formats::chosen_audio(&self.v).unwrap_or_default();
+        }
         let chosen = (!self.audio_sel.is_empty()).then(|| formats::audio_in(&usable, &self.audio_sel, &ok)).flatten();
-        self.audio = chosen.or_else(|| formats::audio(&usable, &ok)).cloned();
+        // TV: the language chosen last, where this video has it. Never over a choice made for this video.
+        let remembered = if tv && chosen.is_none() { formats::track_for_lang(&tracks, &self.prefs.audio_lang).and_then(|id| formats::audio_in(&usable, id, &ok)) } else { None };
+        self.audio = chosen.or(remembered).or_else(|| formats::audio(&usable, &ok)).cloned();
+        if tv {
+            bridge::class_all(&format!("#{}", ui::AUB), "on", tracks.len() > 1);
+        }
     }
 
     /// Size cap (Auto) or the user's choice.
@@ -1881,7 +1897,7 @@ impl Own {
         };
         let ps = json.pointer("/playabilityStatus/status").and_then(Value::as_str).unwrap_or("?").to_string();
         self.tracking = stats::tracking(&json);
-        self.cc_web = captions::list(&json);
+        self.cc_web = cc_list_of(&json);
         self.story = if self.live.is_some() { None } else { storyboard::from_player(&json) };
         self.web_note = format!(
             "WEB player {ps} · history pings {} · {} caption tracks · storyboard {}",
@@ -3461,9 +3477,12 @@ impl Own {
 
     /// Playing, with media ahead in both tracks, and the playhead has not moved for
     /// `fail::DECODER_STALL_MS` (the tab visible): the decoder stopped; recovered like a media error.
+    /// Also with everything fetched (the end of stream signalled): a short video can freeze fully buffered. A true end
+    /// has nothing ahead (`av`/`aa`) or sits within its last second, so it never counts, also when the media is shorter
+    /// than YouTube's `lengthSeconds` (its element duration comes from the media once the stream has ended).
     fn decoder_watch(&mut self, now: f64) {
         let t = self.time();
-        if self.paused || self.first_frame.is_none() || self.live.is_some() || bridge::hidden() || self.flush.is_some() || !self.sbs_made || self.eos || (self.duration > 0.0 && t > self.duration - 1.0) || (t - self.still.0).abs() > 0.05 {
+        if self.paused || self.first_frame.is_none() || self.live.is_some() || bridge::hidden() || self.flush.is_some() || !self.sbs_made || (self.duration > 0.0 && t > self.duration - 1.0) || (t - self.still.0).abs() > 0.05 {
             self.still = (t, now);
             return;
         }
@@ -3663,7 +3682,9 @@ impl Own {
 
     fn load_captions(&mut self) {
         let hl = self.session.hl.clone();
-        let sel = self.cc_sel.or_else(|| captions::chosen(&self.v, self.cc_list())).or_else(|| captions::prefer(self.cc_list(), &hl));
+        // (`cc_lang` is only ever set on TV: an Auto-translate language chosen earlier.)
+        let remembered = (!self.prefs.cc_lang.is_empty()).then(|| captions::prefer_lang(self.cc_list(), &self.prefs.cc_lang)).flatten();
+        let sel = self.cc_sel.or_else(|| captions::chosen(&self.v, self.cc_list())).or(remembered).or_else(|| captions::prefer(self.cc_list(), &hl));
         let Some(i) = sel else {
             if self.web_done {
                 self.toast("No captions");
@@ -4122,11 +4143,17 @@ impl Own {
                     .collect();
                 ui::quality_menu(&rungs, self.shown_quality(), cur, &codecs, &self.prefs.codec)
             }
+            // TV: Audio has its own action and panel; the Captions panel holds captions only.
+            Some("audio") => {
+                let playing = self.audio.as_ref().map(|f| f.audio_id.clone()).unwrap_or_default();
+                ui::audio_menu(&self.audio_tracks(), &playing)
+            }
             Some(_) => {
                 let names: Vec<String> = self.cc_tracks().iter().map(|t| if t.name.is_empty() { t.lang.clone() } else { t.name.clone() }).collect();
-                let audio = self.audio_tracks();
+                let tv = crate::tv::on();
+                let audio = if tv { Vec::new() } else { self.audio_tracks() };
                 let playing = self.audio.as_ref().map(|f| f.audio_id.clone()).unwrap_or_default();
-                ui::cc_menu(self.cc_audio, &names, self.cc_sel, self.prefs.captions, &audio, &playing, crate::tv::on())
+                ui::cc_menu(self.cc_audio, &names, self.cc_sel, self.prefs.captions, &audio, &playing, tv, captions::first_translated(self.cc_list()).filter(|_| tv))
             }
             // Closing keeps the content: the panel fades out with it (hidden and inert after).
             None => {
@@ -4172,6 +4199,9 @@ impl Own {
                 // TV: the focus on the current quality (the codec row is not shown there).
                 bridge::focus_sel(ui::MENU, ".mql button.on");
             }
+            if crate::tv::on() && kind == "audio" {
+                bridge::focus_sel(ui::MENU, ".mls button.on");
+            }
         }
     }
 
@@ -4188,6 +4218,7 @@ impl Own {
                 mark(ui::MQ, Some(format!("q:{}", self.shown_quality())));
                 mark(ui::MCO, Some(format!("codec:{}", self.prefs.codec)));
             }
+            Some("audio") => mark(ui::MLS, Some(format!("au:{}", self.audio.as_ref().map(|f| f.audio_id.clone()).unwrap_or_default()))),
             Some(_) => {
                 let arg = if self.cc_audio && !self.audio_tracks().is_empty() {
                     Some(format!("au:{}", self.audio.as_ref().map(|f| f.audio_id.clone()).unwrap_or_default()))
@@ -4428,6 +4459,14 @@ impl Own {
     /// track, so the representation is fetched again and cut in now.
     fn set_audio(&mut self, id: &str) {
         let Some(f) = formats::audio_in(&self.formats, id, &|m: &str| bridge::mse_ok(m)).cloned() else { return };
+        // TV: the choice is remembered, also when it is the track already playing: this video keeps it and the next
+        // one with this language plays it.
+        if crate::tv::on() {
+            self.audio_sel = id.to_string();
+            formats::remember_audio(&self.v, id);
+            self.prefs.audio_lang = formats::track_lang(id).chars().take(16).collect();
+            self.out.push(Out::Prefs(self.prefs.clone()));
+        }
         if self.audio.as_ref().is_some_and(|a| a.itag == f.itag && a.audio_id == f.audio_id) {
             return;
         }
@@ -4588,6 +4627,11 @@ impl Own {
                             if i < self.cc_tracks().len() {
                                 self.cc_sel = Some(i);
                                 captions::remember(&self.v, &self.cc_tracks()[i]);
+                                // TV: an Auto-translate language stays for the next videos; a track of the video's
+                                // own goes back to the fixed preference. (`set_captions` writes the prefs.)
+                                if crate::tv::on() {
+                                    self.prefs.cc_lang = self.cc_tracks()[i].tlang.clone().unwrap_or_default();
+                                }
                                 self.set_captions(true);
                             }
                         }
@@ -4650,6 +4694,7 @@ impl Own {
         match m {
             "speed" => ui::SPEED,
             "quality" => ui::QUAL,
+            "audio" => ui::AUB,
             _ => ui::CCB,
         }
     }

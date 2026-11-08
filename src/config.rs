@@ -32,6 +32,8 @@ pub struct Config {
     /// Watch page Autoplay switch (`ap`, default on): play YouTube's autoplay
     /// target when a video ends. Playlists continue regardless.
     pub autoplay: bool,
+    /// TV search keyboard: the layout last chosen (`kb`, `tv::keyboard::LAYOUTS`); empty = by the device's language.
+    pub kb: String,
 }
 
 /// Player preferences remembered across videos.
@@ -54,6 +56,10 @@ pub struct Prefs {
     pub sb_on: bool,
     /// Auto-skipped SponsorBlock categories (`player::sponsor` bits; `sb`, stored only when not the default).
     pub sb_skip: u16,
+    /// TV: the audio language last chosen in the Audio panel (`al`, a language tag; empty = YouTube's default track).
+    pub audio_lang: String,
+    /// TV: the language captions were last auto-translated to (`cl`, a language tag; empty = the fixed preference).
+    pub cc_lang: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -75,7 +81,7 @@ impl CcStyle {
 impl Default for Prefs {
     fn default() -> Self {
         // Captions default on (available CC enabled, a deliberate choice remembered).
-        Prefs { captions: true, volume: 1.0, muted: false, quality: 0, codec: String::new(), theater: false, cc_style: None, sb_on: true, sb_skip: crate::player::sponsor::default_mask() }
+        Prefs { captions: true, volume: 1.0, muted: false, quality: 0, codec: String::new(), theater: false, cc_style: None, sb_on: true, sb_skip: crate::player::sponsor::default_mask(), audio_lang: String::new(), cc_lang: String::new() }
     }
 }
 
@@ -93,8 +99,17 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { version: FALLBACK_VERSION.into(), visitor: None, auth_user: 0, fetched_at: 0.0, prefs: Prefs::default(), sts: None, own_player: true, vision_auth: false, autoplay: true }
+        Config { version: FALLBACK_VERSION.into(), visitor: None, auth_user: 0, fetched_at: 0.0, prefs: Prefs::default(), sts: None, own_player: true, vision_auth: false, autoplay: true, kb: String::new() }
     }
+}
+
+/// A language tag or a keyboard layout id as stored: short, plain characters, or nothing.
+fn stored_tag(v: Option<&In>) -> String {
+    v.and_then(In::as_str).filter(|s| is_lang_tag(s)).unwrap_or("").to_string()
+}
+
+pub fn is_lang_tag(s: &str) -> bool {
+    (1..=16).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
 pub fn is_client_version(s: &str) -> bool {
@@ -122,6 +137,7 @@ impl Config {
         c.own_player = v.get("op").and_then(In::as_bool).unwrap_or(true);
         c.vision_auth = v.get("va").and_then(In::as_bool).unwrap_or(false);
         c.autoplay = v.get("ap").and_then(In::as_bool).unwrap_or(true);
+        c.kb = stored_tag(v.get("kb"));
         if let Some(p) = v.get("p") {
             let d = Prefs::default();
             c.prefs = Prefs {
@@ -137,6 +153,8 @@ impl Config {
                 }),
                 sb_on: p.get("sbo").and_then(In::as_bool).unwrap_or(d.sb_on),
                 sb_skip: p.get("sb").and_then(In::as_str).map(crate::player::sponsor::mask_from_keys).unwrap_or(d.sb_skip),
+                audio_lang: stored_tag(p.get("al")),
+                cc_lang: stored_tag(p.get("cl")),
             };
         }
         c
@@ -156,6 +174,12 @@ impl Config {
         if p.sb_skip != crate::player::sponsor::default_mask() {
             j["p"]["sb"] = crate::player::sponsor::mask_to_keys(p.sb_skip).into();
         }
+        if !p.audio_lang.is_empty() {
+            j["p"]["al"] = p.audio_lang.as_str().into();
+        }
+        if !p.cc_lang.is_empty() {
+            j["p"]["cl"] = p.cc_lang.as_str().into();
+        }
         if let Some(s) = self.sts {
             j["sts"] = s.into();
         }
@@ -167,6 +191,9 @@ impl Config {
         }
         if !self.autoplay {
             j["ap"] = false.into();
+        }
+        if !self.kb.is_empty() {
+            j["kb"] = self.kb.as_str().into();
         }
         j.to_string()
     }
@@ -275,11 +302,18 @@ mod tests {
         assert_eq!(back.visitor, c.visitor);
         assert_eq!(back.version, FALLBACK_VERSION);
         assert!(Config::from_json("{\"v\":\"<script>\"}").version == FALLBACK_VERSION);
-        c.prefs = Prefs { captions: false, volume: 0.5, muted: true, quality: 720, codec: "h264".into(), theater: true, cc_style: Some(CcStyle { x: 0.25, y: 0.5, s: 1.5 }), sb_on: false, sb_skip: 0b1001 };
+        c.prefs = Prefs { captions: false, volume: 0.5, muted: true, quality: 720, codec: "h264".into(), theater: true, cc_style: Some(CcStyle { x: 0.25, y: 0.5, s: 1.5 }), sb_on: false, sb_skip: 0b1001, audio_lang: "es-419".into(), cc_lang: "ru".into() };
         c.vision_auth = true;
+        c.kb = "ru".into();
         let back = Config::from_json(&c.to_json());
         assert_eq!(back.prefs, c.prefs);
         assert!(back.vision_auth && back.own_player);
+        assert_eq!(back.kb, "ru");
+        // The TV's tags: short and plain, or nothing; nothing stored while unset.
+        let bad = Config::from_json(r#"{"kb":"<x>","p":{"al":"a b","cl":"xxxxxxxxxxxxxxxxx"}}"#);
+        assert_eq!((bad.kb.as_str(), bad.prefs.audio_lang.as_str(), bad.prefs.cc_lang.as_str()), ("", "", ""));
+        let plain = Config::default().to_json();
+        assert!(!plain.contains("\"kb\"") && !plain.contains("\"al\"") && !plain.contains("\"cl\""), "{plain}");
         let bad = Config::from_json(r#"{"p":{"vol":7,"co":"<x>","q":99999},"op":false,"sts":5}"#);
         assert_eq!(bad.prefs.volume, 1.0);
         assert_eq!(bad.prefs.codec, "");

@@ -11,12 +11,63 @@ pub const LABEL: &str = "ytc-tvquery-text";
 /// the desktop extension (whose own `#ytc-mic` is another thing altogether).
 pub const MIC: &str = "ytc-tvmic";
 pub const MIC_ROOT: &str = "data-ytc-tvmic";
-const LETTERS: &str = "abcdefghijklmnopqrstuvwxyz'-.,";
-const SYMBOLS: &str = "0123456789@#&+!?/():;\"=_[]%€$£";
+
+/// One keyboard layout, as data: another alphabet is one more row in `LAYOUTS`.
+pub struct Layout {
+    pub id: &'static str,
+    /// What the language key says while this layout comes next.
+    pub name: &'static str,
+    /// The keys in reading order. Every layout fills the same grid (six columns × six rows, `KEYS`), so the
+    /// editing keys under it never move when the layout changes.
+    pub keys: &'static str,
+    /// Device languages that start on this layout.
+    pub locales: &'static [&'static str],
+    /// In everyone's cycle; otherwise only on a device in one of `locales`.
+    pub always: bool,
+}
+
+pub const KEYS: usize = 36;
+
+/// The cycle's order. a–z also carries the German and Spanish letters; Russian and Ukrainian follow ЙЦУКЕН row by row.
+pub const LAYOUTS: &[Layout] = &[
+    Layout { id: "abc", name: "ABC", keys: "abcdefghijklmnopqrstuvwxyz'-.,äöüßñé", locales: &[], always: true },
+    Layout { id: "ru", name: "Русский", keys: "йцукенгшщзхъфывапролджэячсмитьбюё-'.", locales: &["ru"], always: true },
+    Layout { id: "uk", name: "Українська", keys: "йцукенгшщзхїфівапролджєячсмитьбюґ'-.", locales: &["uk"], always: false },
+    Layout { id: "sym", name: "123 & symbols", keys: "0123456789@#&+!?/():;\"=_[]%€$£*'~№«»", locales: &[], always: true },
+];
+
+fn primary(locale: &str) -> String {
+    locale.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase()
+}
+
+fn layout(id: &str) -> &'static Layout {
+    LAYOUTS.iter().find(|l| l.id == id).unwrap_or(&LAYOUTS[0])
+}
+
+/// The layouts the language key walks on a device in `locale`.
+pub fn cycle(locale: &str) -> Vec<&'static Layout> {
+    let lang = primary(locale);
+    LAYOUTS.iter().filter(|l| l.always || l.locales.contains(&lang.as_str())).collect()
+}
+
+/// The layout after `id`, wrapping around.
+pub fn next(id: &str, locale: &str) -> &'static str {
+    let c = cycle(locale);
+    let at = c.iter().position(|l| l.id == id);
+    c[at.map_or(0, |i| (i + 1) % c.len())].id
+}
+
+/// The layout to start on: the one remembered, else the device language's, else a–z.
+pub fn initial(stored: &str, locale: &str) -> &'static str {
+    let lang = primary(locale);
+    let c = cycle(locale);
+    c.iter().find(|l| l.id == stored).or_else(|| c.iter().find(|l| l.locales.contains(&lang.as_str()))).map_or(LAYOUTS[0].id, |l| l.id)
+}
 
 #[derive(Default)]
 pub struct State {
-    pub symbols: bool,
+    /// The layout on screen; empty until the keyboard first opens (`initial`).
+    pub layout: &'static str,
     /// Actual typing makes Enter submit; a D-pad move returns Enter to native button activation.
     pub typed: bool,
 }
@@ -83,10 +134,10 @@ fn key(out: &mut String, act: &str, arg: &str, label: &str, class: &str) {
     out.push_str("</button>");
 }
 
-pub fn keys(symbols: bool) -> String {
-    let mut out = String::with_capacity(4500);
+pub fn keys(id: &str, locale: &str) -> String {
+    let mut out = String::with_capacity(5400);
     out.push_str("<div class=\"tvk-keys\" role=\"group\" aria-label=\"Search characters\">");
-    for c in if symbols { SYMBOLS } else { LETTERS }.chars() {
+    for c in layout(id).keys.chars() {
         let s = c.to_string();
         key(&mut out, "tv-kb-key", &s, &s, "");
     }
@@ -94,13 +145,7 @@ pub fn keys(symbols: bool) -> String {
     key(&mut out, "tv-kb-key", " ", "Space", "tvk-space");
     key(&mut out, "tv-kb-delete", "", "Delete", "");
     key(&mut out, "tv-kb-clear", "", "Clear", "");
-    key(
-        &mut out,
-        "tv-kb-layout",
-        "",
-        if symbols { "ABC" } else { "123 & symbols" },
-        "tvk-layout",
-    );
+    key(&mut out, "tv-kb-layout", "", layout(next(id, locale)).name, "tvk-layout");
     key(&mut out, "tv-kb-search", "", "Search", "tvk-search");
     out.push_str("</div><p class=\"tvk-hint\">Arrows move · OK selects · Back closes keyboard</p>");
     out
@@ -109,7 +154,7 @@ pub fn keys(symbols: bool) -> String {
 pub fn shell() -> String {
     format!(
         "<div id=\"{ID}\" class=\"tvk\" role=\"group\" aria-label=\"On-screen keyboard\" aria-hidden=\"true\">{}</div>",
-        keys(false)
+        keys(LAYOUTS[0].id, "")
     )
 }
 
@@ -146,14 +191,58 @@ mod tests {
 
     #[test]
     fn layouts_have_six_columns_and_escape_symbols() {
-        assert_eq!(LETTERS.chars().count(), 30);
-        assert_eq!(SYMBOLS.chars().count(), 30);
-        let html = keys(true);
-        assert_eq!(html.matches("data-act=\"tv-kb-key\"").count(), 31);
+        for l in LAYOUTS {
+            assert_eq!(l.keys.chars().count(), KEYS, "{}: six columns, six rows", l.id);
+            let mut seen: Vec<char> = l.keys.chars().collect();
+            seen.sort_unstable();
+            seen.dedup();
+            assert_eq!(seen.len(), KEYS, "{}: no key twice", l.id);
+        }
+        let html = keys("sym", "en");
+        assert_eq!(html.matches("data-act=\"tv-kb-key\"").count(), KEYS + 1);
         assert!(html.contains("data-arg=\"&amp;\""));
         assert!(html.contains("data-arg=\"&quot;\""));
         assert!(query("<tag>").contains("&lt;tag&gt;"));
         assert!(shell().contains("aria-hidden=\"true\""));
+    }
+
+    #[test]
+    fn every_alphabet_is_whole() {
+        let has = |id: &str, letters: &str| letters.chars().all(|c| layout(id).keys.contains(c));
+        assert!(has("abc", "abcdefghijklmnopqrstuvwxyz"));
+        let ru = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+        assert_eq!(ru.chars().count(), 33);
+        assert!(has("ru", ru));
+        assert!(layout("ru").keys.starts_with("йцукен"), "ЙЦУКЕН order");
+        assert!(has("uk", "абвгґдеєжзиіїйклмнопрстуфхцчшщьюя"));
+        assert!(has("abc", "äöüßñé"));
+    }
+
+    #[test]
+    fn the_language_key_cycles_and_the_device_language_picks_the_start() {
+        let ids = |l: &str| cycle(l).iter().map(|x| x.id).collect::<Vec<_>>();
+        assert_eq!(ids("en-US"), ["abc", "ru", "sym"]);
+        assert_eq!(ids("ru-RU"), ["abc", "ru", "sym"]);
+        assert_eq!(ids("uk"), ["abc", "ru", "uk", "sym"], "Ukrainian on a Ukrainian device only");
+        assert_eq!(next("abc", "en"), "ru");
+        assert_eq!(next("ru", "en"), "sym");
+        assert_eq!(next("sym", "en"), "abc");
+        assert_eq!(next("ru", "uk-UA"), "uk");
+        assert_eq!(next("uk", "en"), "abc", "a layout outside the cycle goes back to its start");
+        assert_eq!(initial("", "ru-RU"), "ru");
+        assert_eq!(initial("", "ru_RU"), "ru");
+        assert_eq!(initial("", "uk-UA"), "uk");
+        assert_eq!(initial("", "en-US"), "abc");
+        assert_eq!(initial("", ""), "abc");
+        assert_eq!(initial("sym", "ru-RU"), "sym", "remembered beats the device language");
+        assert_eq!(initial("abc", "ru-RU"), "abc");
+        assert_eq!(initial("bogus", "ru-RU"), "ru");
+        assert_eq!(initial("uk", "en-US"), "abc", "a remembered layout outside this device's cycle");
+        // The language key names what comes next.
+        assert!(keys("abc", "en").contains(">Русский</button>"));
+        assert!(keys("ru", "en").contains(">123 &amp; symbols</button>"));
+        assert!(keys("sym", "en").contains(">ABC</button>"));
+        assert!(keys("ru", "en").contains("data-arg=\"ё\""));
     }
 
     #[test]

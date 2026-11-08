@@ -613,7 +613,12 @@ pub fn page(head: &Head, items: &[Item], more_items: bool, empty: &str, plan: Im
                 esc_into(&mut out, about);
                 out.push_str("</div>");
             }
-            out.push_str("</div></div><h2>Videos</h2>");
+            out.push_str("</div></div>");
+            // TV: the Subscribe button's place, under the header (`Actions::tv_channel`).
+            if crate::tv::on() {
+                out.push_str("<div id=\"ytc-chsub\" class=\"chsub\"></div>");
+            }
+            out.push_str("<h2>Videos</h2>");
         }
         Head::Playlist { title, meta } => {
             feed_heading(&mut out, title);
@@ -1064,6 +1069,24 @@ pub fn tv_info(w: &Watch, video_id: &str) -> String {
     out
 }
 
+/// TV: the player row's Channel action: the channel's picture (a person's outline without one), "Go to channel"
+/// when focused. Empty when the page names no channel.
+pub fn tv_channel(w: &Watch) -> String {
+    let Some(href) = w.channel_href.as_deref().filter(|_| !w.channel.trim().is_empty()) else { return String::new() };
+    let mut out = String::with_capacity(320);
+    out.push_str("<a class=\"pb tvch\" href=\"");
+    esc_into(&mut out, href);
+    out.push_str("\" aria-label=\"Go to channel: ");
+    esc_into(&mut out, &w.channel);
+    out.push_str("\">");
+    match w.avatar.as_deref() {
+        Some(a) => img(&mut out, a, None, true, "av"),
+        None => out.push_str("<svg class=\"o\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20c0-3.7 3.4-6 7.5-6s7.5 2.3 7.5 6\"/></svg>"),
+    }
+    out.push_str("<span class=\"tvpl\" aria-hidden=\"true\">Go to channel</span></a>");
+    out
+}
+
 pub fn related(out: &mut String, items: &[Item]) {
     cards(out, items, ImgPlan::first(Lay::Rel, 1));
 }
@@ -1177,6 +1200,12 @@ mod tests {
         assert!(h.contains("/@a?x=&quot;bad&quot;") && h.contains("View channel"));
         assert_eq!(h.matches("data-act=\"seek\" data-arg=\"12\"").count(), 2);
         assert!(h.contains("data-act=\"tv-info-close\"") && h.contains("id=\"ytc-tvsub\""));
+        // The player row's Channel action: escaped, a person's outline without a picture, nothing without a channel.
+        let c = tv_channel(&w);
+        assert!(c.contains("href=\"/@a?x=&quot;bad&quot;\"") && c.contains(">Go to channel<") && c.contains("<svg") && !c.contains("<img"), "{c}");
+        w.avatar = Some("https://yt3.ggpht.com/x=s48".into());
+        assert!(tv_channel(&w).contains("<img") && !tv_channel(&w).contains("<svg"));
+        assert_eq!(tv_channel(&Watch::default()), "");
         crate::tv::set_on(true);
         let tv = watch_shell("", "", false);
         crate::tv::set_on(false);

@@ -17,7 +17,7 @@ use crate::bridge;
 use crate::render::MAIN;
 use crate::route::Route;
 use crate::tv::{self, DeviceCode, Dir, Poll};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Focus stops for the remote (visible ones only; the bridge filters by visibility).
 const SEL: &str = "a[href]:not([tabindex='-1']),button:not([disabled]):not([tabindex='-1']),input:not([type=hidden]):not([tabindex='-1']),select,textarea,[tabindex='0']";
@@ -43,6 +43,10 @@ const UPNEXT: &str = ".wr";
 const INFO: &str = "ytc-tvinfo";
 /// The Up next header (the autoplay countdown's Play now / Cancel).
 const UPNEXT_ID: &str = crate::render::UPNEXT;
+/// The videos the remote's Previous can go back through.
+const TRAIL_MAX: usize = 50;
+/// The first stop of the player's button row when ↓ arrives from the bar.
+const ROW_FIRST: &str = ".prow .pb[data-act=p-toggle]";
 /// Hold the first page this long for the shell's token at a cold start, then go on signed out.
 const HOLD_MS: u32 = 4000;
 /// Scrubbing: the seek goes out once the remote rested this long; presses closer than `HELD_MS` are a
@@ -123,6 +127,10 @@ pub(super) struct Tv {
     /// The link last opened from each page (page URL → href): coming back focuses it again, as
     /// YouTube's TV app does.
     opened: HashMap<String, String>,
+    /// Channel pages opened from a video: Back returns to the video at once (not the rail first).
+    from_watch: HashSet<String>,
+    /// The videos of this session, oldest first (the remote's Previous; bounded).
+    trail: Vec<Route>,
     /// Scrub run: generation (a newer press ends the older rest timer), last press, presses held.
     scrub_gen: u32,
     scrub_at: f64,
@@ -188,7 +196,7 @@ impl App {
             return;
         }
         bridge::back_hook();
-        bridge::append("ytc", &format!("<div id=\"{SIGN}\" class=\"tvs\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Sign in\"></div><aside id=\"{INFO}\" class=\"tvi\" role=\"dialog\" aria-modal=\"true\" aria-label=\"More info\"></aside>"));
+        bridge::append("ytc", &format!("<div id=\"{SIGN}\" class=\"tvs\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Sign in\"></div><aside id=\"{INFO}\" class=\"tvi\" role=\"dialog\" aria-modal=\"true\" aria-label=\"More info\"></aside><aside id=\"{}\" class=\"tvi\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Save to playlist\"><header class=\"tvih\"><button type=\"button\" class=\"tvb tvx\" data-act=\"tv-save-close\">Back to video</button></header><div id=\"{}\" class=\"tvib\"></div></aside><div id=\"{}\" class=\"tvnote\" role=\"status\"></div>", crate::actions::TV_SAVE, crate::actions::TV_SAVE_BODY, crate::actions::TV_NOTE));
         self.tv_slot();
         self.tv_ask_token(self.tv.hold);
         if self.tv.hold {
@@ -658,6 +666,10 @@ impl App {
             "tv-info-close" => self.tv_info_close(),
             "tv-comments" => self.tv_comments_open(),
             "tv-comments-close" => self.tv_comments_close(),
+            "tv-save" => {
+                self.tv_save_open();
+            }
+            "tv-save-close" => self.tv_save_close(),
             "tv-tel-on" => {
                 // (An address typed but not submitted yet goes along.)
                 let typed = bridge::input_value(DEV_FIELD);
@@ -741,7 +753,78 @@ impl App {
             out.insert_str(end, "<span class=\"tvpl\" aria-hidden=\"true\">Watch later</span>");
         }
         bridge::html(crate::player::ui::TVWL, &out);
+        // (A retried player's row is new: its other actions from what the page already knows.)
+        if let Some(w) = self.cur_watch() {
+            bridge::html(crate::player::ui::TVCH, &crate::render::tv_channel(&w));
+            self.acts.tv_row_refresh();
+        }
+        if matches!(self.route, Route::Watch { .. }) {
+            tv::trail_push(&mut self.tv.trail, self.route.clone(), TRAIL_MAX);
+        }
         self.tv_focus_check();
+    }
+
+    /// The remote's Next: Up next's first (a playlist's next item, else YouTube's next video).
+    fn tv_next(&mut self) {
+        if let Some(n) = self.tv_next_video() {
+            self.up_cancel();
+            self.up_open(n);
+        }
+    }
+
+    fn tv_next_video(&self) -> Option<crate::features::upnext::Next> {
+        let Route::Watch { v, .. } = &self.route else { return None };
+        let w = self.cur_watch()?;
+        crate::features::upnext::next(&w.up, v, true).or_else(|| w.related.items.iter().find_map(|i| match i {
+            crate::parse::Item::Video(c) if c.id != *v => Some(crate::features::upnext::Next { v: c.id.clone(), list: None, now: true }),
+            _ => None,
+        }))
+    }
+
+    /// The remote's Previous: the previous video of this session, else this one from the start.
+    fn tv_prev(&mut self) {
+        match tv::trail_back(&mut self.tv.trail) {
+            Some(r) => {
+                self.up_cancel();
+                let url = r.url();
+                self.navigate(r, url, super::Mode::Push);
+            }
+            None => {
+                self.up_cancel();
+                if let Some(p) = self.player.as_mut() {
+                    p.input(true);
+                    p.seek_to(0.0);
+                    p.wake();
+                }
+                self.after_player();
+            }
+        }
+    }
+
+    /// A channel page opened from a video is one step away from it (`on_back`).
+    pub(super) fn tv_channel_opened(&mut self, route: &Route, url: &str) {
+        if tv::on() && matches!(route, Route::Channel { .. }) && matches!(self.route, Route::Watch { .. }) {
+            if self.tv.from_watch.len() > 64 {
+                self.tv.from_watch.clear();
+            }
+            self.tv.from_watch.insert(url.to_string());
+        }
+    }
+
+    /// This channel page's id (from the route, or learned with the page) and title: its Subscribe button.
+    fn tv_channel_paint(&mut self) {
+        let Route::Channel { key, .. } = &self.route else { return };
+        let id = match key {
+            crate::route::ChannelKey::Id(id) => Some(id.clone()),
+            crate::route::ChannelKey::Path(p) => self.channels.get(p).cloned(),
+        };
+        let title = match self.feed.head.as_ref() {
+            Some(crate::render::Head::Channel { title, .. }) => title.clone(),
+            _ => String::new(),
+        };
+        if let Some(id) = id.filter(|i| i.starts_with("UC") && crate::util::is_safe_id(i)) {
+            self.acts.tv_channel(&crate::actions::Net { cfg: &self.cfg, hl: &self.hl, url: &self.url }, &id, &title);
+        }
     }
 
     /// The autoplay countdown appeared (Play now takes the focus) or went (the focus returns to the bar).
@@ -879,7 +962,7 @@ impl App {
             // Up next → the buttons; the overlay open while playing → it hides; else the watch page is left.
             if bridge::any(".wr :focus") {
                 if !bridge::focus_load("row") {
-                    bridge::focus_sel(PLAYER, ".prow .pb");
+                    bridge::focus_sel(PLAYER, ROW_FIRST);
                 }
                 p.wake();
                 return 1;
@@ -889,6 +972,10 @@ impl App {
                 bridge::focus(SEEK);
                 return 1;
             }
+            return 0;
+        }
+        // A channel page opened from a video: Back is the way back to it.
+        if self.tv.from_watch.contains(&self.url) && !bridge::any("#ytc-side :focus") {
             return 0;
         }
         if !bridge::any("#ytc-side :focus") {
@@ -936,6 +1023,17 @@ impl App {
         if let Some(r) = tv::remote(key) {
             if !watch {
                 return Some(false);
+            }
+            match r {
+                tv::Remote::Next => {
+                    self.tv_next();
+                    return Some(true);
+                }
+                tv::Remote::Prev => {
+                    self.tv_prev();
+                    return Some(true);
+                }
+                _ => {}
             }
             let paused = self.player.as_ref().is_none_or(|p| p.paused());
             let k = tv::remote_player_key(r, paused)?;
@@ -1032,7 +1130,7 @@ impl App {
                 Some(Dir::Right) => self.tv_scrub(1.0),
                 Some(Dir::Down) => {
                     if !bridge::focus_load("row") {
-                        bridge::focus_sel(PLAYER, ".prow .pb");
+                        bridge::focus_sel(PLAYER, ROW_FIRST);
                     }
                     true
                 }
@@ -1109,7 +1207,7 @@ impl App {
             Dir::Up => {
                 bridge::focus_save("up");
                 if !bridge::focus_load("row") {
-                    bridge::focus_sel(PLAYER, ".prow .pb");
+                    bridge::focus_sel(PLAYER, ROW_FIRST);
                 }
                 true
             }
@@ -1301,6 +1399,7 @@ impl App {
         if !tv::on() {
             return;
         }
+        self.tv_channel_paint();
         if std::mem::take(&mut self.tv.grid_focus) && !matches!(self.route, Route::Watch { .. }) {
             // The search went out from the search screen: its results take the focus.
             bridge::blur();

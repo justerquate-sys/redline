@@ -1167,7 +1167,7 @@ html[data-ytc-tv] #ytc-main{padding:calc(var(--sy) + .5rem) 2.5rem 3rem 5.75rem}
 html[data-ytc-tv] #ytc:not([data-nav=watch]) #ytc-main::before{content:"";position:fixed;z-index:6;left:0;right:0;top:0;height:var(--scrim);background:linear-gradient(var(--bg) calc(var(--scrim) - .75rem),color-mix(in srgb,var(--bg) 0%,transparent));pointer-events:none}
 /* (The scrim ends just above where each page's first row sits, the focused card's ring included.) */
 html[data-ytc-tv] #ytc-main{--scrim:4.625rem}html[data-ytc-tv] #ytc[data-nav=search] #ytc-main{--scrim:5.125rem}
-html[data-ytc-tv] #ytc-main:has(.feed>.m.sub){--scrim:5.875rem}html[data-ytc-tv] #ytc-main:has(.feed>.ch){--scrim:7.125rem}
+html[data-ytc-tv] #ytc-main:has(.feed>.m.sub){--scrim:5.875rem}html[data-ytc-tv] #ytc-main:has(.feed>.ch){--scrim:10.125rem}
 html[data-ytc-tv] #ytc .fh{min-height:2rem;margin:0 0 1rem;gap:.75rem;position:relative;z-index:7}
 html[data-ytc-tv] #ytc h1{font-size:1.375rem;line-height:2rem;font-weight:500;letter-spacing:-.01em}
 html[data-ytc-tv] #ytc .m.sub{margin:-.875rem 0 1rem;font-size:.8125rem;line-height:1.125rem;color:var(--mu);position:relative;z-index:7}
@@ -1203,6 +1203,12 @@ html[data-ytc-tv] #ytc .ch h1{font-size:1.375rem;line-height:2rem;margin:0}
 html[data-ytc-tv] #ytc .ch .m{font-size:.8125rem;line-height:1.125rem}
 html[data-ytc-tv] #ytc .ch .about{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;white-space:normal;max-width:40rem}
 html[data-ytc-tv] #ytc .feed>h2{display:none}
+/* Subscribe on a channel page: the first stop under the header, over the first card (↑ from the first row reaches it). */
+html[data-ytc-tv] .chsub{position:relative;z-index:7;height:2.25rem;margin:-.5rem 0 1.25rem}
+html[data-ytc-tv] #ytc .chsub :is(.ya-sub,.tvb){display:inline-flex;align-items:center;height:2.25rem;box-sizing:border-box;padding:0 1.125rem;border:0;border-radius:.5rem;background:var(--tx);color:var(--bg);font:500 .9375rem/1 var(--tvf);transform:none;transition:none}
+html[data-ytc-tv] #ytc .chsub .ya-sub.on{background:var(--cb);color:var(--tx)}
+html[data-ytc-tv] #ytc .chsub .ya-sub.confirm{background:color-mix(in srgb,var(--rd) 18%,var(--cb));color:var(--er)}
+html[data-ytc-tv] #ytc .chsub :is(.ya-sub,.tvb):focus{outline:var(--ring) solid var(--ac);outline-offset:.1875rem}
 /* "New videos" and "Load more". */
 html[data-ytc-tv] #ytc-pill{display:none}
 html[data-ytc-tv] #ytc .pill{height:2rem;padding:0 1rem;border-radius:.375rem;font-size:.875rem}
@@ -1279,7 +1285,7 @@ html[data-ytc-tv] #ytc-info{position:fixed;z-index:11;left:2.5rem;top:var(--sy);
 /* (The top scrim stays at least .82 opaque down past the channel row of a two-line title, then fades out: white text
    keeps 4.5:1 and more over a white frame.) */
 html[data-ytc-tv] .watch .wp::before{content:"";position:fixed;z-index:11;left:0;right:0;top:0;height:12rem;background:linear-gradient(rgba(15,15,15,.9),rgba(15,15,15,.82) 60%,rgba(15,15,15,0));pointer-events:none;transition:none;}
-html[data-ytc-tv] .wp:has(#ytc-player.idle)::before,html[data-ytc-tv] .wp:has(#ytc-player.menu)::before,html[data-ytc-tv] #ytc-player.idle~#ytc-info,html[data-ytc-tv] #ytc-player.menu~#ytc-info,html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on) #ytc-info,html[data-ytc-tv] .wp:has(.pfail)::before,html[data-ytc-tv] #ytc-player:has(.pfail)~#ytc-info{opacity:0;transition:none;}
+html[data-ytc-tv] .wp:has(#ytc-player.idle)::before,html[data-ytc-tv] .wp:has(#ytc-player.menu)::before,html[data-ytc-tv] #ytc-player.idle~#ytc-info,html[data-ytc-tv] #ytc-player.menu~#ytc-info,html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on,#ytc-tvsave.on) #ytc-info,html[data-ytc-tv] .wp:has(.pfail)::before,html[data-ytc-tv] #ytc-player:has(.pfail)~#ytc-info{opacity:0;transition:none;}
 html[data-ytc-tv] #ytc .wt{margin:0;font-size:1.375rem;line-height:1.75rem;font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 html[data-ytc-tv] #ytc-info .wo{display:flex;flex-wrap:nowrap;align-items:center;gap:.5rem;margin-top:.5rem;min-height:1.25rem}
 html[data-ytc-tv] #ytc-info .wo .av{width:1.25rem;height:1.25rem;border-radius:50%}
@@ -1324,9 +1330,19 @@ html[data-ytc-tv] #ytc .prow .plbl.pq{padding:0;border:0;font-size:.875rem;lette
 html[data-ytc-tv] #ytc .prow :is(.pb,.wl):focus{background:var(--cb);color:var(--tx);outline:var(--ring) solid var(--ac);outline-offset:.1875rem;scale:none}
 html[data-ytc-tv] #ytc .prow .pb:active{transform:none}
 html[data-ytc-tv] .pslot{display:contents}
-html[data-ytc-tv] .watch:not(:has(#ytc-like)) .tvlk,html[data-ytc-tv] #ytc:not(:has(#ytc-acct [data-act=tv-account])) .tvlk{display:none}
-html[data-ytc-tv] .watch:has(#ytc-like[aria-pressed=true]) .tvlk:not(:focus){color:var(--ac)}
-html[data-ytc-tv] .watch:has(#ytc-like[aria-pressed=true]) .tvlk svg{fill:currentColor;fill-opacity:.2}
+/* The account's actions: signed in only; rating where the page has a rating. Audio only with several tracks. */
+html[data-ytc-tv] .watch:not(:has(#ytc-like)) .tvlk,html[data-ytc-tv] #ytc:not(:has(#ytc-acct [data-act=tv-account])) .tvac{display:none}
+html[data-ytc-tv] #ytc .prow .tvau:not(.on){display:none}
+html[data-ytc-tv] #ytc .prow .tvlk[aria-pressed=true]:not(:focus){color:var(--ac)}
+html[data-ytc-tv] #ytc .prow .tvlk[aria-pressed=true] svg{fill:currentColor;fill-opacity:.2}
+html[data-ytc-tv] #ytc .prow .tvdl svg{transform:scaleY(-1)}
+/* Channel: its picture in the row's first button. Subscribe: a person with a plus, a check once subscribed. */
+html[data-ytc-tv] #ytc .prow .tvch{text-decoration:none}
+html[data-ytc-tv] #ytc .prow .tvch .av{display:block;width:1.75rem;height:1.75rem;border-radius:50%;object-fit:cover}
+html[data-ytc-tv] #ytc .prow .tvsb .tvs1,html[data-ytc-tv] #ytc .prow .tvsb.on .tvs0{display:none}
+html[data-ytc-tv] #ytc .prow .tvsb.on .tvs1{display:block}
+/* Save: a small dot while the video is in a playlist. */
+html[data-ytc-tv] #ytc .prow #ytc-tvsv.on::after{content:"";position:absolute;right:.5rem;top:.5rem;width:.3125rem;height:.3125rem;border-radius:50%;background:var(--ac)}
 html[data-ytc-tv] #ytc-player .pslot .wl.saved:not(:focus),html[data-ytc-tv] #ytc-player .pslot .wl.on:not(:focus){color:var(--ac)}
 html[data-ytc-tv] .player.big:not(.wait) .pbig{opacity:0}
 html[data-ytc-tv] .pbig{width:4.5rem;height:4.5rem;margin:-2.25rem}html[data-ytc-tv] .pbig svg{width:2rem;height:2rem}
@@ -1357,13 +1373,17 @@ html[data-ytc-tv] #ytc-up .upbar{height:.125rem}
 html[data-ytc-tv] #ytc .pmenu{position:fixed;z-index:15;top:0;right:0;bottom:0;left:auto;width:18.5rem;filter:none;font-size:.9375rem;transform:none;transform-origin:100% 50%}
 html[data-ytc-tv] #ytc .player.menu .pmenu{transform:none}
 html[data-ytc-tv] #ytc .pmenu::before{inset:0!important;border:0;border-radius:0;background:var(--pn);box-shadow:none;border-left:.0625rem solid var(--ln)}
-html[data-ytc-tv] #ytc .pmi{max-height:none;height:100%;box-sizing:border-box;padding:var(--sy) var(--sx) var(--sy) 1.25rem;gap:.25rem;overflow:auto;border-radius:0;clip-path:none!important}
+/* (A long list, a dubbed video's sixteen languages say: the focused row stays inside the safe area, the first one with its title.) */
+html[data-ytc-tv] #ytc .pmi{max-height:none;height:100%;box-sizing:border-box;padding:var(--sy) var(--sx) var(--sy) 1.25rem;gap:.25rem;overflow:auto;scroll-padding:calc(var(--sy) + 2.25rem) 0 calc(var(--sy) + .0625rem);border-radius:0;clip-path:none!important}
+html[data-ytc-tv] #ytc .pmi>*{flex:none}
 html[data-ytc-tv] #ytc .pmi::before{display:block;margin:0 0 .75rem;padding:0 .75rem;font-size:1.0625rem;line-height:1.5rem;font-weight:600;color:var(--tx);opacity:1}
 /* (The codec choice stays a desktop setting: the TV plays what the set decodes best.) */
 html[data-ytc-tv] #ytc .pmenu .mco{display:none}
 html[data-ytc-tv] #ytc .pmenu[data-m=speed] .pmi::before{content:"Playback speed"}
 html[data-ytc-tv] #ytc .pmenu[data-m=quality] .pmi::before{content:"Quality"}
-html[data-ytc-tv] #ytc .pmenu[data-m=cc] .pmi::before{content:"Captions and audio"}
+html[data-ytc-tv] #ytc .pmenu[data-m=cc] .pmi::before{content:"Captions"}
+html[data-ytc-tv] #ytc .pmenu[data-m=audio] .pmi::before{content:"Audio"}
+html[data-ytc-tv] #ytc .pmenu .msec{margin:.75rem 0 .25rem;padding:0 .75rem;font-size:.8125rem;line-height:1.125rem;color:var(--mu)}
 html[data-ytc-tv] #ytc .pmenu[data-m=sb] .pmi::before{content:"Segment skipping"}
 html[data-ytc-tv] #ytc .pmenu button{min-height:2.375rem;padding:0 .75rem;border-radius:.5rem;font-size:.9375rem;transform:none;text-align:left}
 html[data-ytc-tv] #ytc .pmenu :is(.mpre,.mql,.mls) button{display:flex;align-items:center;justify-content:space-between}
@@ -1388,7 +1408,7 @@ html[data-ytc-tv] .player:not(.idle) .pcw{transform:translateX(-50%) translateY(
 html[data-ytc-tv] .player.menu .pcw{left:30.75rem;max-width:55rem}
 html[data-ytc-tv] .player.idle:has(.psbt.on) .pcw{transform:translateX(-50%) translateY(-3rem)}
 html[data-ytc-tv] .player.drag .pcw{opacity:0}
-html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on) .pcw{opacity:0}
+html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on,#ytc-tvsave.on) .pcw{opacity:0}
 html[data-ytc-tv] .pcc{font-size:calc(1.8125rem * var(--cs,1));line-height:1.3;text-align:center;cursor:default}
 /* The skip notice (SponsorBlock): to the right of the action row, clear of time and captions.
    Its text can wrap once; its button remains a focus stop (↑ or → from the last action). */
@@ -1418,6 +1438,7 @@ html[data-ytc-tv] #ytc .tvd:focus{outline:var(--ring) solid var(--ac);outline-of
 html[data-ytc-tv] #ytc .tvd a{color:var(--ac);text-decoration:underline;text-underline-offset:.125rem}
 html[data-ytc-tv] #ytc .tvd a:focus{outline:var(--ring) solid var(--ac);outline-offset:.0625rem}
 html[data-ytc-tv] .tvih{flex:none;z-index:2;padding:calc(var(--sy) + .25rem) var(--sx) 1rem 1.25rem;background:var(--pn)}
+html[data-ytc-tv] #ytc :is(.tvih,.tvcm-head) .tvb:focus{outline-offset:.0625rem}
 html[data-ytc-tv] .tvib{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--bd) transparent;scroll-padding:1rem 0;margin-bottom:var(--sy);padding:.5rem calc(var(--sx) + .5rem) 1rem 1.25rem}
 html[data-ytc-tv] #ytc .tvih .tvb{height:2.125rem;padding:0 1rem;font-size:.875rem;background:var(--cb);color:var(--tx)}
 html[data-ytc-tv] .tvi .tvim{margin:.5rem 0 1.25rem;font-size:.8125rem;line-height:1.125rem;color:var(--mu);white-space:normal}
@@ -1433,6 +1454,22 @@ html[data-ytc-tv] #ytc .tvchap button{display:flex;align-items:baseline;gap:.75r
 html[data-ytc-tv] #ytc .tvchap button:focus{outline:var(--ring) solid var(--ac);outline-offset:0;background:var(--cb)}
 html[data-ytc-tv] .tvchap button>span:first-child{flex:none;min-width:2.75rem;color:var(--mu);font-size:.8125rem;font-weight:400;font-variant-numeric:tabular-nums}
 html[data-ytc-tv] .tvchap button>span:last-child{min-width:0;overflow-wrap:anywhere}
+
+/* Save to playlist: the panel's rows, each a checkbox the remote toggles with OK. */
+html[data-ytc-tv] #ytc .tvi .ya-pls{display:grid;grid-template-columns:minmax(0,1fr);gap:.25rem;margin:.75rem -.25rem 0 -.75rem;max-height:none;overflow:visible;padding:0}
+html[data-ytc-tv] #ytc .tvi .ya-opt{display:flex;align-items:center;gap:.75rem;box-sizing:border-box;width:100%;min-height:2.375rem;margin:0;padding:.5rem .75rem;border:0;border-radius:.375rem;background:transparent;color:var(--tx);font:.9375rem/1.25 var(--tvf);text-align:left;transform:none;transition:none}
+html[data-ytc-tv] #ytc .tvi .ya-opt:focus{background:var(--cb);outline:var(--ring) solid var(--ac);outline-offset:calc(-1 * var(--ring))}
+html[data-ytc-tv] #ytc .tvi .ya-opt span{flex:1;min-width:0;overflow:visible;white-space:normal;overflow-wrap:anywhere}
+html[data-ytc-tv] #ytc .tvi .ya-opt small{flex:none;margin:0;font-size:.8125rem;line-height:1.125rem;color:var(--mu)}
+html[data-ytc-tv] #ytc .tvi .ya-ck{flex:none;display:grid;place-items:center;width:1.125rem;height:1.125rem;box-sizing:border-box;margin:0;border:.125rem solid var(--mu);border-radius:.25rem;background:transparent;transition:none}
+html[data-ytc-tv] #ytc .tvi .ya-ck svg{display:block;width:.875rem;height:.875rem;fill:none;stroke:var(--bg);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:0;stroke-dashoffset:0;transition:none}
+html[data-ytc-tv] #ytc .tvi .ya-opt.on .ya-ck{border-color:var(--ac);background:var(--ac)}
+html[data-ytc-tv] #ytc .tvi .ya-opt.on .ya-ck svg{opacity:1}
+html[data-ytc-tv] #ytc .tvi .ya-err{margin:.75rem 0 0;font-size:.9375rem;line-height:1.375rem;color:var(--mu)}
+html[data-ytc-tv] .tvi #ytc-save-m{margin:1rem 0 0}
+/* A refused account action says why, over whatever is on screen (a panel has its own line). */
+html[data-ytc-tv] .tvnote{position:fixed;z-index:26;top:var(--sy);right:2.5rem;max-width:28rem;box-sizing:border-box;padding:.5rem 1rem;border:.0625rem solid var(--ln);border-radius:.5rem;background:var(--pn);color:var(--tx);font:400 .875rem/1.25rem var(--tvf);overflow-wrap:anywhere}
+html[data-ytc-tv] .tvnote:empty,html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on,#ytc-tvsave.on) .tvnote{display:none}
 
 /* ---- comments: a readable, remote-operated sheet beside the video. Its header stays put while the list scrolls. */
 html[data-ytc-tv] #ytc-comments.tvcm{display:none;position:fixed;z-index:17;inset:0 0 0 auto;width:28.5rem;max-width:none;box-sizing:border-box;margin:0;padding:0;overflow:hidden;background:var(--pn);border-left:.0625rem solid var(--ln);color:var(--tx)}
@@ -1469,14 +1506,15 @@ html[data-ytc-tv] #ytc .tvcm :is(.yc-note,.yc-end){margin:.75rem 0 1.25rem;font-
 html[data-ytc-tv] #ytc .tvcm .yc-note .lnk2{display:inline-flex;align-items:center;min-height:1.875rem;margin-left:.5rem;padding:0 .625rem;border-radius:.375rem;font-size:.875rem;color:var(--tx);background:var(--cb)}
 html[data-ytc-tv] #ytc .tvcm :is(button,a):focus{outline:var(--ring) solid var(--ac);outline-offset:.0625rem;border-radius:.25rem}
 html[data-ytc-tv] #ytc .tvcm :is(.ycm,.ycr,.ycm *,.yc-sort *){animation:none}
-html[data-ytc-tv] #ytc:has(#ytc-comments.tvcm.on) :is(#ytc-info,.pcw,.pctl,.wr),html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on) :is(.pctl,.wr){opacity:0;pointer-events:none}
+html[data-ytc-tv] #ytc:has(#ytc-comments.tvcm.on) :is(#ytc-info,.pcw,.pctl,.wr),html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on,#ytc-tvsave.on) :is(.pctl,.wr){opacity:0;pointer-events:none}
 
 /* Read the focused player action without a mouse tooltip. Keep one label visible, below the steady button row. */
 html[data-ytc-tv] #ytc .prow :is(.pb,.wl){position:relative;overflow:visible}
 html[data-ytc-tv] #ytc .prow .pb.pw{border-radius:.5rem}
 html[data-ytc-tv] #ytc .prow .tvpl{display:none;position:absolute;left:50%;top:calc(100% + .5rem);translate:-50% 0;max-width:10rem;white-space:nowrap;color:var(--tx);font:400 .8125rem/1.0625rem var(--tvf);pointer-events:none}
 html[data-ytc-tv] #ytc .prow :is(.pb,.wl):focus>.tvpl{display:block}
-html[data-ytc-tv] #ytc .prow>.pb:first-child .tvpl{left:0;translate:none}
+/* (The row's first action starts at the safe edge: its label does too.) */
+html[data-ytc-tv] #ytc .prow>.pslot:first-child>.pb .tvpl,html[data-ytc-tv] #ytc .prow>.pslot:first-child:empty+.pslot>.pb .tvpl,html[data-ytc-tv] #ytc .prow>.pslot:first-child:empty+.pslot:empty+.pb .tvpl{left:0;translate:none}
 /* The idle overlay may fade away over the picture; waking and every remote action are instant. */
 html[data-ytc-tv] .player.idle .pctl{transition:opacity 120ms var(--e-out)}
 html[data-ytc-tv] #ytc-player.idle~#ytc-info{transition:opacity 120ms var(--e-out)}

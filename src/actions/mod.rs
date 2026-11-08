@@ -37,6 +37,15 @@ pub const TV_CM_BODY: &str = "ytc-tvcm-body";
 const TV_SUB: &str = "ytc-tvsub";
 const TV_SUB_B: &str = "ytc-tvsub-b";
 const TV_MSG: &str = "ytc-tvact-msg";
+/// TV: the notice over the picture or page (a refused action says why, whatever has the focus).
+pub const TV_NOTE: &str = "ytc-tvnote";
+/// TV: Subscribe in the player's row (its button id and its focused label), and on the channel page.
+const TV_ROW_B: &str = "ytc-tvsubr-b";
+const TV_ROW_L: &str = "ytc-tvsubr-l";
+pub const TV_CH_SUB: &str = "ytc-chsub";
+/// TV: the Save panel and its scrolling body.
+pub const TV_SAVE: &str = "ytc-tvsave";
+pub const TV_SAVE_BODY: &str = "ytc-tvsave-body";
 
 /// Filled into `render::COMMENTS` (outside `#ytc-info`): chapters, then comments.
 const BELOW: &str = "<div id=\"ytc-chap\"></div><div id=\"ytc-cm\" class=\"yc\" aria-label=\"Comments\"></div>";
@@ -152,6 +161,8 @@ enum Job {
     Replies { epoch: u32, slot: usize },
     /// `probe`: the quiet membership check after a watch page opened (fills the bookmark).
     Playlists { v: String, probe: bool },
+    /// TV: what the account says about this video (`v`) or channel (`ch`, on its page).
+    TvState { v: Option<String>, ch: Option<String> },
     Edit { v: String, pl: String },
     Create { v: String, title: String },
     Notifs,
@@ -171,6 +182,8 @@ enum Tm {
     Comments(u32),
     /// Ask the video's playlist membership once the watch page has settled (its generation).
     SaveProbe(u32),
+    /// TV: ask what the account says about this video once the watch page has settled (its generation).
+    TvStateProbe(u32),
 }
 
 struct Rep {
@@ -217,6 +230,14 @@ pub struct Actions {
     save_loading: bool,
     /// Generation of the scheduled membership probe (`Tm::SaveProbe`).
     probe_gen: u32,
+    /// TV: the Save panel is open; the channel page is on screen (`acts` stands for its channel); the generation of the
+    /// scheduled account check, and what was checked already (bounded, in memory).
+    tv_save: bool,
+    tv_channel: bool,
+    tv_state_gen: u32,
+    /// TV: the videos and channels the user changed here: what this device did is newer than any quiet answer.
+    tv_changed: std::collections::HashSet<String>,
+    tv_checked: std::collections::HashSet<String>,
     save_err: Option<String>,
     lists: Vec<(String, Vec<(save::Playlist, Toggle<bool>)>)>,
     cm: Option<Cm>,
@@ -297,6 +318,7 @@ impl Actions {
         bridge::html(MSG, html);
         if crate::tv::on() {
             bridge::html(TV_MSG, html);
+            bridge::html(TV_NOTE, html);
         }
         self.msg_gen += 1;
         let g = self.msg_gen;
@@ -320,6 +342,7 @@ impl Actions {
         }
         if crate::tv::on() {
             self.say(&format!("Sign in to {what} <button type=\"button\" class=\"tvb\" data-act=\"tv-signin\">Sign in with your phone</button>"));
+            bridge::text(TV_NOTE, &format!("Sign in to {what}"));
         } else {
             self.say(&format!("Sign in to {what}. <a href=\"{SIGN_IN}\">Sign in</a>"));
         }
@@ -433,6 +456,7 @@ impl Actions {
         self.seed();
         self.render_watch_slots();
         self.save_probe();
+        self.tv_state_probe();
         // `#ytc-comments` survives an info re-render of the same video.
         if self.cm.as_ref().is_none_or(|c| c.v != v) {
             self.start_comments();
@@ -449,6 +473,7 @@ impl Actions {
         self.seed();
         self.render_watch_slots();
         self.save_probe();
+        self.tv_state_probe();
         match self.stash.iter().position(|c| c.v == v) {
             Some(i) => {
                 let cm = self.stash.remove(i);
@@ -473,6 +498,8 @@ impl Actions {
             }
         }
         self.v.clear();
+        self.tv_save = false;
+        self.tv_channel = false;
     }
 
     fn seed(&mut self) {
@@ -494,6 +521,10 @@ impl Actions {
         let like = self.like_state().map(|l| (l, self.like_count(l)));
         let row = watch::row_html(like.as_ref().map(|(l, c)| (*l, c.as_str())), &self.share_html(), &self.save_html());
         bridge::html(ACT, &row);
+        if crate::tv::on() {
+            self.update_like();
+            self.tv_save_mark();
+        }
     }
 
     fn save_open(&self) -> bool {
@@ -513,6 +544,7 @@ impl Actions {
         let saved = self.save_saved();
         bridge::attr(save::SAVE_B, "class", &save::btn_class(self.save_open(), saved, self.kb));
         bridge::text(SAVE_LABEL, save::label(saved));
+        self.tv_save_mark();
     }
 
     /// Signed in: ask the playlist membership once the page has settled, so the bookmark shows
@@ -524,6 +556,92 @@ impl Actions {
         self.probe_gen += 1;
         let g = self.probe_gen;
         self.timer(Tm::SaveProbe(g), SAVE_PROBE_MS);
+    }
+
+    /// TV: the watch page's `next` is an anonymous call, so it knows nothing of the account: once the page has settled,
+    /// ask as the account (once per video in this session; a player's requests go first).
+    fn tv_state_probe(&mut self) {
+        if !crate::tv::on() || !signed_in() || self.tv_checked.contains(&self.v) {
+            return;
+        }
+        self.tv_state_gen += 1;
+        let g = self.tv_state_gen;
+        self.timer(Tm::TvStateProbe(g), SAVE_PROBE_MS);
+    }
+
+    fn tv_changed(&mut self, key: &str) {
+        if crate::tv::on() {
+            if self.tv_changed.len() > 500 {
+                self.tv_changed.clear();
+            }
+            self.tv_changed.insert(key.to_string());
+        }
+    }
+
+    fn tv_mark_checked(&mut self, key: String) {
+        if self.tv_checked.len() > 500 {
+            self.tv_checked.clear();
+        }
+        self.tv_checked.insert(key);
+    }
+
+    /// TV: the channel page was painted (also from memory): its Subscribe button, under the header. Signed out it goes to
+    /// Sign in; signed in the state is the one every surface shares, and the account is asked once.
+    pub fn tv_channel(&mut self, net: &Net, ch: &str, title: &str) {
+        self.acts = Acts { channel_id: Some(ch.to_string()), channel: title.to_string(), subscribed: Some(false), ..Acts::default() };
+        self.tv_channel = true;
+        self.confirm = 0;
+        self.subs.entry(ch.to_string()).or_insert_with(|| Toggle::new(false));
+        if !signed_in() {
+            bridge::html(TV_CH_SUB, "<button type=\"button\" class=\"tvb\" data-act=\"tv-signin\">Subscribe</button>");
+            return;
+        }
+        if bridge::any(&format!("#{TV_CH_SUB} #{}", watch::SUB_B)) {
+            // (A page restored from memory carries the button as it was.)
+            self.update_sub();
+        } else {
+            let t = self.subs[ch];
+            bridge::html(TV_CH_SUB, &watch::sub_html(t.shown(), t.busy(), false, title));
+        }
+        if !self.tv_checked.contains(ch) {
+            self.tv_mark_checked(ch.to_string());
+            self.post(net, req::account_channel(ch), Job::TvState { v: None, ch: Some(ch.to_string()) });
+        }
+    }
+
+    /// TV: the Save panel opens: its rows at once when known (the quiet check usually ran), else they load. The Watch
+    /// later row follows the player's Watch later action, which may have changed since.
+    pub fn tv_save_open(&mut self, net: &Net) {
+        self.tv_save = true;
+        let v = self.v.clone();
+        let wl = crate::features::shared(|s| s.saves.probed.contains_key(&v).then(|| s.saves.get(&v) == crate::features::watch_later::State::Saved));
+        if let (Some(on), Some(l)) = (wl, self.list_mut(&v)) {
+            if let Some((_, t)) = l.iter_mut().find(|(p, _)| p.id == "WL") {
+                t.learn(on);
+            }
+        }
+        if self.save_rows().is_none() && !self.save_loading {
+            self.save_loading = true;
+            self.save_err = None;
+            self.post(net, req::playlists(&v), Job::Playlists { v, probe: false });
+        }
+        self.tv_save_paint();
+    }
+
+    pub fn tv_save_close(&mut self) {
+        self.tv_save = false;
+    }
+
+    /// The panel's content; its first playlist takes the focus (the arrows then walk them).
+    fn tv_save_paint(&self) {
+        let rows = self.save_rows();
+        let body = match (&rows, &self.save_err) {
+            (Some(r), _) => save::Body::List(r),
+            (None, Some(e)) => save::Body::Failed(e),
+            (None, None) => save::Body::Loading,
+        };
+        bridge::html(TV_SAVE_BODY, &save::tv_inner(body));
+        bridge::focus_sel(TV_SAVE, ".ya-opt");
     }
 
     fn like_state(&self) -> Option<Like> {
@@ -542,6 +660,10 @@ impl Actions {
         bridge::attr("ytc-dis", "class", watch::like_class(l == Like::Dislike, true));
         bridge::attr("ytc-dis", "aria-pressed", if l == Like::Dislike { "true" } else { "false" });
         bridge::text("ytc-like-n", &self.like_count(l));
+        if crate::tv::on() {
+            bridge::attr(crate::player::ui::TVLK, "aria-pressed", if l == Like::Like { "true" } else { "false" });
+            bridge::attr(crate::player::ui::TVDL, "aria-pressed", if l == Like::Dislike { "true" } else { "false" });
+        }
     }
 
     fn render_sub(&self) {
@@ -566,6 +688,25 @@ impl Actions {
             _ => String::new(),
         };
         bridge::html(TV_SUB, &html);
+        let row = match self.acts.channel_id.as_ref().and_then(|c| self.subs.get(c)) {
+            Some(t) if signed_in() => watch::tv_row_sub(TV_ROW_B, TV_ROW_L, t.shown(), t.busy(), self.confirm != 0, &self.acts.channel),
+            _ => String::new(),
+        };
+        bridge::html(crate::player::ui::TVSUB, &row);
+    }
+
+    /// TV: a player was mounted (again, after a retry): the row's account actions from what is known.
+    pub fn tv_row_refresh(&self) {
+        self.tv_info_refresh();
+        self.update_like();
+        self.tv_save_mark();
+    }
+
+    /// TV: the Save action carries the bookmark's state.
+    fn tv_save_mark(&self) {
+        if crate::tv::on() {
+            bridge::class_all(&format!("#{}", crate::player::ui::TVSV), "on", self.save_saved());
+        }
     }
 
     /// A Subscribe state change: the same button, new attributes (its colors
@@ -582,6 +723,11 @@ impl Actions {
             bridge::attr(TV_SUB_B, "aria-pressed", if t.shown() { "true" } else { "false" });
             bridge::attr(TV_SUB_B, "aria-label", &aria);
             bridge::text(TV_SUB_B, label);
+            let (row, _) = watch::tv_row_sub_view(t.shown(), t.busy(), self.confirm != 0);
+            bridge::attr(TV_ROW_B, "class", &row);
+            bridge::attr(TV_ROW_B, "aria-pressed", if t.shown() { "true" } else { "false" });
+            bridge::attr(TV_ROW_B, "aria-label", &aria);
+            bridge::text(TV_ROW_L, label);
         }
     }
 
@@ -824,6 +970,14 @@ impl Actions {
                     self.post(net, req::playlists(&v), Job::Playlists { v, probe: true });
                 }
             }
+            Some(Tm::TvStateProbe(g)) => {
+                if g == self.tv_state_gen && !self.v.is_empty() && signed_in() && !self.tv_checked.contains(&self.v) {
+                    let v = self.v.clone();
+                    self.tv_mark_checked(v.clone());
+                    let ch = self.acts.channel_id.clone();
+                    self.post(net, req::account_video(&v), Job::TvState { v: Some(v), ch });
+                }
+            }
             Some(Tm::Save(g)) => {
                 let d = self.save_ctl.timer(g);
                 self.save_do(net, d, false);
@@ -841,6 +995,7 @@ impl Actions {
                     bridge::attr(MSG, "class", "ya-msg");
                     if crate::tv::on() {
                         bridge::html(TV_MSG, "");
+                        bridge::html(TV_NOTE, "");
                     }
                 }
             }
@@ -878,6 +1033,7 @@ impl Actions {
                 if v.is_empty() || self.need_sign_in("rate videos") {
                     return Click::Handled;
                 }
+                self.tv_changed(&v);
                 let me = if act == "a-like" { Like::Like } else { Like::Dislike };
                 let Some(t) = self.likes.get_mut(&v) else { return Click::Handled };
                 let to = if t.shown() == me { Like::None } else { me };
@@ -891,6 +1047,7 @@ impl Actions {
                 if self.need_sign_in("subscribe") {
                     return Click::Handled;
                 }
+                self.tv_changed(&ch);
                 let Some(t) = self.subs.get_mut(&ch) else { return Click::Handled };
                 if t.shown() && self.confirm == 0 {
                     // Unsubscribing is deliberate: a second click confirms.
@@ -1293,7 +1450,7 @@ impl Actions {
                     let r = res.as_ref().err().cloned().unwrap_or_else(|| req::failure(299, None));
                     self.report("action-subscribe", format!("{} {ch}: {r}", if on { "subscribe" } else { "unsubscribe" }));
                 }
-                if self.acts.channel_id.as_deref() == Some(ch.as_str()) && !self.v.is_empty() {
+                if self.acts.channel_id.as_deref() == Some(ch.as_str()) && (!self.v.is_empty() || self.tv_channel) {
                     self.update_sub();
                     if !ok {
                         let r = res.err().unwrap_or_else(|| req::failure(299, None));
@@ -1301,8 +1458,26 @@ impl Actions {
                     }
                 }
             }
+            // A quiet check: a failure or a shape it cannot read changes nothing.
+            Job::TvState { v, ch } => {
+                if let Ok(j) = res {
+                    let (like, sub) = watch::account_state(&j, ch.as_deref());
+                    if let (Some(v), Some(l)) = (v.as_ref().filter(|v| !self.tv_changed.contains(*v)), like) {
+                        if self.likes.get_mut(v).is_some_and(|t| t.learn(l)) && *v == self.v {
+                            self.update_like();
+                        }
+                    }
+                    if let (Some(c), Some(s)) = (ch.as_ref().filter(|c| !self.tv_changed.contains(*c)), sub) {
+                        if self.subs.get_mut(c).is_some_and(|t| t.learn(s)) && self.acts.channel_id.as_deref() == Some(c.as_str()) && (!self.v.is_empty() || self.tv_channel) {
+                            self.update_sub();
+                        }
+                    }
+                }
+            }
             Job::Playlists { v, probe } => {
                 self.save_loading = false;
+                // (TV: the panel opened while the quiet check was out: it waits for this answer and reports it.)
+                let probe = probe && !self.tv_save;
                 match res.map(|j| save::parse(&j)) {
                     Ok(Some(list)) => {
                         self.lists.retain(|(k, _)| *k != v);
@@ -1335,6 +1510,9 @@ impl Actions {
                         bridge::focus_in("ytc-save-p", 0);
                     }
                 }
+                if v == self.v && self.tv_save {
+                    self.tv_save_paint();
+                }
             }
             Job::Edit { v, pl } => {
                 let add = self.list_mut(&v).and_then(|l| l.iter().find(|(p, _)| p.id == pl)).and_then(|(_, t)| t.inflight).map(|x| x.1).unwrap_or(true);
@@ -1348,7 +1526,7 @@ impl Actions {
                     let r = res.as_ref().err().cloned().unwrap_or_else(|| req::failure(299, None));
                     self.report("action-save", format!("edit_playlist {} {v}: {r}", if add { "add" } else { "remove" }));
                 }
-                if v == self.v && self.save_open() {
+                if v == self.v && (self.save_open() || self.tv_save) {
                     if let Some(i) = self.lists.iter().find(|(k, _)| *k == v).and_then(|(_, l)| l.iter().position(|(p, _)| p.id == pl)) {
                         self.update_pl(i);
                     }

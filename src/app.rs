@@ -1916,6 +1916,7 @@ impl App {
             r => r.url(),
         };
         self.mo_click(kbd, &route);
+        self.tv_channel_opened(&route, &url);
         self.navigate(route, url, Mode::Push);
         self.mo_flush();
         true

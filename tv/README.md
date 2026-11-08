@@ -45,17 +45,27 @@ Watch later and playlists are the same as everywhere else. *Account → Sign out
 is open, then goes to the rail, then back (on Home it leaves the app). ← from the first column opens the rail
 (Search, Home, Subscriptions, History, Watch later, Playlists, Liked, Account). *Search* opens the search screen:
 the built-in keyboard opens at once, with letters, numbers/symbols, Space, Delete, Clear and Search, all operated
-with the remote. Back closes the keyboard onto the query control; ↓ then walks recent searches and suggestions,
+with the remote. Its language key walks a–z (with the German and Spanish letters) → Russian (ЙЦУКЕН) → numbers and
+symbols (a Ukrainian device also has Ukrainian); it starts on the device's language and then stays on the one last
+chosen. Back closes the keyboard onto the query control; ↓ then walks recent searches and suggestions,
 and OK on the query reopens the keyboard. A physical keyboard can type too. Another Back returns to the page.
 With app 0.6.0 and a speech recognizer on the TV, a mic control sits to the right of the query (see *Voice search*).
 A video
 plays full screen at once; any key shows the controls (they hide 4 s after the last key while playing): ←/→ on the
-bar seek 10 s (faster while held, with the storyboard frame), OK plays/pauses, ↓ goes to the buttons (captions,
-speed, quality, like, Watch later, Comments, More info), with a visible label for the focused action, and once
-more to Up next. Comments opens a readable side panel with Top/Newest, replies and more pages; it loads only
-when opened. More info includes the description, channel, Subscribe when signed in, and chapters when available.
-Back or Back to video closes either panel and returns to its player control. Media keys (play/pause, rewind,
-fast-forward) work everywhere on the watch page. The look is documented in [design/](design/README.md).
+bar seek 10 s (faster while held, with the storyboard frame), OK plays/pauses, ↓ goes to the buttons, on play/pause,
+and once more to Up next. The buttons, one row with a visible label for the focused one: Channel (← from play/pause:
+OK opens its page, one Back returns to the video at its position), Subscribe (signed in; OK again asks "Unsubscribe?"
+first), play/pause, Captions (its Auto-translate section: the device's language, Russian, English and a few more;
+a language chosen there stays for the next videos), Audio (only when the video has several tracks: YouTube's names,
+the current one marked; the language chosen plays by itself on the next video that has it), speed, quality, and when
+signed in Like, Dislike, Watch later, Save (a panel of your playlists, OK checks one), then Comments and More info.
+Comments opens a readable side panel with Top/Newest, replies and more pages; it loads only
+when opened. More info includes the description, channel (the first ↑ from the description), Subscribe when signed in,
+and chapters when available. A channel's page has Subscribe under its header (↑ from the first row of cards; signed
+out it leads to Sign in). An action YouTube refuses goes back to what it was and says why, top right.
+Back or Back to video closes any panel and returns to its player control. Media keys (play/pause, rewind,
+fast-forward, Next: Up next's first, Previous: the video before this one in this session, else this one from the
+start) work everywhere on the watch page. The look is documented in [design/](design/README.md).
 
 ## Updates
 
@@ -440,9 +450,12 @@ layout at every resolution, rem = 1/80 of the width). Design reference: `tv/desi
 
 **Account calls on TV.** Home, Subscriptions, History, Library, the account's playlists (`VL…`),
 their continuations, the watch page's `player` call (so history pings carry the account) and actions
-(like, subscribe, Watch later) go out as `TVHTML5` with the access token; search, channels, comments
-and the streams (VISIONOS) stay anonymous WEB calls as on desktop. History pings
-(`/api/stats/playback`, `watchtime`) carry the bearer and report `c=TVHTML5&cplatform=TV`.
+(like, dislike, subscribe, Watch later, save to a playlist and the list of playlists) go out as `TVHTML5` with the
+access token; search, channels, comments and the streams (VISIONOS) stay anonymous WEB calls as on desktop. History
+pings (`/api/stats/playback`, `watchtime`) carry the bearer and report `c=TVHTML5&cplatform=TV`. The anonymous watch and
+channel pages cannot say whether you like a video or follow a channel, so a signed-in TV asks once more as the account,
+quietly (`next` 1.2 s after a watch page settled, `browse` for a channel page; once per video or channel in a session):
+what that answer states is shown, what it does not state changes nothing, and it never overrides a change made here.
 
 ## Risks and limits
 
@@ -451,11 +464,16 @@ and the streams (VISIONOS) stay anonymous WEB calls as on desktop. History pings
   If YouTube ever needs its page for something (a consent step), `?yt-native=1` pages and every path outside the
   client's (`rules::client_page`) still load it.
 
-- Whether YouTube honours every account call made with the TV token (feeds, like/subscribe, the
-  watch history pings) can only be confirmed with a real sign-in; the flow up to the token is
+- Whether YouTube honours every account call made with the TV token (feeds, like/dislike/subscribe, the playlist
+  list and edits, the watch history pings) can only be confirmed with a real sign-in; the flow up to the token is
   verified against Google (code issued, polling answers `authorization_pending`) and the exchange
-  against a mock. If an account surface misbehaves, the fix is in `tv.rs`/`tvglue.rs`
-  (`account_browse`, `tv_account_req`) and the TV parser in `parse.rs`.
+  against a mock. Subscribe, Dislike and Save use the path Like and Watch later use (`actions::post`, `tv::finish`);
+  an action YouTube refuses rolls back with the reason on screen. Also open until a real sign-in: the shapes of the TV
+  client's `next` and channel `browse` answers (`actions::watch::account_state` reads them loosely: a shape it does not
+  recognise leaves "Subscribe" and an unpressed Like on screen, and pressing them still works) and the format of the
+  playlists answer for this client (`actions::save::parse`; unreadable: the Save panel says so). If an account
+  surface misbehaves, the fix is in `tv.rs`/`tvglue.rs` (`account_browse`, `tv_account_req`) and the TV parser in
+  `parse.rs`.
 - The client ID/secret are YouTube's public TV values (`tv/core/src/auth.rs`); if Google rotates
   them, update them there (new APK).
 - googlevideo is fetched by the shell (Kotlin `HttpURLConnection`) to add the CORS header the

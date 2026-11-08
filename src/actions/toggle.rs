@@ -26,6 +26,17 @@ impl<S: Copy + PartialEq> Toggle<S> {
         self.inflight.is_some()
     }
 
+    /// YouTube says what the state is now (a quiet check, not an answer to a change): taken unless the user has
+    /// asked for something meanwhile. True when it changes what is shown.
+    pub fn learn(&mut self, s: S) -> bool {
+        if self.busy() || self.desired != self.confirmed || self.desired == s {
+            return false;
+        }
+        self.confirmed = s;
+        self.desired = s;
+        true
+    }
+
     /// The user asks for `s`. Returns the state to request now, if any (a
     /// change while a request is in flight is sent when it completes).
     pub fn want(&mut self, s: S) -> Option<S> {
@@ -71,6 +82,23 @@ mod tests {
         assert!(t.shown() && t.busy());
         assert_eq!(t.done(1, true), None);
         assert!(t.confirmed && t.shown() && !t.busy());
+    }
+    #[test]
+    fn a_quiet_check_never_overrides_the_user() {
+        let mut t = Toggle::new(false);
+        assert!(t.learn(true));
+        assert!(t.confirmed && t.shown());
+        assert!(!t.learn(true), "nothing changes");
+        t.want(false);
+        t.sent(1, false);
+        assert!(!t.learn(true), "in flight");
+        assert!(!t.shown());
+        t.done(1, true);
+        assert!(!t.shown() && !t.confirmed);
+        // Changed, not sent yet (a queued change of mind).
+        let mut t = Toggle::new(false);
+        t.confirmed = true;
+        assert!(!t.learn(true) && !t.shown());
     }
     #[test]
     fn failure_rolls_back() {

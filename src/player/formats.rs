@@ -311,6 +311,42 @@ pub fn audio_in<'a>(formats: &'a [Format], id: &str, supported: &dyn Fn(&str) ->
         .min_by(|a, b| rank(a).cmp(&rank(b)).then(b.bitrate.cmp(&a.bitrate)))
 }
 
+/// The language of an audio track's id (`en-US.4` → `en-US`).
+pub fn track_lang(id: &str) -> &str {
+    id.split('.').next().unwrap_or(id)
+}
+
+/// TV: the track of the remembered language among `tracks` (`audio_tracks`): that exact tag, else the same language
+/// (`es-419` for `es-US`). Only where there is a choice; none of it → None (YouTube's default track plays).
+pub fn track_for_lang<'a>(tracks: &'a [(String, String)], lang: &str) -> Option<&'a str> {
+    if tracks.len() < 2 || lang.is_empty() {
+        return None;
+    }
+    let primary = |s: &'a str| s.split('-').next().unwrap_or(s);
+    let want = lang.split('-').next().unwrap_or(lang);
+    tracks.iter().find(|(id, _)| track_lang(id).eq_ignore_ascii_case(lang)).or_else(|| tracks.iter().find(|(id, _)| primary(track_lang(id)).eq_ignore_ascii_case(want))).map(|(id, _)| id.as_str())
+}
+
+thread_local! {
+    /// TV: a track picked on one video stays that video's for this session, whatever is chosen on others.
+    static AUDIO_CHOSEN: std::cell::RefCell<std::collections::VecDeque<(String, String)>> = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
+pub fn remember_audio(video: &str, id: &str) {
+    AUDIO_CHOSEN.with(|m| {
+        let mut m = m.borrow_mut();
+        m.retain(|(v, _)| v != video);
+        m.push_back((video.to_string(), id.to_string()));
+        while m.len() > 100 {
+            m.pop_front();
+        }
+    });
+}
+
+pub fn chosen_audio(video: &str) -> Option<String> {
+    AUDIO_CHOSEN.with(|m| m.borrow().iter().find(|(v, _)| v == video).map(|e| e.1.clone()))
+}
+
 /// Why nothing was playable, for the debug overlay.
 pub fn diagnose(formats: &[Format], supported: &dyn Fn(&str) -> bool) -> String {
     let (v, a): (Vec<&Format>, Vec<&Format>) = formats.iter().partition(|f| f.video);
@@ -470,6 +506,30 @@ mod tests {
         assert!(live_ladder(&fs, &order(None), &|m: &str| !m.contains("avc1")).is_empty());
         // VOD formats are never taken as live ones.
         assert!(parse(&sample()).iter().filter(|f| f.itag != 18).all(|f| !live_ok(f)));
+    }
+
+    #[test]
+    fn a_remembered_language_finds_its_track() {
+        let t = |ids: &[&str]| ids.iter().map(|i| (i.to_string(), i.to_string())).collect::<Vec<_>>();
+        let dub = t(&["ru.3", "de-DE.3", "en-US.4"]);
+        assert_eq!(track_lang("en-US.4"), "en-US");
+        assert_eq!(track_for_lang(&dub, "ru"), Some("ru.3"));
+        assert_eq!(track_for_lang(&dub, "en-US"), Some("en-US.4"));
+        assert_eq!(track_for_lang(&dub, "en-GB"), Some("en-US.4"), "the same language");
+        assert_eq!(track_for_lang(&dub, "DE"), Some("de-DE.3"));
+        assert_eq!(track_for_lang(&t(&["es-419.2", "es.3"]), "es"), Some("es.3"), "the exact tag first");
+        assert_eq!(track_for_lang(&dub, "fr"), None, "falls back to the default track");
+        assert_eq!(track_for_lang(&dub, ""), None);
+        assert_eq!(track_for_lang(&t(&["ru.3"]), "ru"), None, "one track: nothing to choose");
+        assert_eq!(track_for_lang(&[], "ru"), None);
+        remember_audio("v0000000001", "ru.3");
+        remember_audio("v0000000001", "de.3");
+        assert_eq!(chosen_audio("v0000000001").as_deref(), Some("de.3"));
+        assert_eq!(chosen_audio("v0000000002"), None);
+        for i in 0..110 {
+            remember_audio(&format!("x{i:010}"), "ru.3");
+        }
+        assert_eq!(chosen_audio("v0000000001"), None, "bounded");
     }
 
     #[test]

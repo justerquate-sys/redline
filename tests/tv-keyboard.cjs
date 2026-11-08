@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TVSIZES, tvWalk, incidents, telBatches }) => {
+module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TVSIZES, tvWalk, incidents, telBatches, sw }) => {
   await step('TV search keyboard: remote-only text entry, edit/symbol keys, Back/reopen, suggestions and physical typing work with the 0.3.0 keyboard shim', async () => {
     // Existing installed shells carry this listener even after a client bundle update. Install the
     // real listener, with no OS keyboard behind it, so tests cannot accidentally rely on an IME.
@@ -45,7 +45,7 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         await key('Enter');
         assert.equal(await query(), 'cat');
         // Last alphabet row → Space → mode → Search, all reachable with the remote.
-        await key('ArrowDown', 'ArrowDown');
+        await key('ArrowDown', 'ArrowDown', 'ArrowDown');
         assert.equal(await focused(), ' ');
         await key('Enter');
         assert.equal(await query(), 'cat ');
@@ -78,6 +78,9 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         const before = tv.url();
         await activate('#ytc-tvk [data-act=tv-kb-search]');
         assert.equal(tv.url(), before, 'an empty search stays on the screen');
+        // a–z → Russian → numbers and symbols → a–z.
+        await activate('#ytc-tvk [data-act=tv-kb-layout]');
+        assert.equal(await tv.locator('#ytc-tvk .tvk-keys button').first().textContent(), 'й');
         await activate('#ytc-tvk [data-act=tv-kb-layout]');
         assert.equal(await tv.locator('#ytc-tvk .tvk-keys button').first().textContent(), '0');
         await activate('#ytc-tvk .tvk-keys button[data-arg="1"]');
@@ -137,6 +140,115 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         assert.equal(await tv.evaluate(() => window.__tvImeCalls.show), 0, 'no call to an unavailable/no-op OS keyboard');
         assert.deepEqual(tv.errors, []);
       } finally { await tvClose(tv); }
+    }
+  });
+
+  await step('TV search keyboard, Russian (960×540 and 1920×1080): the language key cycles a–z → Russian → numbers; 33 letters and the editing keys fit without scrolling; typed with the remote it searches in Cyrillic; the layout is remembered; a Russian device starts on it', async () => {
+    const config = async change => sw.evaluate(async change => {
+      const o = (await chrome.storage.local.get('ytcConfigV1')).ytcConfigV1; if (!o) return undefined;
+      const j = typeof o === 'string' ? JSON.parse(o) : o;
+      if (change) { delete j.kb; await chrome.storage.local.set({ ytcConfigV1: typeof o === 'string' ? JSON.stringify(j) : j }); }
+      return j.kb;
+    }, change);
+    for (const [W, H] of TVSIZES) {
+      const tv = await tvOpen();
+      try {
+        await config(true);
+        await tv.setViewportSize({ width: W, height: H });
+        const open = async () => {
+          await tv.waitForSelector('#ytc-side .rl[data-nav=search]');
+          await tv.focus('#ytc-side .rl[data-nav=search]');
+          await tv.keyboard.press('Enter');
+          await tv.waitForFunction(() => document.activeElement?.matches('#ytc-tvk .tvk-keys button'));
+        };
+        const key = async (...keys) => { for (const k of keys) await tv.keyboard.press(k); };
+        const focused = () => tv.evaluate(() => document.activeElement?.getAttribute('data-arg') || document.activeElement?.getAttribute('data-act'));
+        const letters = () => tv.$$eval('#ytc-tvk .tvk-keys button', a => a.map(e => e.textContent).join(''));
+        await tvGo(tv, 'code', 'https://www.youtube.com/');
+        await open();
+        assert.equal(await tv.locator('#ytc-tvk .tvk-keys button').first().textContent(), 'a', 'an English device starts on a–z');
+        const fits = () => tv.evaluate(() => {
+          const keys = [...document.querySelectorAll('#ytc-tvk button')], r = keys.map(k => k.getBoundingClientRect()), letters = r.slice(0, 36), top = document.getElementById('ytc-top');
+          const k = innerHeight / 1080;
+          return {
+            n: keys.length, cols: new Set(letters.map(q => Math.round(q.left))).size, rows: new Set(letters.map(q => Math.round(q.top))).size,
+            bottom: Math.max(...r.map(q => q.bottom)), safe: innerHeight * 0.965, right: Math.max(...r.map(q => q.right)), scrolls: top.scrollHeight > top.clientHeight + 1 || document.scrollingElement.scrollHeight > innerHeight + 1 && top.getBoundingClientRect().bottom > innerHeight,
+            keyH: letters[0].height / k, font: parseFloat(getComputedStyle(keys[0]).fontSize) / k, fontTool: parseFloat(getComputedStyle(keys[36]).fontSize) / k, hint: parseFloat(getComputedStyle(document.querySelector('.tvk-hint')).fontSize) / k,
+            hintBottom: document.querySelector('.tvk-hint').getBoundingClientRect().bottom,
+            overflow: keys.filter(b => b.scrollWidth > b.clientWidth + 1).map(b => b.textContent),
+          };
+        });
+        const check = async (what, first) => {
+          const f = await fits();
+          assert.ok(f.n === 41 && f.cols === 6 && f.rows === 6 && f.bottom <= f.safe && f.hintBottom <= f.safe && !f.scrolls && f.overflow.length === 0 && f.keyH >= 50 && f.font >= 22 && f.fontTool >= 19 && f.hint >= 17, `${what} at ${W}: ${JSON.stringify(f)}`);
+          assert.equal((await letters())[0], first);
+          assert.deepEqual(await tvAudit(tv, `keyboard ${what} ${W}`), []);
+        };
+        await check('a–z', 'a');
+        // Only the remote: down the first column to the editing keys, to the language key under them.
+        await key('ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown');
+        assert.equal(await focused(), ' ');
+        await key('ArrowDown');
+        assert.equal(await focused(), 'tv-kb-layout');
+        assert.equal(await tv.evaluate(() => document.activeElement.textContent), 'Русский', 'it names what comes next');
+        await tvShot(tv, 'search-keyboard-abc');
+        const geo = () => tv.$$eval('#ytc-tvk .tvk-tools button', a => a.map(e => { const r = e.getBoundingClientRect(); return [r.left, r.top]; }));
+        const tools = await geo();
+        await key('Enter');
+        assert.equal(await focused(), 'tv-kb-layout', 'the focus stays on it');
+        assert.deepEqual(await geo(), tools, 'the editing keys never move');
+        const ru = await letters();
+        for (const c of 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя') assert.ok(ru.includes(c), `${c} on the keyboard`);
+        assert.ok(ru.startsWith('йцукен'), 'ЙЦУКЕН');
+        await check('Russian', 'й');
+        await tvShot(tv, 'search-keyboard-ru');
+        // к о т, only with the remote's arrows and OK.
+        const walkTo = async c => {
+          for (let i = 0; i < 24; i++) {
+            const m = await tv.evaluate(c => { const a = document.activeElement.getBoundingClientRect(), t = [...document.querySelectorAll('#ytc-tvk button')].find(b => b.dataset.arg === c || b.dataset.act === c).getBoundingClientRect(); return { dy: t.top - a.top, dx: t.left - a.left }; }, c);
+            if (Math.abs(m.dy) < 2 && Math.abs(m.dx) < 2) return;
+            await key(Math.abs(m.dy) >= 2 ? (m.dy > 0 ? 'ArrowDown' : 'ArrowUp') : (m.dx > 0 ? 'ArrowRight' : 'ArrowLeft'));
+          }
+          assert.fail(`the remote could not reach ${c}`);
+        };
+        for (const c of 'кот') { await walkTo(c); await key('Enter'); }
+        assert.equal(await tv.inputValue('#ytc-q'), 'кот');
+        assert.equal(await tv.locator('#ytc-tvquery-text').textContent(), 'кот');
+        await tvShot(tv, 'search-keyboard-typed');
+        assert.deepEqual(await tvAudit(tv, `keyboard typed ${W}`), []);
+        await walkTo('tv-kb-search');
+        await key('Enter');
+        await tv.waitForFunction(() => location.pathname === '/results' && new URLSearchParams(location.search).get('search_query') === 'кот');
+        await tv.waitForFunction(() => document.activeElement?.matches('#ytc-list a.t'));
+        assert.equal(await config(false), 'ru', 'remembered');
+        // Another app start: the same layout. The key goes on to numbers and symbols, then back to a–z.
+        await tvGo(tv, 'code', 'https://www.youtube.com/');
+        await open();
+        await check('Russian remembered', 'й');
+        await walkTo('tv-kb-layout');
+        assert.equal(await tv.evaluate(() => document.activeElement.textContent), '123 & symbols');
+        await key('Enter');
+        await check('symbols', '0');
+        await tvShot(tv, 'search-keyboard-symbols');
+        assert.equal(await tv.evaluate(() => document.activeElement.textContent), 'ABC');
+        await key('Enter');
+        await check('a–z again', 'a');
+        assert.ok((await letters()).endsWith('äöüßñé'), 'the German and Spanish letters');
+        assert.equal(await config(false), 'abc');
+        // A Russian device starts on Russian, until something else was chosen; a Ukrainian one has its own alphabet.
+        await config(true);
+        await tv.evaluate(() => localStorage.setItem('ytc-test-lang', 'ru-RU'));
+        await tvGo(tv, 'code', 'https://www.youtube.com/');
+        await open();
+        assert.equal((await letters())[0], 'й', 'the device language');
+        await tv.evaluate(() => localStorage.setItem('ytc-test-lang', 'uk-UA'));
+        await config(true);
+        await tvGo(tv, 'code', 'https://www.youtube.com/');
+        await open();
+        assert.ok((await letters()).includes('ї') && (await letters()).includes('ґ'), 'Ukrainian');
+        assert.deepEqual(await tvAudit(tv, `keyboard Ukrainian ${W}`), []);
+        assert.deepEqual(tv.errors, []);
+      } finally { await tv.evaluate(() => localStorage.removeItem('ytc-test-lang')).catch(() => {}); await config(true); await tvClose(tv); }
     }
   });
 

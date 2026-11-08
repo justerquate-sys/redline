@@ -141,30 +141,51 @@ pub fn inner(body: Body, msg: &str) -> String {
             s.push_str("</p>");
         }
         Body::List(list) => {
-            if list.is_empty() {
-                s.push_str("<p class=\"ya-err\">No playlists yet.</p>");
-            }
-            s.push_str("<div class=\"ya-pls\">");
-            for (i, (p, on, busy)) in list.iter().enumerate() {
-                s.push_str(&format!(
-                    "<button type=\"button\" id=\"ytc-pl-{i}\" class=\"{}\" role=\"menuitemcheckbox\" aria-checked=\"{on}\" data-act=\"a-pl\" data-arg=\"{i}\">{CK}<span>",
-                    row_class(*on, *busy)
-                ));
-                esc_into(&mut s, &p.title);
-                s.push_str("</span>");
-                if !p.privacy.is_empty() {
-                    s.push_str("<small>");
-                    esc_into(&mut s, &p.privacy);
-                    s.push_str("</small>");
-                }
-                s.push_str("</button>");
-            }
-            s.push_str("</div><form id=\"ytc-a-newpl\" class=\"ya-new\"><input name=\"title\" maxlength=\"150\" placeholder=\"New private playlist\" aria-label=\"New playlist name\" autocomplete=\"off\"><button type=\"submit\">Create</button></form>");
+            rows_html(&mut s, list);
+            s.push_str("<form id=\"ytc-a-newpl\" class=\"ya-new\"><input name=\"title\" maxlength=\"150\" placeholder=\"New private playlist\" aria-label=\"New playlist name\" autocomplete=\"off\"><button type=\"submit\">Create</button></form>");
         }
     }
     s.push_str("<p id=\"ytc-save-m\" class=\"ya-err\" role=\"status\">");
     esc_into(&mut s, msg);
     s.push_str("</p>");
+    s
+}
+
+fn rows_html(s: &mut String, list: &[(Playlist, bool, bool)]) {
+    if list.is_empty() {
+        s.push_str("<p class=\"ya-err\">No playlists yet.</p>");
+    }
+    s.push_str("<div class=\"ya-pls\">");
+    for (i, (p, on, busy)) in list.iter().enumerate() {
+        s.push_str(&format!(
+            "<button type=\"button\" id=\"ytc-pl-{i}\" class=\"{}\" role=\"menuitemcheckbox\" aria-checked=\"{on}\" data-act=\"a-pl\" data-arg=\"{i}\">{CK}<span>",
+            row_class(*on, *busy)
+        ));
+        esc_into(s, &p.title);
+        s.push_str("</span>");
+        if !p.privacy.is_empty() {
+            s.push_str("<small>");
+            esc_into(s, &p.privacy);
+            s.push_str("</small>");
+        }
+        s.push_str("</button>");
+    }
+    s.push_str("</div>");
+}
+
+/// TV's Save panel: the same rows, no new-playlist form (a name needs a keyboard the remote only has on Search).
+pub fn tv_inner(body: Body) -> String {
+    let mut s = String::from("<h2>Save to playlist</h2>");
+    match body {
+        Body::Loading => s.push_str("<p class=\"tvd\" tabindex=\"0\">Loading your playlists…</p>"),
+        Body::Failed(r) => {
+            s.push_str("<p class=\"tvd\" tabindex=\"0\">");
+            esc_into(&mut s, r);
+            s.push_str("</p>");
+        }
+        Body::List(list) => rows_html(&mut s, list),
+    }
+    s.push_str("<p id=\"ytc-save-m\" class=\"tvam\" role=\"status\"></p>");
     s
 }
 
@@ -206,6 +227,12 @@ mod tests {
         let s = html(false, any_saved(&rows), Body::List(&rows), "");
         assert!(s.contains("class=\"ya-b ya-sv saved\"") && s.contains(">Saved</span>"));
         assert_eq!(btn_class(true, true, true), "ya-b ya-sv open saved now");
+        // TV: the same rows and ids, no form.
+        let tv = tv_inner(Body::List(&rows));
+        assert!(tv.contains("data-act=\"a-pl\" data-arg=\"1\"") && tv.contains("id=\"ytc-pl-1\"") && tv.contains("&lt;Mix&gt;") && tv.contains("id=\"ytc-save-m\"") && !tv.contains("<form"));
+        assert!(tv_inner(Body::Loading).contains("tabindex=\"0\""), "something to focus while it loads");
+        assert!(tv_inner(Body::Failed("<no>")).contains("&lt;no&gt;"));
+        assert!(tv_inner(Body::List(&[])).contains("No playlists yet."));
     }
     #[test]
     fn view_model_options() {

@@ -46,6 +46,16 @@ pub fn create_playlist(title: &str, v: &str) -> Body {
     ("playlist/create", json!({"title": title, "privacyStatus": "PRIVATE", "videoIds": [v]}))
 }
 
+/// TV: what the account says about a video (its rating, its channel): the same `next` the account's own client asks.
+pub fn account_video(v: &str) -> Body {
+    ("next", json!({"videoId": v}))
+}
+
+/// TV: what the account says about a channel (its subscription).
+pub fn account_channel(ch: &str) -> Body {
+    ("browse", json!({"browseId": ch}))
+}
+
 /// Comments, replies, sort changes and their pages are all `next` continuations.
 pub fn comments(token: &str) -> Body {
     ("next", json!({"continuation": token}))
@@ -143,6 +153,8 @@ mod tests {
         assert_eq!(edit_playlist("WL", "v", false).1["actions"][0], json!({"action": "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", "removedVideoId": "v"}));
         assert_eq!(create_playlist("a\"b", "v").1, json!({"title": "a\"b", "privacyStatus": "PRIVATE", "videoIds": ["v"]}));
         assert_eq!(playlists("v").1["videoIds"][0], "v");
+        assert_eq!(account_video("v"), ("next", json!({"videoId": "v"})));
+        assert_eq!(account_channel("UCx"), ("browse", json!({"browseId": "UCx"})));
         assert_eq!(notifications(None).1["notificationsMenuRequestType"], "NOTIFICATIONS_MENU_REQUEST_TYPE_INBOX");
         assert_eq!(notifications(Some("t")).1["ctoken"], "t");
         let full: Value = serde_json::from_str(&with_context(comments("tok").1, &Config::default(), "de", "/watch?v=x")).unwrap();
