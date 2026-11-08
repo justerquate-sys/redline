@@ -2,8 +2,10 @@
 //! player, so every problem can be seen and inspected where it happens). The client never leaves for
 //! YouTube's page by itself: a failure shows a calm panel in the player box (a human message,
 //! the technical reason, Try again / Open on YouTube), and a stall shows a small "Still
-//! loading — retrying…" status while the player keeps retrying in place. Pure parts here
-//! (messages, markup, the retry schedule); `own.rs` and `app.rs` drive them.
+//! loading — retrying…" status while the player keeps retrying in place. Nobody presses Try again
+//! for what Try again would fix (owner, 8 Nov 2026): a reason that isn't permanent gets it by itself
+//! first (`Auto`), and once more on coming back to the tab. Pure parts here (messages, markup, the
+//! retry schedules); `own.rs` and `app.rs` drive them.
 
 use crate::util::esc_into;
 
@@ -21,6 +23,119 @@ pub const OFFLINE_REASON: &str = "offline: youtube.com isn't answering (connecti
 /// A failure that may just be a dropped connection: requests that never got an answer.
 pub fn network_like(reason: &str) -> bool {
     reason.contains("HTTP 0") || reason.contains("no answer")
+}
+
+/// A verdict a new player would only repeat: the panel at once, no automatic Try again. Upcoming
+/// streams, members-only videos, sign-in and the bot check (every route was tried), YouTube's own
+/// `VISIONOS <STATUS>` answers, no format this browser plays, the player turned off. Everything else
+/// (media errors, stalls, index and googlevideo failures, "VISIONOS player" without an answer, also
+/// reasons not known here) is worth a retry: a wrong guess costs seconds, and the retries are bounded.
+pub fn permanent(reason: &str) -> bool {
+    super::own::quiet(reason)
+        || reason == OFFLINE_REASON
+        || reason.starts_with("no compatible formats")
+        || reason.strip_prefix("VISIONOS ").is_some_and(|r| r.starts_with(|c: char| c.is_ascii_uppercase()))
+}
+
+/// The automatic Try again's waits: the first after `AUTO_DELAYS_MS[0]`, and so on.
+pub const AUTO_DELAYS_MS: [u32; 3] = [1000, 4000, 10_000];
+/// As many as `AUTO_DELAYS_MS` within this sliding window, per video.
+pub const AUTO_WINDOW_MS: f64 = 300_000.0;
+/// And at most this many for a video while it stays open: failures that keep coming back slowly never loop.
+pub const AUTO_MAX: u32 = 9;
+/// Coming back to the panel's tab: at most this many retries while the video stays open,
+pub const RETURN_MAX: u32 = 3;
+/// never two within this time (a return fires both `visibilitychange` and `focus`),
+pub const RETURN_GAP_MS: f64 = 5000.0;
+/// and a window that only lost the focus (still visible) must have been away this long.
+pub const RETURN_AWAY_MS: f64 = 60_000.0;
+
+/// The automatic retries of the video that is open (a new navigation starts over).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Auto {
+    /// When the retries inside the window went out.
+    at: Vec<f64>,
+    total: u32,
+    returns: u32,
+    last_return: f64,
+    /// The player running now is a return's one retry: it gets no chain of its own unless it played.
+    returning: bool,
+}
+
+impl Auto {
+    /// The wait before the next automatic Try again after a failure at `now`; None: the panel.
+    /// `played`: the failed player had shown a picture.
+    pub fn delay(&mut self, now: f64, played: bool) -> Option<u32> {
+        if self.returning && !played {
+            return None;
+        }
+        self.returning = false;
+        self.at.retain(|t| now - t < AUTO_WINDOW_MS);
+        if self.total >= AUTO_MAX {
+            return None;
+        }
+        AUTO_DELAYS_MS.get(self.at.len()).copied()
+    }
+
+    /// The retry goes out (only now it counts: a wait ended by a dropped connection costs nothing).
+    pub fn spend(&mut self, now: f64) {
+        self.at.push(now);
+        self.total += 1;
+    }
+
+    /// Whether coming back to the panel at `now` retries once more. `away_ms`: how long a window
+    /// that only got the focus back was without it (None: the tab became visible).
+    pub fn may_return(&self, now: f64, away_ms: Option<f64>) -> bool {
+        self.returns < RETURN_MAX && (self.returns == 0 || now - self.last_return >= RETURN_GAP_MS) && away_ms.is_none_or(|ms| ms >= RETURN_AWAY_MS)
+    }
+
+    pub fn returned(&mut self, now: f64) {
+        self.returns += 1;
+        self.last_return = now;
+        self.returning = true;
+    }
+
+    /// Every Try again made without being asked, for the panel's technical line.
+    pub fn made(&self) -> u32 {
+        self.total + self.returns
+    }
+}
+
+/// `sessionStorage` key of a stale tab's reload: `epoch ms|paused 0/1|video id`.
+pub const STALE_KEY: &str = "ytc:stale";
+/// A tab reloads for this reason at most once in this time, however it gets here again.
+pub const STALE_GUARD_MS: f64 = 600_000.0;
+/// The reloaded page takes the paused state only this soon after the mark.
+pub const STALE_PAUSED_MS: f64 = 60_000.0;
+
+pub fn stale_mark(now_ms: f64, paused: bool, v: &str) -> String {
+    format!("{now_ms:.0}|{}|{v}", u8::from(paused))
+}
+
+fn stale_parts(mark: &str) -> Option<(f64, bool, &str)> {
+    let mut p = mark.splitn(3, '|');
+    Some((p.next()?.parse().ok()?, p.next()? == "1", p.next()?))
+}
+
+/// May this tab reload now, given its mark (empty: none yet)? A clock set back counts as long ago.
+pub fn stale_may_reload(mark: &str, now_ms: f64) -> bool {
+    stale_parts(mark).is_none_or(|(at, _, _)| now_ms < at || now_ms - at >= STALE_GUARD_MS)
+}
+
+/// The reloaded page's video `v` was paused when the old page reloaded.
+pub fn stale_paused(mark: &str, now_ms: f64, v: &str) -> bool {
+    stale_parts(mark).is_some_and(|(at, paused, mv)| paused && mv == v && now_ms >= at && now_ms - at < STALE_PAUSED_MS)
+}
+
+/// What follows the reason on the panel's technical line: the Try agains made without being asked
+/// and the version that ran, so a screenshot says which code ran and what it tried.
+pub fn diagnostics(made: u32) -> String {
+    let ver = env!("CARGO_PKG_VERSION");
+    match made {
+        0 => format!(" · {ver}"),
+        1 => format!(" · 1 automatic Try again · {ver}"),
+        n => format!(" · {n} automatic Try agains · {ver}"),
+    }
 }
 
 /// The human headline for a failure reason (the technical reason is shown under it).
@@ -76,8 +191,8 @@ pub fn message(reason: &str) -> String {
 }
 
 /// The failure panel (replaces the player box's content; the box keeps its size). `poster` is the
-/// video's thumbnail, dimmed behind the panel.
-pub fn panel(video_id: &str, reason: &str) -> String {
+/// video's thumbnail, dimmed behind the panel. `made`: `Auto::made`.
+pub fn panel(video_id: &str, reason: &str, made: u32) -> String {
     let mut s = String::with_capacity(reason.len() + 900);
     if crate::util::is_video_id(video_id) {
         s.push_str("<img class=\"pfp\" alt=\"\" src=\"https://i.ytimg.com/vi_webp/");
@@ -86,9 +201,11 @@ pub fn panel(video_id: &str, reason: &str) -> String {
     }
     s.push_str("<div class=\"pfail\" role=\"alert\"><p class=\"pfm\">");
     esc_into(&mut s, &message(reason));
-    s.push_str("</p><p class=\"pfr\">");
+    s.push_str("</p><p class=\"pfr\"><span class=\"pfw\">");
     esc_into(&mut s, reason);
-    s.push_str("</p><div class=\"pfb\">");
+    s.push_str("</span><span class=\"pfv\">");
+    esc_into(&mut s, &diagnostics(made));
+    s.push_str("</span></p><div class=\"pfb\">");
     s.push_str(&format!("<button type=\"button\" id=\"{RETRY_BTN}\" class=\"pfbt on\" data-act=\"{ACT_RETRY}\">Try again</button>"));
     s.push_str(&format!("<button type=\"button\" class=\"pfbt\" data-act=\"{ACT_NATIVE}\">Open on YouTube</button>"));
     s.push_str("</div></div>");
@@ -380,12 +497,138 @@ mod tests {
 
     #[test]
     fn panel_escapes_and_has_both_buttons() {
-        let h = panel("aqz-KE-bpKQ", "VISIONOS UNPLAYABLE: <b>x</b>");
+        let h = panel("aqz-KE-bpKQ", "VISIONOS UNPLAYABLE: <b>x</b>", 0);
         assert!(h.contains("&lt;b&gt;x&lt;/b&gt;") && !h.contains("<b>x"));
         assert!(h.contains("data-act=\"pf-retry\">Try again<") && h.contains("data-act=\"pf-native\">Open on YouTube<"));
         assert!(h.contains("vi_webp/aqz-KE-bpKQ/"));
-        assert!(!panel("bad\"id", "r").contains("<img"));
+        assert!(!panel("bad\"id", "r", 0).contains("<img"));
         assert!(stuck_html().contains("Still loading — retrying…"));
+    }
+
+    #[test]
+    fn permanent_reasons_go_straight_to_the_panel() {
+        let up = super::super::own::UPCOMING_REASON;
+        for r in [
+            up.to_string(),
+            format!("{up}: Premieres in 2 hours"),
+            "own player turned off (op: false)".to_string(),
+            "VISIONOS LOGIN_REQUIRED: Sign in to confirm your age".to_string(),
+            "VISIONOS LOGIN_REQUIRED: Sign in to confirm you’re not a bot · tried: anonymous (bot check), fresh visitor (bot check)".to_string(),
+            "VISIONOS UNPLAYABLE: Join this channel to get access to members-only content".to_string(),
+            "VISIONOS UNPLAYABLE: Forced failure (e2e)".to_string(),
+            "VISIONOS ERROR: This video has been removed by the uploader".to_string(),
+            "VISIONOS CONTENT_CHECK_REQUIRED: x".to_string(),
+            "no compatible formats (12 offered: av01 only)".to_string(),
+            OFFLINE_REASON.to_string(),
+        ] {
+            assert!(permanent(&r), "{r}");
+        }
+        for r in [
+            "SourceBuffer error (audio/webm; codecs=\"opus\")",
+            "SourceBuffer error (audio/webm; codecs=\"opus\") at 1:02 (after 3 automatic retries (fresh MediaSource, fresh URLs, another format))",
+            "appendBuffer: InvalidStateError",
+            "media error 3 PIPELINE_ERROR_DECODE",
+            "no first frame 30 s after the streams were chosen (fresh URLs)",
+            "stalled for 40 s at 3:01 (fresh URLs) (while stuck: x)",
+            "index of itag 243: HTTP 503",
+            "index of itag 139: HTTP 0 (while stuck: no first frame 4 s after the streams were chosen)",
+            "googlevideo HTTP 403 after a player refresh",
+            "VISIONOS player HTTP 500",
+            "VISIONOS player: no answer in 8 s",
+            "VISIONOS ?: ",
+            "live master playlist: no variants (0 bytes)",
+            "live segment 12 itag 140 has no init segment",
+            "addSourceBuffer(audio/webm) failed",
+            "no <video> element",
+            "something new",
+        ] {
+            assert!(!permanent(r), "{r}");
+        }
+    }
+
+    #[test]
+    fn the_automatic_try_again_backs_off_and_stops() {
+        let mut a = Auto::default();
+        assert_eq!(a.delay(0.0, false), Some(1000));
+        a.spend(1000.0);
+        assert_eq!(a.delay(2000.0, false), Some(4000));
+        a.spend(6000.0);
+        assert_eq!(a.delay(7000.0, true), Some(10_000), "mid-video or not: the same");
+        a.spend(17_000.0);
+        assert_eq!(a.delay(18_000.0, false), None, "three within the window: the panel");
+        assert_eq!(a.made(), 3);
+        // Nothing spent while it only waits (a dropped connection ends the wait).
+        let mut w = Auto::default();
+        assert_eq!(w.delay(0.0, false), Some(1000));
+        assert_eq!(w.delay(10.0, false), Some(1000));
+        assert_eq!(w.made(), 0);
+        // The window slides: failures far apart each get their retries, up to the cap.
+        let mut s = Auto::default();
+        let mut now = 0.0;
+        for i in 0..AUTO_MAX {
+            assert!(s.delay(now, true).is_some(), "retry {i}");
+            s.spend(now);
+            now += AUTO_WINDOW_MS + 1.0;
+        }
+        assert_eq!(s.delay(now, true), None, "never a loop");
+        assert_eq!(s.delay(now + 1e9, true), None);
+    }
+
+    #[test]
+    fn coming_back_retries_once_per_return_with_a_cap() {
+        let mut a = Auto::default();
+        assert!(a.may_return(0.0, None), "the tab became visible");
+        assert!(!a.may_return(0.0, Some(RETURN_AWAY_MS - 1.0)), "a short trip to another window");
+        assert!(a.may_return(0.0, Some(RETURN_AWAY_MS)), "a long one");
+        a.returned(1000.0);
+        assert!(!a.may_return(1000.0 + RETURN_GAP_MS - 1.0, None), "visibility and focus of one return: one retry");
+        assert!(a.may_return(1000.0 + RETURN_GAP_MS, None));
+        // The return's retry fails before a picture: the panel again, no chain of its own.
+        assert_eq!(a.delay(2000.0, false), None);
+        assert_eq!(a.made(), 1);
+        // It played and fails later: an ordinary failure.
+        assert_eq!(a.delay(3000.0, true), Some(1000));
+        assert_eq!(a.delay(4000.0, false), Some(1000), "the return is over");
+        let mut c = Auto::default();
+        let mut now = 0.0;
+        for _ in 0..RETURN_MAX {
+            assert!(c.may_return(now, None));
+            c.returned(now);
+            now += RETURN_GAP_MS;
+        }
+        assert!(!c.may_return(now, None), "the cap");
+    }
+
+    #[test]
+    fn a_stale_tab_reloads_once() {
+        assert!(stale_may_reload("", 1000.0));
+        assert!(stale_may_reload("garbage", 1000.0));
+        let m = stale_mark(1000.0, true, "aqz-KE-bpKQ");
+        assert_eq!(m, "1000|1|aqz-KE-bpKQ");
+        assert!(!stale_may_reload(&m, 1000.0 + STALE_GUARD_MS - 1.0), "reloaded: not again");
+        assert!(stale_may_reload(&m, 1000.0 + STALE_GUARD_MS));
+        assert!(stale_may_reload(&m, 999.0), "a clock set back");
+        assert!(stale_paused(&m, 2000.0, "aqz-KE-bpKQ"));
+        assert!(!stale_paused(&m, 2000.0, "otherVideo1"), "another video");
+        assert!(!stale_paused(&m, 1000.0 + STALE_PAUSED_MS, "aqz-KE-bpKQ"), "long ago");
+        assert!(!stale_paused(&stale_mark(1000.0, false, "aqz-KE-bpKQ"), 2000.0, "aqz-KE-bpKQ"));
+        assert!(!stale_paused("", 2000.0, "aqz-KE-bpKQ"));
+    }
+
+    #[test]
+    fn the_technical_line_names_the_version_and_the_retries() {
+        let v = env!("CARGO_PKG_VERSION");
+        assert_eq!(diagnostics(0), format!(" · {v}"));
+        assert_eq!(diagnostics(1), format!(" · 1 automatic Try again · {v}"));
+        assert_eq!(diagnostics(3), format!(" · 3 automatic Try agains · {v}"));
+        let reason = "SourceBuffer error (audio/webm; codecs=\"opus\")";
+        let h = panel("aqz-KE-bpKQ", reason, 3);
+        assert!(h.contains(&format!("<span class=\"pfv\"> · 3 automatic Try agains · {v}</span>")), "{h}");
+        // The headline comes from the reason alone, in every class of reason.
+        assert!(h.contains("The browser couldn"), "{h}");
+        let up = format!("{}: Premieres in 2 hours", super::super::own::UPCOMING_REASON);
+        assert!(panel("aqz-KE-bpKQ", &up, 0).contains("<p class=\"pfm\">Premieres in 2 hours</p>"));
+        assert!(panel("aqz-KE-bpKQ", "VISIONOS ERROR: Gone · x", 0).contains("<p class=\"pfm\">Gone</p>"));
     }
 
     #[test]

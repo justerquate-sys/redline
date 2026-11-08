@@ -859,9 +859,11 @@ automatic switch to YouTube's page after a few seconds hid problems; always stay
 means every failure can be seen and inspected where it happens; `src/player/fail.rs`). If our player cannot play a video (VISIONOS not OK: age-restricted,
 members-only, private, unplayable, the bot check on every route; upcoming streams/premieres; no compatible
 format; googlevideo 403 again after a `player` refresh; index/parse errors after their retries; an
-MSE/media error (only after three automatic recoveries within two minutes, at any time); a stuck episode that never recovered), it releases the media and the app shows a **panel
-in the player box** over the dimmed poster (it settles in: `@starting-style`, no spinner): a one-line
-message, the technical reason in smaller, selectable monospace text, and two buttons. **Try again**
+MSE/media error (only after three automatic recoveries within two minutes, at any time); a stuck episode that never recovered), it releases the media and, for a permanent reason or after the
+automatic Try agains below, the app shows a **panel
+in the player box** over the dimmed poster (a compact card centred in the box; it settles in: `@starting-style`, no spinner): a one-line
+message, the technical reason in smaller, selectable monospace text, followed by what ran (` · 3 automatic Try agains · 0.14.3`: the client's version
+and the Try agains made without being asked; the public build has no telemetry, so the next screenshot settles which code ran and what it tried), and two buttons. **Try again**
 re-mounts the player for the same video and time with a fresh VISIONOS call (never the cached or a
 prefetched response; it also lifts the bot-check block, so every route is tried again). **Open on
 YouTube** opens YouTube's own watch page at that time (`/watch?v=ID&t=Ns&yt-native=1`); it is the only
@@ -887,6 +889,42 @@ code: 152 - 4". Messages (`fail::message`, unit-tested):
 | live playlist / segment errors | "This live stream isn't loading" |
 | own player turned off (`op: false`) | "The client's own player is turned off" |
 | anything else (googlevideo, index, stuck to the end) | "This video isn't loading" |
+
+*The automatic Try again* (8 Nov 2026, owner: "why not make it so that it refreshes by itself"; nobody presses Try again for
+what Try again would fix; `fail::permanent`, `fail::Auto`, `App::after_player`'s `Out::Failed`, the one choke point of every
+`Own::fail`). A reason that isn't permanent shows no panel: the app does what Try again does (a new player, VISIONOS asked
+afresh) by itself, **after 1 s, then 4 s, then 10 s; at most 3 within a sliding 5 min and 9 while the video stays open** (a new
+navigation starts over), at the same position and play/pause state. Media errors (live and post-live ones too, which have
+no recovery in place), stalls ("no first frame", "stalled for"), index and googlevideo failures and "VISIONOS player" without an
+answer all go this way. Only then the panel, its technical line naming them. *Permanent* (the panel at once): upcoming
+streams/premieres, members-only, sign-in and the bot check (every route was tried), YouTube's own `VISIONOS <STATUS>` answers
+(`ERROR`, `UNPLAYABLE`, `LOGIN_REQUIRED`, `CONTENT_CHECK_REQUIRED`, …), no compatible format, own player turned off. During a wait
+the picture stays (the failed player's frame as a held canvas, which the next player takes over until its first frame) and, from
+the 4 s wait on, the calm "Still loading — retrying…" status; its buttons work. Leaving the video, or opening another, ends the wait
+(a generation on `Timer::AutoRetry`). A dropped connection (a reason with `HTTP 0` or "no answer") keeps its own flow: the wait
+ends unspent at the probe's verdict, "No connection" shows, and it continues by itself when the connection is back; a retry goes
+out only after the probe answered. (No probe for other reasons: its own request may be blocked, and a verdict from that would
+cost the retries; a retry that meets a dropped connection fails with a network reason, so at most one is spent.) Each failure is
+kept in `ytcPlayerLogV1` (debug overlay) and is a `player-retry` incident in development builds; `player-failed` is the last one.
+*Back at the panel* (`Auto::may_return`, `App::panel_return`): the tab shown again, or the window focused after at least 60 s
+without it, retries once more when the reason isn't permanent, keeping position and play/pause, and the panel is gone if it works.
+One retry per return (never two within 5 s, a return fires both events), at most 3 while the video stays open, and a return's
+retry that fails before a picture goes back to the panel without a chain of its own.
+*A stale tab* (`bridge::ext_gone`, `App::stale_reload`). Reloading or updating the extension leaves open tabs running the old
+content script, for as long as they navigate inside the page: its `chrome.runtime.id` is gone and `chrome.*` calls throw (cheapest
+reliable signal; TV and other hosts never report it). Nothing of the player goes through the extension (requests are the page's,
+the Wasm is in the script, the network rules stay while the extension is loaded; measured with a real `chrome.runtime.reload()`:
+playback goes on, in-page navigation and new videos play; e2e "a tab orphaned for real …"), only `chrome.storage` writes are lost. So
+a stale tab is handled when a player fails with a reason that isn't permanent: the page loads again at the video and position
+(`location.replace`; the current code then runs), instead of retries or the panel; once (`fail::STALE_KEY`, `sessionStorage`: at most
+one such reload in 10 min), and a paused video stays paused.
+*The dubbed-audio bug behind an owner report* (8 Nov 2026, Brave: "The browser couldn't play this video / SourceBuffer error
+(audio/webm; codecs="opus")"). On a video with several audio tracks every track has the same itag. Fresh URLs (near the expiry, a
+403, a throttled or stuck request) gave the audio representation the URL of the first track listed while it kept its own index, so
+the next audio range cut another file in the middle of a cluster, and the append failed; a recovery with the same URL failed
+the same way, and only a new index (fresh URLs in `media_error`, or Try again) mended it. Now only the same track and file (`audio_id`, `contentLength`) gets
+the new URL. e2e "fresh URLs on a dubbed video …". (That report's exact text, with no " (after N automatic retries)", cannot come
+from 0.13.8 or later for a WebM track: the only bare path is a live stream's, and live formats exclude WebM; so that tab ran older code.)
 
 **Stalls are not failures** (`fail::START`, `fail::PLAY`, `own.rs` `stuck_tick`). No first frame
 **4 s** after the streams were chosen, or buffering **15 s** mid-playback (after the 3 s rung step-down),
@@ -925,7 +963,7 @@ failed answer keeps the URLs. A recovered episode reports `player-recovered` onc
 (`SourceBuffer error (…) at 0:03: recovered after 0.2 s (2 automatic retries)`; before the first frame: `… before the
 first frame: recovered after …`). An error while the tab is hidden and the video paused waits until the tab is shown or
 played (a background tab may hold its decoders back; recovering then could spend the recoveries for nothing). Live
-streams still show the panel at once.
+streams have no recovery in place: their media errors go straight to the automatic Try again.
 *URLs that run out, a forgotten tab* (`own.rs` `proactive_refresh`, `wake_check`, `App::on_show`). The URLs' deadline is
 their own lifetime from when they came (`streamingData.expiresInSeconds`, else 5.5 h; a cached response counts as 30 min
 old), measured as wall-clock time elapsed since they arrived (a system sleep counts; the monotonic clock stops during one
@@ -1171,7 +1209,8 @@ Feeds, descriptions, recommendations and continuation tokens live in memory, plu
 continuation token, scroll), the ready Home response (`ytc:ready`: the same compact item records plus its
 continuation token, YouTube's Home chips with their tokens and the bell count/avatar; one at a time, used once)
 and a config mirror in this tab's `sessionStorage` (cleared when the tab closes; YouTube's own pages in the same
-tab share that origin storage). `ytc:bt` (sessionStorage) keeps the last 20 Home request durations (numbers only)
+tab share that origin storage). `ytc:stale` (sessionStorage, written only by a stale tab's reload) keeps when it reloaded, whether
+the video was paused and the video id. `ytc:bt` (sessionStorage) keeps the last 20 Home request durations (numbers only)
 for the hedge deadline.
 
 ## Features (ported from the extension)

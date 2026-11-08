@@ -15,6 +15,10 @@ extern "C" {
     /// `document.hidden`.
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn hidden() -> bool;
+    /// This page runs a browser extension's script whose extension was reloaded, updated or removed
+    /// since (the page keeps the old code until it loads again). Always false outside an extension.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn ext_gone() -> bool;
     /// `navigator.userAgent`.
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn ua() -> String;

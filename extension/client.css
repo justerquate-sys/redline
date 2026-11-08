@@ -565,7 +565,6 @@ body{overscroll-behavior:none;overflow-x:clip}
 .psbt button{height:28px;padding:0 10px;border:0;border-radius:7px;background:none;color:var(--ac);font:inherit;cursor:pointer;transition:background-color var(--d-hover) var(--e-out),transform var(--d-press) var(--e-out)}
 @media (hover:hover) and (pointer:fine){.psbt button:hover{background:var(--wa);transition-duration:0s,var(--d-press)}}
 .psbt button:active{transform:scale(calc(1 - var(--pd) * var(--mv)))}
-.pfail{display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;height:100%;color:var(--tx)}.pfail small{max-width:80%;color:var(--mu);text-align:center}
 /* Player failures stay in the player (since 2 Nov 2026). The panel replaces the
    box's content and settles in over the dimmed poster (@starting-style, no spinner); the reason is selectable
    text for inspection. The stuck status is persistent (src/player/fail.rs) and shown by .stuck: it fades
@@ -573,7 +572,7 @@ body{overscroll-behavior:none;overflow-x:clip}
 .player.failed{display:flex;align-items:center;justify-content:center}
 .pfp{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.16;pointer-events:none;transition:opacity var(--d-page) var(--e-out)}
 @starting-style{.pfp{opacity:0}}
-.pfail{position:relative;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;max-width:min(560px,calc(100% - 32px));max-height:calc(100% - 24px);overflow:auto;padding:22px 26px 20px;border:1px solid var(--ln);border-radius:var(--r-card);background:color-mix(in srgb,var(--pn) 92%,transparent);box-shadow:var(--sh);text-align:center;transition:opacity var(--d-panel) var(--e-out),transform var(--d-panel) var(--e-out)}
+.pfail{position:relative;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;align-items:center;max-width:min(560px,calc(100% - 32px));max-height:calc(100% - 24px);overflow:auto;padding:22px 26px 20px;border:1px solid var(--ln);border-radius:var(--r-card);background:color-mix(in srgb,var(--pn) 92%,transparent);box-shadow:var(--sh);color:var(--tx);text-align:center;transition:opacity var(--d-panel) var(--e-out),transform var(--d-panel) var(--e-out)}
 @starting-style{.pfail{opacity:0;transform:translateY(calc(8px * var(--mv))) scale(calc(1 - .02 * var(--mv)))}}
 .pfm{margin:0;color:var(--tx);font:600 17px/24px system-ui,sans-serif}
 .pfr{margin:6px 0 0;max-width:100%;color:var(--mu);font:12px/18px ui-monospace,Menlo,monospace;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text;cursor:text}
@@ -1396,10 +1395,12 @@ html[data-ytc-tv] .psbt::before{width:.4375rem;height:.4375rem}
 html[data-ytc-tv] .psbt span{min-width:0;white-space:normal;line-height:1.0625rem}
 html[data-ytc-tv] #ytc .psbt button{flex:none;height:1.75rem;padding:0 .875rem;border-radius:.375rem;background:var(--ac);color:var(--bg);font-size:.875rem;font-weight:600}
 /* Failure and offline: the panel in the middle, large, its first action focused. */
-html[data-ytc-tv] .pfail{max-width:30rem;height:auto;padding:2rem 2.25rem;border-radius:1rem;gap:0;background:var(--pn)}
+html[data-ytc-tv] .pfail{max-width:30rem;padding:2rem 2.25rem;border-radius:1rem;gap:0;background:var(--pn)}
 html[data-ytc-tv] .wp:has(.pfail)::before,html[data-ytc-tv] #ytc-player:has(.pfail)~#ytc-info{transition:none;}
 html[data-ytc-tv] .pfm{font:600 1.25rem/1.625rem var(--tvf)}
-html[data-ytc-tv] .pfr{margin-top:.5rem;font:.75rem/1.0625rem ui-monospace,Menlo,monospace;max-height:4.25rem;overflow:hidden}
+html[data-ytc-tv] .pfr{margin-top:.5rem;font:.75rem/1.0625rem ui-monospace,Menlo,monospace}
+html[data-ytc-tv] .pfw{display:block;max-height:4.25rem;overflow:hidden}
+html[data-ytc-tv] .pfv{display:block}
 html[data-ytc-tv] .pfb{gap:.75rem;margin-top:1.25rem}
 html[data-ytc-tv] #ytc .pfbt{height:2.5rem;padding:0 1.25rem;border-radius:.5rem;font-size:.9375rem}
 /* More info: the description as a panel from the right (↑/↓ scroll it). */

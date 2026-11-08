@@ -22,6 +22,7 @@ const wsMock = require('./ws-mock.cjs');
 // YTC_TIMING_ONLY=1 skips the checks and prints only that table.
 const EXT = extensionDir();
 const DEV_BUILD = isDevBuild(EXT);
+const VER = JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json'), 'utf8')).version;
 const TIMING_ONLY = !!process.env.YTC_TIMING_ONLY;
 const FIX = path.join(__dirname, 'fixtures');
 const fixture = name => zlib.gunzipSync(fs.readFileSync(path.join(FIX, name + '.gz')));
@@ -233,7 +234,11 @@ const AV1_OF = { 243: 396, 242: 395, 278: 394 }, AV1_FILE = { 396: '243', 395: '
 // is held until MIDERR.go, then answered with its first cluster id zeroed (the browser refuses the
 // append). midplayerr1/003: only the first player response's URLs (fresh URLs answer cleanly);
 // midplayerr2: every answer. staleurl…: the first URLs' later segments never answer (stale URLs).
+// midplayerr4/5/6: the first two player responses' URLs (a new player's answer cleanly). audiomidr01: the same for
+// the audio track, only the first response's URLs.
 const MIDERR = { go: false, held: [] };
+// broken…: every answer of every player has its first video cluster refused, until the video is in MENDED.
+const MENDED = new Set();
 const midRelease = () => { MIDERR.go = true; for (const p of MIDERR.held.splice(0)) Promise.resolve().then(() => googlevideo(p.route, p.url)).catch(() => {}); };
 const failures = { gone: false };
 // Stuck episodes (stalls are not failures): googlevideo requests of these videos are
@@ -253,6 +258,7 @@ function visionFixture(v) {
   if (v === 'liveupcomin') return { playabilityStatus: { status: 'LIVE_STREAM_OFFLINE', reason: 'Premieres in 2 hours' }, videoDetails: { videoId: v, isUpcoming: true, isLiveContent: true } };
   if (LIVE_IDS.includes(v)) {
     if (!LIVE.streams.has(v)) LIVE.streams.set(v, { t0: Date.now() });
+    LIVE.streams.get(v).players = (LIVE.streams.get(v).players || 0) + 1;
     const adaptiveFormats = LIVE.fx.formats.map(f => ({ ...f, url: `${GV}?expire=${EXPIRE}&ei=E2E&ip=0.0.0.0&id=${v}.2&itag=${f.itag}&source=yt_live_broadcast&live=1&v=${v}&c=VISIONOS` }));
     return { playabilityStatus: { status: 'OK' }, streamingData: { expiresInSeconds: '21540', adaptiveFormats, hlsManifestUrl: `https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1793600000/id/${v}.2/source/yt_live_broadcast/file/index.m3u8`, serverAbrStreamingUrl: 'https://rr1---sn-fixture.googlevideo.com/sabr' },
       videoDetails: { videoId: v, title: 'Fixture live stream', lengthSeconds: '0', isLive: true, isLiveContent: true, author: 'Fixture' } };
@@ -260,9 +266,15 @@ function visionFixture(v) {
   const gen = (playerGen.get(v) || 0) + 1;
   playerGen.set(v, gen);
   const fmts = v.startsWith('av1fault') ? [...media.formats, ...media.formats.filter(f => AV1_OF[f.itag]).map(f => ({ ...f, itag: AV1_OF[f.itag], mimeType: 'video/webm; codecs="av01.0.05M.08"', fps: 60 }))] : media.formats;
-  const adaptiveFormats = fmts.map(f => ({ ...f, url: `${GV}?expire=${expireFor(v, gen)}&ei=E2E&ip=0.0.0.0&id=o-fixture&mn=sn-fixture%2Csn-fixture2&fvip=1&itag=${f.itag}&source=youtube&v=${v}&gen=${gen}&mime=${encodeURIComponent(f.mimeType.split(';')[0])}&clen=${f.contentLength}&c=VISIONOS` }));
-  // staleurl… (first response) and expirenoext (every response): URLs that run out in 20 minutes.
-  const life = (v.startsWith('staleurl') && gen === 1) || v === 'expirenoext' || v === 'expirehang1' ? '1200' : '21540';
+  let adaptiveFormats = fmts.map(f => ({ ...f, url: `${GV}?expire=${expireFor(v, gen)}&ei=E2E&ip=0.0.0.0&id=o-fixture&mn=sn-fixture%2Csn-fixture2&fvip=1&itag=${f.itag}&source=youtube&v=${v}&gen=${gen}&mime=${encodeURIComponent(f.mimeType.split(';')[0])}&clen=${f.contentLength}&c=VISIONOS` }));
+  // An auto-dubbed video (dubaudio…): the audio format twice, the dub listed first, its file with other offsets.
+  if (v.startsWith('dubaudio')) {
+    const track = (f, lang, name, audioIsDefault) => ({ ...f, url: `${f.url}&lang=${lang}`, audioTrack: { id: `${lang}.3`, displayName: name, audioIsDefault } });
+    const a = adaptiveFormats.filter(f => f.mimeType.startsWith('audio/'));
+    adaptiveFormats = [...adaptiveFormats.filter(f => !f.mimeType.startsWith('audio/')), ...a.map(f => track(f, 'de', 'German', false)), ...a.map(f => track(f, 'ru', 'Russian (original)', true))];
+  }
+  // staleurl… and dubaudio… (first response) and expirenoext (every response): URLs that run out in 20 minutes.
+  const life = ((v.startsWith('staleurl') || v.startsWith('dubaudio')) && gen === 1) || v === 'expirenoext' || v === 'expirehang1' ? '1200' : '21540';
   return { responseContext: {}, playabilityStatus: { status: 'OK' }, streamingData: { expiresInSeconds: life, adaptiveFormats },
     videoDetails: { videoId: v, title: 'Fixture video', lengthSeconds: String(SECONDS), author: 'Fixture' } };
 }
@@ -300,7 +312,7 @@ const json3 = JSON.stringify({ wireMagic: 'pb3', events: [{ tStartMs: 0, dDurati
   ...Array.from({ length: SECONDS / 2 }, (_, i) => ({ tStartMs: i * 2000, dDurationMs: 2000, wWinId: 1, segs: [{ utf8: `Caption line ${i}` }, { utf8: ` <b>&amp;</b>`, tOffsetMs: 300 }] }))] });
 // ---- live fixtures: HLS master/media playlists (sliding window that grows in real
 // time, 3.2 s segments) + fMP4 segments by sequence number (make-live.cjs).
-const LIVE_IDS = ['livestream1', 'liveended01'];
+const LIVE_IDS = ['livestream1', 'liveended01', 'liveautotry'];
 const LIVE = { fx: null, streams: new Map(), base: 1000, window: 8 };
 const liveHead = st => LIVE.base + 5 + Math.floor((Date.now() - st.t0) / (LIVE.fx.SEG * 1000));
 function liveManifest(route, url) {
@@ -325,7 +337,10 @@ function liveSegment(route, url) {
   log.gv.push({ itag: String(itag), v, sq, live: true, t: Date.now() });
   const cors = { 'access-control-allow-origin': 'https://www.youtube.com', 'content-type': 'video/mp4' };
   if (!st || sq > liveHead(st) || sq < LIVE.base) return route.fulfill({ status: 404, headers: cors, body: '' });
-  const body = LIVE.fx.segment(itag, sq, st.t0 + (sq - LIVE.base - 5) * LIVE.fx.SEG * 1000);
+  let body = LIVE.fx.segment(itag, sq, st.t0 + (sq - LIVE.base - 5) * LIVE.fx.SEG * 1000);
+  // A media error live: the first player's segments are refused once `corrupt` is set (the next player's are fine).
+  // (Its fragment header's box renamed: the player's own check still finds moof and mdat, the browser refuses it.)
+  if (body && st.corrupt && st.players === 1) { body = Buffer.from(body); const at = body.indexOf('mfhd'); if (at >= 0) body.write('xxxx', at); }
   return body ? route.fulfill({ status: 200, headers: cors, body }) : route.fulfill({ status: 404, headers: cors, body: '' });
 }
 const mediaFiles = new Map();
@@ -336,7 +351,7 @@ function googlevideo(route, url) {
   if (url.pathname === '/generate_204') { log.warm.push(url.hostname); return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' }, body: '' }); }
   const itag = url.searchParams.get('itag'), v = url.searchParams.get('v'), gen = +url.searchParams.get('gen');
   const [a, b] = (url.searchParams.get('range') || '').split('-').map(Number);
-  log.gv.push({ itag, v, gen, a, b, host: url.hostname, t: Date.now() });
+  log.gv.push({ itag, v, gen, a, b, host: url.hostname, t: Date.now(), lang: url.searchParams.get('lang') });
   const cors = { 'access-control-allow-origin': 'https://www.youtube.com', 'content-type': 'application/octet-stream' };
   if (STALL.hold.has(v) && (STALL.hold.get(v) !== 'chunks' || a > 0)) return new Promise(() => STALL.parked.push({ route, url }));
   if ((v === 'refresh4033' && gen === 1 && a > 0) || (v === 'gone403gone' && failures.gone)) return route.fulfill({ status: 403, headers: cors, body: '' });
@@ -365,7 +380,10 @@ function googlevideo(route, url) {
     const f = media.formats.find(x => String(x.itag) === itag), later = f && a > +f.indexRange.end + 1 && a < file.length;
     if (later && v === 'staleurl001' && gen === 1) return new Promise(() => {});
     if (later && v === 'staleurl002' && gen === 1) return new Promise(() => {});
-    const mid = f && f.mimeType.startsWith('video/') && later && (((v === 'midplayerr1' || v === 'midplayerr3') && gen === 1) || v === 'midplayerr2');
+    if (later && v.startsWith('dubaudio') && gen === 1) return new Promise(() => {});
+    // The dub's file: the same range lands elsewhere in it (not on a cluster), as in any other file.
+    if (url.searchParams.get('lang') === 'de' && a < file.length) return route.fulfill({ status: 200, headers: cors, body: file.subarray(a + 1000, Math.min(b + 1000, file.length - 1) + 1) });
+    const mid = f && later && ((f.mimeType.startsWith('video/') && (((v === 'midplayerr1' || v === 'midplayerr3') && gen === 1) || v === 'midplayerr2' || (['midplayerr4', 'midplayerr5', 'midplayerr6'].includes(v) && gen <= 2))) || (f.mimeType.startsWith('audio/') && v === 'audiomidr01' && gen === 1));
     if (mid && !MIDERR.go) return new Promise(() => MIDERR.held.push({ route, url }));
     if (mid) {
       const body = Buffer.from(file.subarray(a, Math.min(b, file.length - 1) + 1));
@@ -378,7 +396,9 @@ function googlevideo(route, url) {
   // A media error before the first frame: the first video cluster's id bytes zeroed (no valid WebM
   // element, so the browser refuses the append) in every answer for mediaerr001's first player
   // response (its fresh URLs answer cleanly) and in every answer for mediaerr002.
-  if ((v === 'mediaerr001' && gen === 1) || v === 'mediaerr002') {
+  // autotry0001: the first two responses (three in-place recoveries fail, a new player plays); mediaerr004 and
+  // broken…: like mediaerr002 (broken… until MENDED).
+  if ((v === 'mediaerr001' && gen === 1) || v === 'mediaerr002' || v === 'mediaerr004' || (v === 'autotry0001' && gen <= 2) || (v.startsWith('broken') && !MENDED.has(v))) {
     const f = media.formats.find(x => String(x.itag) === itag);
     if (f && f.mimeType.startsWith('video/') && a < file.length) {
       const body = Buffer.from(file.subarray(a, Math.min(b, file.length - 1) + 1)), at = +f.indexRange.end + 1;
@@ -3210,14 +3230,14 @@ chrome.runtime.onMessage.addListener(m => {
   // ---- Failures stay in the player: a panel in the
   // player box with the message and the reason, Try again (a new player, fresh VISIONOS) and Open on YouTube.
   const visCalls = (v, from = 0) => log.api.slice(from).filter(a => a.ep === 'player' && a.body.videoId === v && a.body.context.client.clientName === 'VISIONOS');
-  const panel = async () => ({ url: new URL(page.url()).search, m: await page.textContent('#ytc-player.failed .pfm'), r: await page.textContent('#ytc-player.failed .pfr') });
+  const panel = async () => ({ url: new URL(page.url()).search, m: await page.textContent('#ytc-player.failed .pfm'), r: await page.textContent('#ytc-player.failed .pfr .pfw') });
   // The panel's buttons: label centred in its box (±0.5 px), both on one row, centred in the player (±1 px).
   const panelGeometry = () => page.evaluate(() => {
     const box = document.getElementById('ytc-player').getBoundingClientRect(), bs = [...document.querySelectorAll('#ytc-player .pfb .pfbt')];
     const off = bs.map(b => { const r = b.getBoundingClientRect(), g = document.createRange(); g.selectNodeContents(b); const t = g.getBoundingClientRect();
       return { b: b.textContent, dx: +((t.left + t.width / 2) - (r.left + r.width / 2)).toFixed(1), dy: +((t.top + t.height / 2) - (r.top + r.height / 2)).toFixed(1), top: r.top }; });
     const a = bs[0].getBoundingClientRect(), z = bs.at(-1).getBoundingClientRect(), p = document.querySelector('#ytc-player .pfail').getBoundingClientRect();
-    return { off: off.filter(o => Math.abs(o.dx) > .5 || Math.abs(o.dy) > .5), row: Math.abs(off[0].top - off.at(-1).top), rowDx: +(((a.left + z.right) / 2) - (box.left + box.width / 2)).toFixed(1), panelDx: +(((p.left + p.right) / 2) - (box.left + box.width / 2)).toFixed(1), panelDy: +(((p.top + p.bottom) / 2) - (box.top + box.height / 2)).toFixed(1) };
+    return { off: off.filter(o => Math.abs(o.dx) > .5 || Math.abs(o.dy) > .5), row: Math.abs(off[0].top - off.at(-1).top), rowDx: +(((a.left + z.right) / 2) - (box.left + box.width / 2)).toFixed(1), panelDx: +(((p.left + p.right) / 2) - (box.left + box.width / 2)).toFixed(1), panelDy: +(((p.top + p.bottom) / 2) - (box.top + box.height / 2)).toFixed(1), h: p.height, H: box.height };
   });
   await step('own player: forced failure (VISIONOS UNPLAYABLE) → the panel in the player (the page stays); reason in debug overlay', async () => {
     const docs = log.docs.length;
@@ -3225,6 +3245,7 @@ chrome.runtime.onMessage.addListener(m => {
     await page.waitForSelector('#ytc-player.failed .pfail');
     await page.waitForTimeout(600);
     assert.deepEqual(await panel(), { url: '?v=unplayable1&t=7', m: "YouTube won't play this video here", r: 'VISIONOS UNPLAYABLE: Forced failure (e2e)' });
+    assert.equal(await page.textContent('.pfr'), `VISIONOS UNPLAYABLE: Forced failure (e2e) · ${VER}`, 'the technical line says which code ran');
     assert.equal(log.docs.length, docs + 1, 'no navigation after the failure');
     assert.equal(await page.locator('#ytc-video').count(), 0, 'media released');
     assert.equal(await page.$eval('.pfr', e => getComputedStyle(e).userSelect), 'text', 'the reason is selectable');
@@ -3420,6 +3441,7 @@ chrome.runtime.onMessage.addListener(m => {
   });
 
   await step('own player: 403 again after the refresh → the panel at the current time; Try again resumes there with a fresh VISIONOS call (not the cached one)', async () => {
+    await page.evaluate(() => localStorage.setItem('ytc-test-noautotry', '1'));
     failures.gone = false;
     await page.goto('https://www.youtube.com/watch?v=gone403gone', { waitUntil: 'commit' });
     await waitT(() => document.getElementById('ytc-video')?.currentTime >= 4, null, 9000);
@@ -3450,6 +3472,7 @@ chrome.runtime.onMessage.addListener(m => {
     await page.click('#ytc-qual');
     await page.locator('#ytc-menu button', { hasText: 'Auto' }).click();
   });
+  await page.evaluate(() => localStorage.removeItem('ytc-test-noautotry')).catch(() => {});
 
   await step('own player: decodingInfo ruling out the format being loaded never strands it (incident tz8jz7IiQK0)', async () => {
     await page.evaluate(() => localStorage.setItem('ytc-test-caps', JSON.stringify({ 243: { s: false, e: false } })));
@@ -3726,6 +3749,7 @@ chrome.runtime.onMessage.addListener(m => {
     assert.match(rec[0].reason, /^(SourceBuffer error|appendBuffer|media error).* before the first frame: recovered after [\d.]+ s \(2 automatic retries\)$/);
     assert.equal(incidents.slice(inc0).filter(x => x.kind === 'player-failed').length, 0, 'no failure reported');
     const inc1 = incidents.length, n1 = visCalls('mediaerr002').length;
+    await page.evaluate(() => localStorage.setItem('ytc-test-noautotry', '1'));
     await page.goto('https://www.youtube.com/watch?v=mediaerr002', { waitUntil: 'commit' });
     await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 15000 });
     const p = await panel();
@@ -3736,7 +3760,7 @@ chrome.runtime.onMessage.addListener(m => {
     assert.ok(vids.size >= 2, 'the last retry tried another format: ' + [...vids]);
     for (let i = 0; i < 50 && !incidents.slice(inc1).some(x => x.kind === 'player-failed'); i++) await page.waitForTimeout(100);
     assert.equal(incidents.slice(inc1).filter(x => x.kind === 'player-failed').length, 1);
-    } finally { await page.evaluate(() => localStorage.removeItem('ytc-test-nohedge')).catch(() => {}); }
+    } finally { await page.evaluate(() => { localStorage.removeItem('ytc-test-nohedge'); localStorage.removeItem('ytc-test-noautotry'); }).catch(() => {}); }
   });
 
   // Owner report (7 Nov 2026, Brave): "The browser couldn't play this video — SourceBuffer error (video/mp4;
@@ -3746,7 +3770,7 @@ chrome.runtime.onMessage.addListener(m => {
   const vel = () => page.evaluate(() => { const v = document.getElementById('ytc-video'); return { t: v ? v.currentTime : 0, p: v ? v.paused : null, rs: v ? v.readyState : 0, f: !!document.querySelector('#ytc-player.failed'), stuck: !!document.querySelector('#ytc-player.stuck') }; });
   // No VISIONOS hedge (its second request would be another player response) and, with `held`, no throttle
   // verdicts on requests the fixture holds on purpose.
-  const noHedge = async (fn, held) => { const keys = ['ytc-test-nohedge', ...(held ? ['ytc-test-nothrottle'] : [])];
+  const noHedge = async (fn, held, noAuto) => { const keys = ['ytc-test-nohedge', ...(held ? ['ytc-test-nothrottle'] : []), ...(noAuto ? ['ytc-test-noautotry'] : [])];
     await page.evaluate(k => k.forEach(x => localStorage.setItem(x, '1')), keys);
     try { return await fn(); } finally { await page.evaluate(k => k.forEach(x => localStorage.removeItem(x)), keys).catch(() => {}); } };
   await step('own player: a media error mid-playback recovers by itself at the same time, playing or paused (fresh MediaSource, then fresh URLs), never the panel', () => noHedge(async () => {
@@ -3830,7 +3854,297 @@ chrome.runtime.onMessage.addListener(m => {
     assert.equal(incidents.slice(inc0).filter(x => x.kind === 'player-failed').length, 1);
     assert.equal(incidents.slice(inc0).filter(x => x.kind === 'player-recovered').length, 0);
     MIDERR.go = false;
+  }, true, true));
+
+  // ---- The automatic Try again (owner, 8 Nov 2026: nobody should press Try again for what Try again would fix).
+  // Whether the panel appeared at any moment since this was called.
+  const panelWatch = () => page.evaluate(() => { window.__pfail = 0; const see = () => { if (document.querySelector('.pfail')) window.__pfail++; }; see(); new MutationObserver(see).observe(document.documentElement, { childList: true, subtree: true }); });
+  const panelSeen = () => page.evaluate(() => window.__pfail);
+  const kindsOf = from => incidents.slice(from).filter(x => x.kind !== 'perf').map(x => x.kind);
+  const firstFrameAt = (t = 2) => waitT(t => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video')?.currentTime > t, t, 15000);
+
+  await step('own player: an audio SourceBuffer error mid-playback recovers by itself, the panel never appearing', () => noHedge(async () => {
+    MIDERR.go = false;
+    const v = 'audiomidr01', inc0 = incidents.length;
+    await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+    await panelWatch();
+    await firstFrameAt();
+    const t0 = (await vel()).t;
+    midRelease();
+    for (let i = 0; i < 150; i++) {
+      const r = await vel();
+      assert.ok(!r.f, 'no panel');
+      if (incidents.slice(inc0).some(x => x.kind === 'player-recovered') && r.t > t0 + 2) break;
+      await page.waitForTimeout(100);
+    }
+    const rec = incidents.slice(inc0).filter(x => x.kind === 'player-recovered');
+    assert.equal(rec.length, 1, JSON.stringify(kindsOf(inc0)));
+    assert.match(rec[0].reason, /^(SourceBuffer error \(audio\/webm; codecs="opus"\)|appendBuffer|media error|MediaSource).* at 0:\d\d: recovered after /);
+    assert.equal(await panelSeen(), 0, 'the panel never appeared');
+    assert.deepEqual(kindsOf(inc0).filter(k => k !== 'player-recovered'), [], 'no automatic Try again needed');
+    MIDERR.go = false;
   }, true));
+
+  await step('own player: errors through every in-place recovery → an automatic Try again at the same position and play state; the panel never appears', () => noHedge(async () => {
+    for (const [v, paused] of [['midplayerr4', false], ['midplayerr5', true]]) {
+      MIDERR.go = false;
+      const inc0 = incidents.length, n0 = visCalls(v).length;
+      await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+      await panelWatch();
+      await firstFrameAt();
+      if (paused) await page.evaluate(() => document.getElementById('ytc-video').pause());
+      const t0 = (await vel()).t, tv0 = await page.evaluate(() => document.getElementById('ytc-video'));
+      midRelease();
+      // The new player's media (the third player response) came, and the wait kept the picture.
+      let held = false;
+      for (let i = 0; i < 200 && !log.gv.some(g => g.v === v && g.gen === 3); i++) {
+        held = held || await page.evaluate(() => !!document.querySelector('#ytc-player canvas.pwf'));
+        await page.waitForTimeout(50);
+      }
+      assert.ok(log.gv.some(g => g.v === v && g.gen === 3), `${v}: a new player: ` + JSON.stringify(kindsOf(inc0)));
+      assert.ok(held, `${v}: the picture stayed through the wait`);
+      await waitT(() => document.getElementById('ytc-video')?.readyState >= 2, null, 8000);
+      const r = await vel();
+      assert.ok(r.t >= t0 - 0.6, `${v}: at the same position: ${r.t} after ${t0}`);
+      assert.equal(visCalls(v).length - n0, 3, `${v}: the first response, one recovery's fresh URLs, the new player`);
+      if (paused) {
+        assert.ok(r.p, `${v}: stayed paused`);
+        assert.ok(Math.abs(r.t - t0) < 0.6, `${v}: the same spot: ${r.t} vs ${t0}`);
+        await page.evaluate(() => document.getElementById('ytc-video').play());
+      }
+      await waitT(t => document.getElementById('ytc-video')?.currentTime > t, t0 + 1.5, 10000);
+      assert.equal(await panelSeen(), 0, `${v}: the panel never appeared`);
+      assert.deepEqual(kindsOf(inc0).filter(k => k === 'player-retry' || k === 'player-failed'), ['player-retry'], `${v}: one retry, no failure`);
+      assert.match(await playerNotes(), /automatic Try again \(1 so far\)/);
+    }
+    MIDERR.go = false;
+  }, true));
+
+  await step('own player: a media error before the first frame that outlives the in-place recoveries plays after an automatic Try again; no panel', () => noHedge(async () => {
+    const v = 'autotry0001', inc0 = incidents.length, n0 = visCalls(v).length;
+    await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+    await panelWatch();
+    await waitT(() => document.getElementById('ytc-video')?.currentTime > 1, null, 20000);
+    assert.equal(await panelSeen(), 0, 'the panel never appeared');
+    assert.equal(visCalls(v).length - n0, 3);
+    assert.deepEqual(kindsOf(inc0).filter(k => k === 'player-retry' || k === 'player-failed'), ['player-retry']);
+  }));
+
+  await step('own player: a failure that stays ends in the panel after 3 automatic Try agains (1 s, 4 s, 10 s apart), with the version; never a loop', () => noHedge(async () => {
+    const v = 'mediaerr004', inc0 = incidents.length, n0 = visCalls(v).length;
+    await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+    await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 60000 });
+    assert.equal(await page.textContent('.pfm'), "The browser couldn't play this video");
+    const line = await page.textContent('.pfr');
+    assert.ok(line.endsWith(` · 3 automatic Try agains · ${VER}`), line);
+    const calls = visCalls(v).slice(n0);
+    assert.equal(calls.length, 8, 'four players, each with one fresh-URL recovery');
+    // Each player's first call: 0, 2, 4, 6.
+    const gaps = [2, 4, 6].map(i => calls[i].t - calls[i - 1].t);
+    assert.ok(gaps[0] >= 950 && gaps[1] >= 3950 && gaps[2] >= 9950, 'the backoff: ' + gaps);
+    for (let i = 0; i < 30 && !kindsOf(inc0).includes('player-failed'); i++) await page.waitForTimeout(100);
+    assert.deepEqual(kindsOf(inc0).filter(k => k === 'player-retry' || k === 'player-failed'), ['player-retry', 'player-retry', 'player-retry', 'player-failed']);
+    await page.waitForTimeout(12000);
+    assert.equal(visCalls(v).length - n0, 8, 'no further retry');
+    assert.equal(await page.locator('#ytc-player.failed .pfail').count(), 1);
+  }));
+
+  await step('own player: a permanent reason shows the panel at once, with no automatic Try again', () => noHedge(async () => {
+    for (const [v, m] of [['unplayable1', "YouTube won't play this video here"], ['members0001', 'Members-only video'], ['agerestrict', 'Age-restricted — sign-in needed'], ['liveupcomin', 'Premieres in 2 hours']]) {
+      const inc0 = incidents.length, n0 = visCalls(v).length;
+      await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+      await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 5000 });
+      assert.equal(await page.textContent('.pfm'), m);
+      assert.ok((await page.textContent('.pfr')).endsWith(` · ${VER}`), 'no retries named, the version');
+      await page.waitForTimeout(v === 'unplayable1' ? 2500 : 300);
+      assert.equal(visCalls(v).length - n0, 1, `${v}: one player response`);
+      assert.ok(!kindsOf(inc0).includes('player-retry'));
+      // Coming back to the tab does not ask again either.
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await page.waitForTimeout(v === 'unplayable1' ? 500 : 100);
+      assert.equal(visCalls(v).length - n0, 1, `${v}: nothing on return`);
+    }
+  }));
+
+  await step('own player: navigating away during the wait for an automatic Try again never restarts the old video', () => noHedge(async () => {
+    const v = 'mediaerr004';
+    for (const to of ['/results?search_query=left+during+the+backoff', '/watch?v=aqz-KE-bpKQ']) {
+      const inc0 = incidents.length;
+      await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+      // The second failure: the 4 s wait is running.
+      for (let i = 0; i < 200 && kindsOf(inc0).filter(k => k === 'player-retry').length < 2; i++) await page.waitForTimeout(50);
+      assert.equal(kindsOf(inc0).filter(k => k === 'player-retry').length, 2, JSON.stringify(kindsOf(inc0)));
+      assert.ok(await page.locator('#ytc-player.stuck').count(), 'the calm status during the longer wait');
+      assert.equal(await page.locator('#ytc-player .pfail').count(), 0, 'no panel during the wait');
+      const n = visCalls(v).length;
+      await page.evaluate(to => { history.pushState(null, '', to); dispatchEvent(new PopStateEvent('popstate')); }, to);
+      await page.waitForTimeout(5000);
+      assert.equal(visCalls(v).length, n, `${to}: the old video was not started again`);
+      assert.equal(new URL(page.url()).pathname + new URL(page.url()).search, to);
+      assert.equal(await page.locator('.pfail').count(), 0);
+    }
+  }));
+
+  await step('own live: a media error in a live stream gets the automatic Try again and plays on; no panel', () => noHedge(async () => {
+    const v = 'liveautotry', inc0 = incidents.length;
+    LIVE.streams.delete(v);
+    const n0 = visCalls(v).length;
+    await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+    await panelWatch();
+    await waitT(() => document.documentElement.dataset.ytcFirstFrame && !document.getElementById('ytc-video').paused, null, 15000);
+    LIVE.streams.get(v).corrupt = true;
+    for (let i = 0; i < 300 && visCalls(v).length - n0 < 2; i++) await page.waitForTimeout(100);
+    assert.equal(visCalls(v).length - n0, 2, 'a new player: ' + JSON.stringify(kindsOf(inc0)));
+    await page.waitForTimeout(300);
+    await waitT(() => { const e = document.getElementById('ytc-video'); return e && !e.paused && e.readyState >= 3; }, null, 15000);
+    const t = (await vel()).t;
+    await waitT(t => document.getElementById('ytc-video')?.currentTime > t + 1, t, 10000);
+    assert.equal(await panelSeen(), 0, 'the panel never appeared');
+    assert.deepEqual(kindsOf(inc0).filter(k => k === 'player-retry' || k === 'player-failed'), ['player-retry']);
+    assert.match(incidents.slice(inc0).find(x => x.kind === 'player-retry').reason, /^(SourceBuffer|appendBuffer|media error|MediaSource)/);
+  }));
+
+  await step('failure panel: coming back to the tab retries once and clears the panel when it works; once per return, with a cap, never a loop', () => noHedge(async () => {
+    // Works on return.
+    const v = 'broken00001', n0 = visCalls(v).length;
+    await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+    await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 20000 });
+    MENDED.add(v);
+    const n1 = visCalls(v).length;
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await waitT(() => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video')?.currentTime > 1, null, 15000);
+    assert.equal(await page.locator('.pfail').count(), 0, 'the panel is gone');
+    assert.equal(visCalls(v).length - n1, 1, 'one new player');
+    assert.ok(n1 > n0);
+    // Still broken: one retry per return, then the panel again; at most three.
+    const w = 'broken00002';
+    await page.goto(`https://www.youtube.com/watch?v=${w}`, { waitUntil: 'commit' });
+    await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 20000 });
+    const panelBack = async n => { for (let i = 0; i < 100 && visCalls(w).length === n; i++) await page.waitForTimeout(50); assert.ok(visCalls(w).length > n, 'a retry'); await waitT(() => !!document.querySelector('#ytc-player.failed .pfail'), null, 20000); };
+    const show = () => page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    // A window that only lost the focus for a moment: nothing.
+    let n = visCalls(w).length;
+    await page.evaluate(() => { dispatchEvent(new Event('blur')); dispatchEvent(new Event('focus')); });
+    await page.waitForTimeout(400);
+    assert.equal(visCalls(w).length, n, 'a short blur asks nothing');
+    await show();
+    await panelBack(n);
+    assert.ok((await page.textContent('.pfr')).endsWith(` · 1 automatic Try again · ${VER}`), await page.textContent('.pfr'));
+    // A second "return" in the same moment (visibility and focus of one return).
+    n = visCalls(w).length;
+    await show();
+    await page.waitForTimeout(400);
+    assert.equal(visCalls(w).length, n, 'one retry per return');
+    for (const k of [2, 3]) {
+      await page.waitForTimeout(5200);
+      n = visCalls(w).length;
+      await show();
+      await panelBack(n);
+      assert.ok((await page.textContent('.pfr')).includes(`${k} automatic Try agains`), await page.textContent('.pfr'));
+    }
+    await page.waitForTimeout(5200);
+    n = visCalls(w).length;
+    await show();
+    await page.waitForTimeout(1500);
+    assert.equal(visCalls(w).length, n, 'the cap');
+    assert.equal(await page.locator('#ytc-player.failed .pfail').count(), 1);
+  }, false, true));
+
+  await step('failure panel: a compact card centred in the player (well under its height) at desktop sizes and in a narrow window', () => noHedge(async () => {
+    const v = 'broken00003';
+    await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+    await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 20000 });
+    await page.waitForTimeout(400);
+    try {
+      const seen = [];
+      for (const [w, h] of [[1400, 900], [2560, 1440], [900, 800], [480, 800]]) {
+        await page.setViewportSize({ width: w, height: h });
+        await page.waitForTimeout(300);
+        const g = await panelGeometry();
+        seen.push([w, g]);
+        if (process.env.YTC_SHOTS) await page.screenshot({ path: path.join(process.env.YTC_SHOTS, `panel-${w}.png`) });
+      }
+      for (const [w, g] of seen) {
+        assert.ok(Math.abs(g.panelDx) <= 1 && Math.abs(g.panelDy) <= 1, `centred at ${w}px: ${JSON.stringify(g)}`);
+        assert.ok(g.h <= g.H - 24, `inside the player at ${w}px: ${JSON.stringify(g)}`);
+        if (w >= 900) assert.ok(g.h < g.H * 0.5, `compact at ${w}px: ${JSON.stringify(g)}`);
+      }
+    } finally { await page.setViewportSize({ width: 1400, height: 900 }); }
+  }, false, true));
+
+  // A stale tab: the extension was reloaded or updated under it. The page goes on running the old code.
+  await step('own player: a stale tab reloads the page at the video and position instead of the panel, once; a paused video stays paused', () => noHedge(async () => {
+    const v = 'broken00004', docs = () => log.docs.filter(u => u.includes(v)).length;
+    await page.goto('https://www.youtube.com/results?search_query=stale+tab', { waitUntil: 'commit' });
+    await page.evaluate(() => { localStorage.setItem('ytc-test-stale', '1'); sessionStorage.removeItem('ytc:stale'); });
+    try {
+      const inc0 = incidents.length;
+      await page.goto(`https://www.youtube.com/watch?v=${v}&t=3`, { waitUntil: 'commit' });
+      for (let i = 0; i < 200 && docs() < 2; i++) await page.waitForTimeout(50);
+      assert.equal(docs(), 2, 'one reload');
+      assert.ok(log.docs.includes(`https://www.youtube.com/watch?v=${v}&t=3s`), 'at the video and position: ' + log.docs.slice(-2));
+      // The reloaded page fails too (still "stale"): no second reload, the ordinary way on.
+      for (let i = 0; i < 200 && !kindsOf(inc0).includes('player-retry'); i++) await page.waitForTimeout(50);
+      assert.ok(kindsOf(inc0).includes('player-retry'), JSON.stringify(kindsOf(inc0)));
+      await page.waitForTimeout(800);
+      assert.equal(docs(), 2, 'never a loop');
+      // Mid-video and paused: the reloaded page is at the spot, paused.
+      await page.goto('https://www.youtube.com/results?search_query=stale+tab+2', { waitUntil: 'commit' });
+      await page.evaluate(() => sessionStorage.removeItem('ytc:stale'));
+      MIDERR.go = false;
+      await page.goto('https://www.youtube.com/watch?v=midplayerr6', { waitUntil: 'commit' });
+      await firstFrameAt();
+      await page.evaluate(() => document.getElementById('ytc-video').pause());
+      const t0 = (await vel()).t;
+      const d0 = log.docs.length;
+      midRelease();
+      for (let i = 0; i < 200 && log.docs.length === d0; i++) await page.waitForTimeout(50);
+      assert.equal(log.docs.length, d0 + 1, 'reloaded');
+      assert.match(log.docs.at(-1), /\/watch\?v=midplayerr6&t=\d+s$/);
+      await waitT(() => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video')?.readyState >= 2, null, 15000);
+      const r = await vel();
+      assert.ok(r.p, 'stayed paused');
+      assert.ok(Math.abs(r.t - t0) <= 1.2, `at the spot: ${r.t} vs ${t0}`);
+      MIDERR.go = false;
+    } finally { await page.evaluate(() => { localStorage.removeItem('ytc-test-stale'); sessionStorage.removeItem('ytc:stale'); }).catch(() => {}); }
+  }));
+
+  await step('own player: a tab orphaned for real (the extension reloaded under it) keeps playing and navigating; a failing player then reloads the page', async () => {
+    const prof = fs.mkdtempSync(path.join(os.tmpdir(), 'ytc-orphan-'));
+    const c2 = await chromium.launchPersistentContext(prof, { headless: true, ...chromiumOptions(), viewport: { width: 1400, height: 900 },
+      args: [`--disable-extensions-except=${load}`, `--load-extension=${load}`, '--autoplay-policy=no-user-gesture-required'] });
+    try {
+      await c2.route('**/*', handle);
+      await c2.route('chrome-extension://**/*', route => route.continue());
+      const sw2 = c2.serviceWorkers()[0] || await c2.waitForEvent('serviceworker');
+      const p2 = await c2.newPage();
+      const isolated = async expr => {
+        const cdp = await c2.newCDPSession(p2), ctxs = [];
+        cdp.on('Runtime.executionContextCreated', e => ctxs.push(e.context));
+        await cdp.send('Runtime.enable');
+        const c = ctxs.find(x => x.name === 'Redline');
+        const r = await cdp.send('Runtime.evaluate', { contextId: c.id, expression: expr, returnByValue: true });
+        await cdp.detach();
+        return r.result.value;
+      };
+      await p2.goto('https://www.youtube.com/watch?v=orphan00001', { waitUntil: 'commit' });
+      await p2.waitForFunction(() => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video').currentTime > 1, null, { timeout: 20000 });
+      assert.ok(await isolated('!!chrome.runtime.id'), 'the extension is there');
+      await sw2.evaluate(() => chrome.runtime.reload()).catch(() => {});
+      for (let i = 0; i < 100 && await isolated('!!chrome.runtime.id'); i++) await p2.waitForTimeout(100);
+      assert.equal(await isolated('String(chrome.runtime.id)'), 'undefined', 'the context is gone');
+      // Nothing of the player goes through the extension: it plays on, a new video in the page plays.
+      const t0 = await p2.evaluate(() => document.getElementById('ytc-video').currentTime);
+      await p2.waitForFunction(t => document.getElementById('ytc-video').currentTime > t + 1, t0, { timeout: 8000 });
+      await p2.evaluate(() => { delete document.documentElement.dataset.ytcFirstFrame; history.pushState(null, '', '/watch?v=orphan00002'); dispatchEvent(new PopStateEvent('popstate')); });
+      await p2.waitForFunction(() => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video')?.currentTime > 1, null, { timeout: 20000 });
+      // A failing player: the page loads again at its video and position (here the test's extension does not come back).
+      const v = 'broken00005', d0 = log.docs.length;
+      await p2.evaluate(v => { history.pushState(null, '', `/watch?v=${v}&t=3`); dispatchEvent(new PopStateEvent('popstate')); }, v);
+      for (let i = 0; i < 300 && log.docs.length === d0; i++) await p2.waitForTimeout(50);
+      assert.equal(log.docs[d0], `https://www.youtube.com/watch?v=${v}&t=3s`, 'a new document: ' + log.docs.slice(d0));
+    } finally { await c2.close().catch(() => {}); fs.rmSync(prof, { recursive: true, force: true }); }
+  });
 
   // A forgotten tab: URLs near their expiry (their own lifetime, `expiresInSeconds`: 20 min). The first URLs'
   // later segments never answer (stale), so only fresh URLs asked before the play needs data keep it playing
@@ -3862,6 +4176,26 @@ chrome.runtime.onMessage.addListener(m => {
       assert.equal(visCalls(v).length - n0, 2, `${v}: one refresh`);
       assert.equal(incidents.slice(inc0).filter(x => x.kind === 'player-stuck' || x.kind === 'player-failed').length, 0, JSON.stringify(incidents.slice(inc0).map(x => [x.kind, x.reason])));
     }
+  }, true));
+
+  // A real cause of "SourceBuffer error (audio/webm; codecs="opus")" (8 Nov 2026): on a video with several audio
+  // tracks every track has the same itag, and a refresh gave the audio representation the URL of the first one
+  // listed: the index's byte ranges then cut another file in the middle of a cluster, and the append failed.
+  await step('own player: fresh URLs on a dubbed video keep its audio track (the same itag in another language is another file): never an audio SourceBuffer error', () => noHedge(async () => {
+    const v = 'dubaudio001', inc0 = incidents.length, n0 = visCalls(v).length;
+    await page.goto(`https://www.youtube.com/watch?v=${v}`, { waitUntil: 'commit' });
+    await waitT(() => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video').currentTime > 1.5, null, 15000);
+    await page.evaluate(() => document.getElementById('ytc-video').pause());
+    await page.waitForTimeout(3500);
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    assert.equal(await visWait(v, n0, 2), 2, 'fresh URLs when the tab is shown');
+    const t0 = (await vel()).t;
+    await page.evaluate(() => document.getElementById('ytc-video').play());
+    await waitT(t => document.getElementById('ytc-video')?.currentTime > t + 5, t0, 15000);
+    const audio = log.gv.filter(g => g.v === v && g.gen === 2 && g.lang);
+    const kinds = incidents.slice(inc0).filter(x => x.kind !== 'perf').map(x => [x.kind, x.reason]);
+    assert.ok(audio.length > 0 && audio.every(g => g.lang === 'ru'), 'the audio stays on its track: ' + JSON.stringify(audio.map(g => [g.lang, g.a])) + ' ' + JSON.stringify(kinds));
+    assert.deepEqual(kinds, [], 'no error, no recovery');
   }, true));
 
   // Healthy playback never loops on refreshes: URLs that stay short-lived (every answer's expiresInSeconds is
@@ -8489,6 +8823,15 @@ if (document.documentElement) ytcRun(); else new MutationObserver((_, o) => { if
         await tv.waitForTimeout(400); // (the panel fades in)
         assert.deepEqual(await tvAudit(tv, `failure ${W}`), []);
         await tvShot(tv, 'player-failed');
+        // The version on the technical line; a long reason never pushes it out of the card or the card off the screen.
+        assert.ok((await tv.textContent('#ytc-player .pfr')).endsWith(` · ${VER}`));
+        const tvFit = () => tv.evaluate(() => { const r = s => document.querySelector(s).getBoundingClientRect(), c = r('.pfail'), v = r('.pfv'), b = r('.pfb'); return { inCard: v.top >= c.top && v.bottom <= b.top, onScreen: c.top >= 0 && c.bottom <= innerHeight, rows: Math.round(v.height) }; });
+        assert.deepEqual(await tvFit(), { inCard: true, onScreen: true, rows: (await tvFit()).rows });
+        await tv.evaluate(() => { const w = document.querySelector('.pfw'); w.dataset.was = w.textContent; w.textContent = 'SourceBuffer error (audio/webm; codecs="opus") at 1:02:03 (after 3 automatic retries (fresh MediaSource, fresh URLs, another format)) (while stuck: stalled for 40 s at 1:02:03 (2 retries with fresh URLs, MediaSource rebuilt))'.repeat(2); });
+        const fit = await tvFit();
+        assert.ok(fit.inCard && fit.onScreen, 'a long reason: ' + JSON.stringify(fit));
+        await tvShot(tv, 'player-failed-long');
+        await tv.evaluate(() => { const w = document.querySelector('.pfw'); w.textContent = w.dataset.was; });
         await tv.keyboard.press('ArrowRight');
         assert.equal(await tv.evaluate(() => document.activeElement.textContent), 'Open on YouTube');
         await tv.keyboard.press('ArrowLeft');

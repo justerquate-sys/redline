@@ -14,6 +14,10 @@ const YTC = (() => {
   const sx = {}; // last sideways scroll position per scroller id (wheel_x)
   const evt = (h, type) => call('on_media', h, type);
   const path = (o, p) => p.split('.').reduce((x, k) => (x == null ? x : x[k]), o);
+  // An extension's content script: after the extension is reloaded or updated, the page goes on running this
+  // old script, and chrome.runtime.id is gone (its calls throw "Extension context invalidated").
+  const extId = () => { try { return chrome.runtime.id; } catch { return undefined; } };
+  const extAtBoot = !!extId();
   let policy = null;
   // Write HTML; falls back to a Trusted Types policy if the page enforces it here.
   const setHTML = (el, html) => {
@@ -97,6 +101,8 @@ const YTC = (() => {
     }, { capture: true, passive: true });
     d.addEventListener('focusin', e => { const a = !held && e.target.closest && e.target.closest('a[href]'); if (a) { const h = a.getAttribute('href'); queueMicrotask(() => call('on_intent', h)); } });
     d.addEventListener('visibilitychange', () => { call(d.visibilityState === 'hidden' ? 'on_hide' : 'on_show'); });
+    addEventListener('focus', () => call('on_window_focus'));
+    addEventListener('blur', () => call('on_window_blur'));
     d.addEventListener('keydown', e => {
       if (e.altKey) return;
       // Ctrl/⌘ combinations outside text fields are offered as `Mod+<key>`; unhandled ones stay the browser's.
@@ -635,6 +641,7 @@ const YTC = (() => {
     go(url) { location.assign(url); },
     replace_doc(url) { location.replace(url); },
     ua: () => navigator.userAgent,
+    ext_gone() { return extAtBoot && !extId(); },
     local_flag(key) { try { return localStorage.getItem(key) === '1'; } catch { return false; } },
     local_flag_set(key, on) { try { if (on) localStorage.setItem(key, '1'); else localStorage.removeItem(key); } catch {} },
     // ---- app shell (the TV app, tv/). An app shell sets YTC_PLATFORM ('tv') and YTC_SHELL before this

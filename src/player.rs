@@ -37,6 +37,11 @@ pub fn html(video_id: &str) -> String {
 /// own player; allowed by rules.json and excluded from the content script).
 /// Only ever opened by the user (the panel's Open on YouTube).
 pub fn native_url(video_id: &str, t: f64, list: Option<&str>) -> String {
+    watch_url(video_id, t, list) + "&yt-native=1"
+}
+
+/// The client's own watch page of a video at time `t`.
+pub fn watch_url(video_id: &str, t: f64, list: Option<&str>) -> String {
     let mut u = format!("/watch?v={video_id}");
     let s = if t.is_finite() && t >= 1.0 { t.floor() as u64 } else { 0 };
     if s > 0 {
@@ -46,7 +51,6 @@ pub fn native_url(video_id: &str, t: f64, list: Option<&str>) -> String {
         u.push_str("&list=");
         u.push_str(l);
     }
-    u.push_str("&yt-native=1");
     u
 }
 

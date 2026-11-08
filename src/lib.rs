@@ -258,6 +258,18 @@ pub fn on_show() {
     app::with(|a| a.on_show());
 }
 
+/// The window got the focus back.
+#[wasm_bindgen]
+pub fn on_window_focus() {
+    app::with(|a| a.on_window_focus());
+}
+
+/// The window lost the focus.
+#[wasm_bindgen]
+pub fn on_window_blur() {
+    app::with(|a| a.on_window_blur());
+}
+
 #[wasm_bindgen]
 pub fn on_key(key: &str, editable: bool) -> bool {
     // TV Search edits text while buttons have focus, so `editable` is false. Neither physical

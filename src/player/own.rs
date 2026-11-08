@@ -521,6 +521,11 @@ pub struct Own {
     waiting: bool,
     waiting_since: f64,
     first_frame: Option<f64>,
+    /// Starts without playing (an automatic Try again of a paused video). Before the first frame
+    /// `paused` is true anyway; this says it is meant.
+    pub start_paused: bool,
+    /// The picture held when this player failed (`failed_state`).
+    fail_frame: Option<String>,
     mc: ui::MenuCtl,
     /// CC popup shows the Audio tab.
     cc_audio: bool,
@@ -795,6 +800,8 @@ impl Own {
             waiting: true,
             waiting_since: now,
             first_frame: None,
+            start_paused: false,
+            fail_frame: None,
             mc: ui::MenuCtl::default(),
             cc_audio: false,
             audio_sel: String::new(),
@@ -923,7 +930,9 @@ impl Own {
         }
         self.ms = next_id();
         bridge::media_source(self.ms, self.vid);
-        bridge::media_call(self.vid, "play");
+        if !self.start_paused {
+            bridge::media_call(self.vid, "play");
+        }
         self.timer(Tm::Tick, TICK_MS);
         self.ui();
     }
@@ -1237,7 +1246,10 @@ impl Own {
                 l.media_url.clear();
             }
             for rep in self.reps.values_mut() {
-                if let Some(f) = fmts.iter().find(|f| f.itag == rep.f.itag && f.mime == rep.f.mime && f.xtags == rep.f.xtags) {
+                // The same file only: on a dubbed video every audio track has the same itag, and the
+                // index's byte ranges would cut another track's file in the middle of a cluster
+                // (`SourceBuffer error (audio/webm; codecs="opus")`, 8 Nov 2026).
+                if let Some(f) = fmts.iter().find(|f| f.itag == rep.f.itag && f.mime == rep.f.mime && f.xtags == rep.f.xtags && f.audio_id == rep.f.audio_id && f.len == rep.f.len) {
                     rep.f.url = f.url.clone();
                 }
             }
@@ -3483,7 +3495,7 @@ impl Own {
             // The position at once (no 0:00 in the controls while the MediaSource opens).
             bridge::media_set(self.vid, "currentTime", self.start);
         }
-        if self.first_frame.is_none() || !self.paused {
+        if !self.paused || (self.first_frame.is_none() && !self.start_paused) {
             bridge::media_call(self.vid, "play");
         }
     }
@@ -4856,7 +4868,15 @@ impl Own {
             Some(s) => format!("{reason} (while stuck: {})", s.why),
             None => reason,
         };
-        let t = if self.first_frame.is_some() { self.time() } else { self.start };
+        // (An element that lost its media reads 0: the last position played.)
+        let now_t = self.time();
+        let t = if self.first_frame.is_none() {
+            self.start
+        } else if now_t > 0.0 {
+            now_t
+        } else {
+            self.play_t.max(self.start)
+        };
         self.tel_end(Some(&reason));
         self.note(format!("FAILED: {reason}"));
         self.el_snap = Some(self.element_state());
@@ -4864,9 +4884,26 @@ impl Own {
             self.rec.close();
             self.send_watchtime(true);
         }
+        // The picture on screen outlives this player (`failed_state`): the next one takes it over.
+        self.fail_frame = self.poster.take().or_else(|| {
+            let id = format!("ytc-rf{}", self.vid);
+            (self.vid != 0 && bridge::media_grab(self.vid, &id, warm::CLS, warm::max_width(&bridge::screen_px()))).then_some(id)
+        });
         self.release();
         self.failed = true;
         self.out.push(Out::Failed { t, reason });
+    }
+
+    /// A failed player's state for the next one: paused (before a first frame: asked to start
+    /// paused), whether it had shown a picture, and the held frame's id (the caller places or drops it).
+    pub fn failed_state(&mut self) -> (bool, bool, Option<String>) {
+        let played = self.first_frame.is_some();
+        (if played { self.paused } else { self.start_paused }, played, self.fail_frame.take())
+    }
+
+    /// An automatic Try again's player says so in its notes (debug overlay, incidents).
+    pub fn note_retry(&mut self, what: String) {
+        self.note(what);
     }
 
     /// The `<video>` and MediaSource state (also kept at a fallback, which frees them).

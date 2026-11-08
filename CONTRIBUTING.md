@@ -81,7 +81,9 @@ steps). `tests/live-*.cjs` talk to real YouTube or Deepgram: run them by hand, r
 ## Behaviour rules
 
 - **The player never leaves by itself.** Failures and stalls stay in the player box with the reason and Try
-  again / Open on YouTube; only that button opens YouTube's own page.
+  again / Open on YouTube; only that button opens YouTube's own page. What Try again would fix, the client does by
+  itself first (docs/architecture.md, "The automatic Try again"); a tab whose extension was reloaded under it loads
+  the same watch page again.
 - **Motion never delays anything**: follow [docs/motion.md](docs/motion.md) (also the agent skill
   `.claude/skills/lumen-motion/SKILL.md`). Keyboard paths and back/forward are instant.
 - Prefer immediate, reversible interactions and remembered settings: no Save buttons or confirmation steps

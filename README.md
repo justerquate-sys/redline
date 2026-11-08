@@ -264,8 +264,9 @@ you run exactly the code you see here. The flip side: the browser extension does
 <details>
 <summary><b>What happens when YouTube changes something?</b></summary>
 
-Redline relies on interfaces YouTube can change at any time. When a video cannot play, the player stays put and says
-why, with **Try again** and **Open on YouTube** (YouTube's own page for that video). If the extension cannot start on
+Redline relies on interfaces YouTube can change at any time. When a video stops playing, the player tries again by
+itself, a few times. If that doesn't help, it stays put and says why, with **Try again** and **Open on YouTube**
+(YouTube's own page for that video). If the extension cannot start on
 a page, that page falls back to YouTube's own site. Sign-in, account pages, Premium, live chat and embeds always stay
 YouTube's own. A fix comes as a new version here; the TV app picks it up by itself.
 </details>
