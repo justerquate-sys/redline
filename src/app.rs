@@ -424,6 +424,10 @@ pub struct App {
     countdown: Option<(u32, upnext::Next, u32)>,
     /// The failure panel last shown: its reason, whether it offers Next video.
     panel_shown: Option<(String, bool)>,
+    /// What the app itself moved on to: (navigation, how many in a row).
+    up_chain: (u32, u32),
+    /// Videos seen in this tab (a stand-in for a locked target is never one of them).
+    up_seen: Vec<String>,
     /// The playlist panel last rendered (list id, current video): its current-row mark slides from there.
     pl_last: Option<(String, String)>,
     /// Navigation motion state (`motionglue.rs`).
@@ -630,6 +634,8 @@ pub fn boot() {
         up_prefetched: 0,
         countdown: None,
         panel_shown: None,
+        up_chain: (0, 0),
+        up_seen: Vec::new(),
         pl_last: None,
         mo: Default::default(),
         spec_queue: Vec::new(),
@@ -1499,7 +1505,7 @@ impl App {
             }
             Some(Timer::Autoplay { nav }) => {
                 if nav == self.nav {
-                    self.up_go();
+                    self.up_timer();
                 }
             }
             Some(Timer::PageHover(url)) => {
@@ -2324,6 +2330,7 @@ impl App {
             bridge::observe(MORE);
         } else {
             bridge::attr(MORE, "class", "more done");
+            self.fx_all_hidden();
         }
         self.mark_items();
         self.spec_schedule();
@@ -2501,6 +2508,12 @@ impl App {
                 let ps = json.as_ref().and_then(|j| j.pointer("/playabilityStatus/status")).and_then(Value::as_str).unwrap_or("");
                 let reason = json.as_ref().and_then(|j| j.pointer("/playabilityStatus/reason")).and_then(Value::as_str).unwrap_or("");
                 let bot = player::own::bot_check(ps, reason);
+                // Asked early enough to say so before anyone lands on it (the next video near the end, a card
+                // in view): it's for a channel's members, whatever its card said.
+                if !ps.is_empty() && ps != "OK" && player::fail::members_only(&format!("VISIONOS {ps}: {reason}")) {
+                    self.members_learn(&v);
+                    self.up_prefetch_again();
+                }
                 if bot {
                     // Not a verdict yet: the player recovers on its own request.
                     self.vision_hold = true;
@@ -2680,6 +2693,7 @@ impl App {
         } else if !self.has_more() {
             self.want = false;
             bridge::attr(MORE, "class", "more done");
+            self.fx_all_hidden();
         }
         self.mark_items();
         self.pump();
@@ -2905,7 +2919,7 @@ impl App {
         };
         self.fx_new_feed();
         let head = self.feed.head.as_ref().expect("head set above");
-        let html = render::page(head, &self.fx_visible(&self.feed.shown), self.has_more(), empty, ImgPlan::first(Lay::Grid, self.cols));
+        let html = render::page(head, &self.fx_visible(&self.feed.shown), self.has_more(), &self.feed_empty(empty), ImgPlan::first(Lay::Grid, self.cols));
         let skeleton = !self.rendered && !self.direct;
         bridge::html(MAIN, &html);
         self.fade_thumbs();

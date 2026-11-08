@@ -5,12 +5,18 @@
 
 use super::{App, Mode, Timer};
 use crate::bridge;
-use crate::features::{members, upnext::{self, Next}};
+use crate::features::upnext::{self, Next};
 use crate::player::{fail, ui};
 use crate::parse::Watch;
 use crate::render;
 use crate::route::Route;
+use std::collections::HashSet;
 use std::rc::Rc;
+
+/// Videos remembered as seen in this tab (`up_skips`).
+const UP_SEEN_MAX: usize = 50;
+/// An automatic advance moves past this many videos the player refuses, then shows the panel.
+const UP_SKIPS: u32 = 3;
 
 impl App {
     /// The current watch page's parsed `next` response, if it has arrived.
@@ -19,16 +25,36 @@ impl App {
         self.watch_cache.iter().find(|(k, _)| *k == key).map(|e| e.1.clone())
     }
 
+    /// A related card that may stand in for a locked target: visible with the filters, not seen in this tab.
+    fn up_skips(&self, w: &Watch) -> impl Fn(&str) -> bool {
+        let open: HashSet<String> = self.fx_visible(&w.related.items).iter().map(|i| i.key().to_string()).filter(|k| !self.up_seen.contains(k)).collect();
+        move |id: &str| !open.contains(id)
+    }
+
     /// What plays after the current video (`None` = stay on this page).
     pub(super) fn next_video(&self) -> Option<Next> {
         let Route::Watch { v, .. } = &self.route else { return None };
-        upnext::next(&self.cur_watch()?.up, v, self.cfg.autoplay)
+        let w = self.cur_watch()?;
+        upnext::next_with(&w.up, v, self.cfg.autoplay, &self.up_skips(&w))
+    }
+
+    /// What a pressed Next takes (the panel's Next video; never a locked video).
+    pub(super) fn up_pressed(&self) -> Option<Next> {
+        let Route::Watch { v, .. } = &self.route else { return None };
+        let w = self.cur_watch()?;
+        upnext::next_pressed(&w.up, v, &self.up_skips(&w))
     }
 
     /// `next` arrived: the playlist panel (current row scrolled into view) and the header.
     /// Moving on inside the same playlist (a row click, the next item at the end): the current-row mark
     /// springs from the previous video's row to the new one (`mark_slide`); otherwise it is placed at once.
     pub(super) fn up_render(&mut self, w: &Watch, v: &str) {
+        if !self.up_seen.iter().any(|x| x == v) {
+            if self.up_seen.len() >= UP_SEEN_MAX {
+                self.up_seen.remove(0);
+            }
+            self.up_seen.push(v.to_string());
+        }
         bridge::html(render::PLAYLIST, &upnext::panel(w.up.playlist.as_ref(), v));
         if let Some(pl) = w.up.playlist.as_ref() {
             bridge::scroll_in(upnext::LIST, ".cur");
@@ -47,20 +73,14 @@ impl App {
 
     // -------------------------------------------- a verdict's panel, what it knows from `next`
 
-    /// The channel the panel names: the page's, else the card's.
-    fn panel_channel(&self, v: &str) -> String {
-        self.cur_watch().map(|w| w.channel.clone()).filter(|c| !c.is_empty()).or_else(|| self.known.get(v).map(|k| k.channel.clone())).unwrap_or_default()
-    }
-
-    fn panel_next(&self) -> Option<Next> {
-        let Route::Watch { v, .. } = &self.route else { return None };
-        upnext::next_pressed(&self.cur_watch()?.up, v)
-    }
-
     /// The failure panel in the player box.
     pub(super) fn show_panel(&mut self, v: &str, reason: &str) {
-        let next = self.panel_next().is_some();
-        bridge::html(ui::BOX, &fail::panel(v, reason, self.auto.made(), &self.panel_channel(v), next));
+        self.panel_shown = Some((reason.to_string(), false));
+        if self.up_skip_locked(reason) {
+            return;
+        }
+        let next = self.up_pressed().is_some();
+        bridge::html(ui::BOX, &fail::panel(v, reason, self.auto.made(), next));
         bridge::attr(ui::BOX, "class", "player failed");
         self.panel_shown = Some((reason.to_string(), next));
         // TV: the panel's first action takes the focus (the controls it replaced had it).
@@ -76,17 +96,16 @@ impl App {
         }
     }
 
-    /// `next` answered after the player's verdict: the channel's name and the Next video button arrive.
+    /// `next` answered after the player's verdict: Next video arrives, or an automatic advance goes on.
     fn panel_sync(&mut self) {
         let Some((reason, had)) = self.panel_shown.clone() else { return };
-        let Route::Watch { v, .. } = self.route.clone() else { return };
         if fail::offers_retry(&reason) || !bridge::any("#ytc-player .pfail") {
             return;
         }
-        if fail::members_only(&reason) {
-            bridge::text(fail::LINE, &fail::line(&reason, &self.panel_channel(&v)));
+        if self.up_skip_locked(&reason) {
+            return;
         }
-        let next = self.panel_next().is_some();
+        let next = self.up_pressed().is_some();
         if next != had {
             bridge::html(fail::BUTTONS, &fail::verdict_buttons(&reason, next));
             self.panel_shown = Some((reason, next));
@@ -97,27 +116,35 @@ impl App {
 
     /// The panel's Next video.
     pub(super) fn panel_go_next(&mut self) -> bool {
-        let Some(n) = self.panel_next() else { return false };
+        let Some(n) = self.up_pressed() else { return false };
         self.up_cancel();
         self.up_open(n);
         true
     }
 
-    /// The player's verdict that `v` is for a channel's members, its card perhaps unlabelled: labelled from
-    /// now on, by the switch, and never next.
-    pub(super) fn members_learn(&mut self, v: &str) {
-        members::learn(v);
-        bridge::session_set(members::SESSION_KEY, &members::mirror());
-        if self.feed.shown.iter().any(|i| i.key() == v) {
-            self.fx_refilter(false);
+    /// An automatic advance landed on a video the player says is for a channel's members, its card without
+    /// the signal: on to the next one, a few times at most. (Only what the app itself opened: a viewer's click
+    /// gets the panel.) False: the panel, or it waits for `next`.
+    fn up_skip_locked(&mut self, reason: &str) -> bool {
+        if self.up_chain.0 != self.nav || self.up_chain.1 > UP_SKIPS || !fail::members_only(reason) {
+            return false;
         }
+        let Some(n) = self.next_video() else { return false };
+        self.up_advance(n);
+        true
     }
 
-    /// It played after all (a member's route, early access gone public).
-    pub(super) fn members_played(&mut self, v: &str) {
-        if members::forget(v) {
-            bridge::session_set(members::SESSION_KEY, &members::mirror());
-        }
+    /// The app itself moves on: what `up_skip_locked` counts.
+    fn up_advance(&mut self, n: Next) {
+        let hops = if self.up_chain.0 == self.nav { self.up_chain.1 } else { 0 };
+        self.up_open(n);
+        self.up_chain = (self.nav, hops + 1);
+    }
+
+    /// A prefetch learned that the video it asked about is for a channel's members: what plays next may have
+    /// changed, and the replacement gets its prefetch too.
+    pub(super) fn up_prefetch_again(&mut self) {
+        self.up_prefetched = 0;
     }
 
     fn up_title(&self, v: &str) -> String {
@@ -154,7 +181,7 @@ impl App {
         let Some(n) = self.next_video() else { return };
         let secs = self.cur_watch().map(|w| w.up.countdown).unwrap_or(5);
         if n.now || secs == 0 {
-            self.up_open(n);
+            self.up_advance(n);
             return;
         }
         let nav = self.nav;
@@ -169,6 +196,15 @@ impl App {
         if let Some((nav, n, _)) = self.countdown.take() {
             if nav == self.nav {
                 self.up_open(n);
+            }
+        }
+    }
+
+    /// The countdown ran out.
+    pub(super) fn up_timer(&mut self) {
+        if let Some((nav, n, _)) = self.countdown.take() {
+            if nav == self.nav {
+                self.up_advance(n);
             }
         }
     }

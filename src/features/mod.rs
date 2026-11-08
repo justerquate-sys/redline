@@ -68,12 +68,11 @@ pub fn card_bar(out: &mut String, v: &Video) {
     }
 }
 
-/// The thumbnail's "Members only" label (the duration's own row, at the other end).
+/// The thumbnail's "Members only" label (the duration's own row, at the other end). Beside a long duration
+/// on a small thumbnail it reads "Members" (`dl`, client.css).
 pub fn card_badge(out: &mut String, v: &Video) {
     if v.members || members::has(&v.id) {
-        out.push_str("<b class=\"mo\">");
-        out.push_str(members::LABEL);
-        out.push_str("</b>");
+        out.push_str(if v.duration.len() > 7 { "<b class=\"mo dl\">Members<span> only</span></b>" } else { "<b class=\"mo\">Members only</b>" });
     }
 }
 
@@ -464,6 +463,9 @@ pub fn note(hidden: usize, visible: usize, p: &Prefs, surf: Surface) -> String {
     }
     if p.playlists_only && surf == Surface::Home {
         out.push_str(" · <button type=\"button\" class=\"lnk2\" data-act=\"fx-pl\">Show all</button>");
+    }
+    if !p.show_members {
+        out.push_str(" · <button type=\"button\" class=\"lnk2\" data-act=\"fx-members\">Show members-only videos</button>");
     }
     out
 }

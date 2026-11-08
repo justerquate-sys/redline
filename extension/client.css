@@ -240,7 +240,9 @@ body{overscroll-behavior:none;overflow-x:clip}
 .th b{position:absolute;z-index:1;right:6px;bottom:6px;padding:2px 6px;border-radius:6px;background:var(--sc);font-size:13px;font-weight:600;line-height:18px;color:var(--tx);font-variant-numeric:tabular-nums}
 .th b.lv{background:var(--rd);color:#fff}
 .th b.mo{right:auto;left:6px;white-space:nowrap}
+.th b:not(.mo){z-index:2}
 .rel .th b.mo{font-size:11.5px;padding:2px 4px}
+.rel .th b.mo.dl span{display:none}
 .th i{position:absolute;z-index:1;left:0;bottom:0;height:3px;background:var(--progress)}
 /* Card hover: ring on at once, eases off; drawn inside the thumbnail (the card's content-visibility
    paint containment clipped an outside ring at the top). Press: the thumbnail gives a little. */
@@ -579,13 +581,21 @@ body{overscroll-behavior:none;overflow-x:clip}
 .pfm{margin:0;color:var(--tx);font:600 17px/24px system-ui,sans-serif}
 .pfr{margin:6px 0 0;max-width:100%;color:var(--mu);font:12px/18px ui-monospace,Menlo,monospace;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text;cursor:text}
 .pfb{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:16px}
-.pfl{margin:0;max-width:44ch;color:var(--mu);font:14px/20px system-ui,sans-serif;overflow-wrap:anywhere;text-wrap:balance}
+.pfl{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;margin:0;max-width:44ch;overflow:hidden;color:var(--mu);font:14px/20px system-ui,sans-serif;overflow-wrap:anywhere;text-wrap:balance}
 .pfail>.pfv{margin:14px 0 -6px;color:var(--mu);opacity:.6;font:11px/14px ui-monospace,Menlo,monospace;user-select:text;-webkit-user-select:text;cursor:text}
 #ytc .pfbt{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;height:36px;margin:0;padding:0 16px;border:1px solid var(--bd);border-radius:18px;background:var(--cb);color:var(--tx);font:600 14px/normal system-ui,sans-serif;white-space:nowrap;cursor:pointer;transition:background-color var(--d-hover) var(--e-out),border-color var(--d-hover) var(--e-out),transform var(--d-press) var(--e-out)}
 #ytc .pfbt.on{border-color:var(--ac);background:var(--ac);color:var(--bg)}
 #ytc .pfbt:hover{background:var(--hv);transition-duration:0s}#ytc .pfbt.on:hover{border-color:var(--ach);background:var(--ach)}
 #ytc .pfbt:active{transform:scale(calc(1 - .03 * var(--mv)))}
 #ytc .pfbt.sm{height:28px;padding:0 12px;border-radius:14px;font-size:12.5px}
+@media (max-width:560px){
+.pfail{gap:2px;padding:12px 16px 10px;max-height:calc(100% - 12px);max-width:calc(100% - 16px)}
+.pfm{font-size:15px;line-height:20px}
+.pfl{font-size:13px;line-height:18px}
+.pfb{flex-wrap:nowrap;gap:8px;margin-top:8px}
+#ytc .pfbt{height:32px;padding:0 12px;font-size:13px}
+.pfail>.pfv{margin:6px 0 -2px}
+}
 .pstuck{position:absolute;z-index:3;top:12px;right:12px;display:flex;align-items:center;gap:6px;padding:5px 5px 5px 14px;border:1px solid var(--ln);border-radius:20px;background:var(--sc);color:var(--tx);font:500 13px/1 system-ui,sans-serif;white-space:nowrap;opacity:0;visibility:hidden;pointer-events:none;transform:translateY(calc(-4px * var(--mv)));transition:opacity var(--d-pop-out) var(--e-out),transform var(--d-pop-out) var(--e-out),visibility 0s linear var(--d-pop-out)}
 .pstuck .pst{margin-right:4px}
 .player.stuck .pstuck{opacity:1;visibility:visible;pointer-events:auto;transform:none;transition-duration:var(--d-panel),var(--d-panel),0s;transition-delay:0s}
@@ -928,7 +938,7 @@ body{overscroll-behavior:none;overflow-x:clip}
 /* Home Filters: as wide as its widest row, so the four switches (Shorts, Music, Live, Playlists only) share one line. */
 .fx-p:not(.s){width:max-content;min-width:min(360px,calc(100vw - 32px));max-width:calc(100vw - 32px)}
 .fx-p:not(.s) .fx-row:has(>.fx-sw){flex-wrap:nowrap}
-@media (max-width:680px){.fx-p:not(.s) .fx-row:has(>.fx-sw){flex-wrap:wrap}#ytc-hfx .fx-f>.fx-p{position:fixed;top:58px;left:16px;right:16px;width:auto;min-width:0;max-width:none}}
+@media (max-width:760px){.fx-p:not(.s) .fx-row:has(>.fx-sw){flex-wrap:wrap}#ytc-hfx .fx-f>.fx-p{position:fixed;top:58px;left:16px;right:16px;width:auto;min-width:0;max-width:none}}
 /* search filters: YouTube's options are links (hover prefetches, click re-queries) */
 #ytc a.fx-ch{display:inline-block;text-decoration:none;line-height:normal}
 #ytc .fx-ch[aria-current=true]{background:var(--ac);color:var(--bg)}

@@ -7,7 +7,7 @@ use super::{App, FeedState, SEARCH_PICK_MS};
 use crate::{bridge, motion};
 use crate::features::filters::{self, Prefs, Surface};
 use crate::features::watch_later::{self as wl, Edit, Outcome, State};
-use crate::features::{self, history, home_chips as hc, import, progress, search_filters as sf, topics, websites};
+use crate::features::{self, history, home_chips as hc, import, members, progress, search_filters as sf, topics, websites};
 use crate::parse::{self, Item};
 use crate::render::{self, ImgPlan, Lay, LIST, MAIN, MORE, SUGGEST};
 use crate::route::Route;
@@ -21,6 +21,8 @@ const SAVE_PREFS_MS: u32 = 400;
 const SAVE_PROGRESS_MS: u32 = 3000;
 /// Chunks in a row that the filters hid completely before automatic loading pauses.
 const BLANK_LIMIT: u32 = 4;
+/// A feed whose cards the Members-only switch hid (Subscriptions, which has no Filters note).
+const FILTER_HID: &str = "Your Filters hide the members-only videos here.";
 const ANON_OPTS: &str = "{\"credentials\":\"omit\",\"priority\":\"low\"}";
 const ANON_HEADERS: &str = "{\"Content-Type\":\"application/json\"}";
 
@@ -147,7 +149,7 @@ impl Fx {
     pub fn new(signed_in: bool) -> Fx {
         features::shared(|s| s.signed_in = signed_in);
         let prefs = Prefs::from_mirror(&bridge::session_get(PREFS_SESSION)).unwrap_or_default();
-        features::members::load(&bridge::session_get(features::members::SESSION_KEY));
+        members::load(&bridge::session_get(members::SESSION_KEY));
         Fx {
             prefs,
             touched: HashSet::new(),
@@ -319,6 +321,9 @@ impl App {
         let mut s = String::with_capacity(vis.len() * 1000);
         render::cards(&mut s, &vis, ImgPlan::first(self.lay(), self.cols));
         bridge::html(LIST, &s);
+        if !vis.is_empty() {
+            bridge::remove_all(".feed>.empty,#ytc-more>.empty");
+        }
         self.fade_thumbs();
         // Cards still waiting for their check stay hidden in the new markup.
         let held = self.fx.hold.ids();
@@ -355,17 +360,74 @@ impl App {
     }
 
     /// A page restored from memory was rendered before the player's verdict on one of its cards: it
-    /// needs the label (or, with the switch off, to lose the card).
+    /// needs the label (or, with the switch off, to lose the card), or to lose a label it no longer has.
     fn fx_members_stale(&self) -> bool {
         let hide = !self.fx.prefs.show_members && self.fx_surface() != Surface::Other;
         self.feed.shown.iter().any(|i| {
             let Item::Video(v) = i else { return false };
-            if v.members || !features::members::has(&v.id) {
+            if v.members {
                 return false;
             }
             let card = format!("#{LIST} .c[data-v=\"{}\"]", v.id);
-            bridge::any(&card) && (hide || !bridge::any(&format!("{card} .mo")))
+            if members::has(&v.id) {
+                bridge::any(&card) && (hide || !bridge::any(&format!("{card} .mo")))
+            } else {
+                members::forgotten(&v.id) && bridge::any(&format!("{card} .mo"))
+            }
         })
+    }
+
+    /// The player's verdict (or a prefetch's) that `v` is for a channel's members, its card perhaps unlabelled:
+    /// labelled from now on, by the switch, never next. A card on the page changes in place: no list
+    /// re-render under a pointer, since a prefetch of a card in view may be what found out.
+    pub(super) fn members_learn(&mut self, v: &str) {
+        let new = !members::has(v);
+        members::learn(v);
+        bridge::session_set(members::SESSION_KEY, &members::mirror());
+        let Some(Item::Video(c)) = self.feed.shown.iter().find(|i| i.key() == v).cloned() else { return };
+        if !new || c.members {
+            return;
+        }
+        let card = format!("#{LIST} .c[data-v=\"{v}\"]");
+        if !self.fx.prefs.show_members && self.fx_surface() != Surface::Other {
+            bridge::remove_all(&card);
+            self.fx_note();
+        } else if !bridge::any(&format!("{card} .mo")) {
+            let mut html = String::new();
+            features::card_badge(&mut html, &c);
+            bridge::append_all(&format!("{card} .th"), &html);
+        }
+    }
+
+    /// It played after all (a member's route, early access gone public).
+    pub(super) fn members_played(&mut self, v: &str) {
+        if members::forget(v) {
+            bridge::session_set(members::SESSION_KEY, &members::mirror());
+            if !self.feed.shown.iter().any(|i| matches!(i, Item::Video(c) if c.id == v && c.members)) {
+                bridge::remove_all(&format!("#{LIST} .c[data-v=\"{v}\"] .mo"));
+            }
+        }
+    }
+
+    /// The line of a feed with no visible card: `empty` only when nothing arrived. Cards the filters hid and
+    /// more on the way say nothing (more may fill the page); Home and Search have their note.
+    pub(super) fn feed_empty(&self, empty: &str) -> String {
+        if self.feed.shown.is_empty() && self.feed.buf.is_empty() {
+            return empty.to_string();
+        }
+        match self.fx_surface() {
+            Surface::Home | Surface::Search => String::new(),
+            Surface::Subs if !self.has_more() => FILTER_HID.into(),
+            Surface::Subs => String::new(),
+            _ => empty.to_string(),
+        }
+    }
+
+    /// Subscriptions (no Filters note there): the last page came and the filters hid every card.
+    pub(super) fn fx_all_hidden(&mut self) {
+        if self.fx_surface() == Surface::Subs && !self.has_more() && !self.feed.shown.is_empty() && self.fx_visible(&self.feed.shown).is_empty() {
+            bridge::html(MORE, &format!("<p class=\"empty\">{FILTER_HID}</p>"));
+        }
     }
 
     pub(super) fn fx_bar(&mut self) {
@@ -1650,7 +1712,7 @@ impl App {
                 self.feed = f;
                 let head = self.feed.head.clone().unwrap_or_else(|| render::feed_head("Home"));
                 let vis = self.fx_visible(&self.feed.shown);
-                bridge::html(MAIN, &render::page(&head, &vis, self.has_more(), "Nothing here yet.", ImgPlan::first(Lay::Grid, self.cols)));
+                bridge::html(MAIN, &render::page(&head, &vis, self.has_more(), &self.feed_empty("Nothing here yet."), ImgPlan::first(Lay::Grid, self.cols)));
                 bridge::scroll_to(0.0);
                 self.after_paint();
             }
@@ -1813,7 +1875,7 @@ impl App {
                 self.feed = f;
                 let head = self.feed.head.clone().unwrap_or_else(|| render::feed_head("Home"));
                 let vis = self.fx_visible(&self.feed.shown);
-                bridge::html(MAIN, &render::page(&head, &vis, self.has_more(), "Nothing here yet.", ImgPlan::first(Lay::Grid, self.cols)));
+                bridge::html(MAIN, &render::page(&head, &vis, self.has_more(), &self.feed_empty("Nothing here yet."), ImgPlan::first(Lay::Grid, self.cols)));
                 bridge::scroll_to(0.0);
                 self.after_paint();
             }

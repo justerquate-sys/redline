@@ -451,7 +451,7 @@ ytcfg.set({"EVENT_ID":"e2eHomeEvent${String(n).padStart(4, '0')}","INNERTUBE_CLI
 <body><script nonce="n1">var ytInitialData = ${data};</script><script nonce="n1">window.__ytAppRan=1;</script></body></html>`;
 const gunzipJSON = buf => { try { return JSON.parse(zlib.gunzipSync(buf).toString('utf8')); } catch { try { return JSON.parse(buf.toString('utf8')); } catch { return null; } } };
 // Simulated `next` latency (speed table).
-const NEXT = { latency: 0, contLatency: 0 };
+const NEXT = { latency: 0, contLatency: 0, gate: null };
 const ids11 = str => [...new Set([...str.matchAll(/"contentId":"([A-Za-z0-9_-]{11})"/g)].map(m => m[1]))];
 const homeId = (id, n) => id.slice(0, 8) + 'H' + n + 'z';
 const homePage = (str, n, next) => {
@@ -725,6 +725,7 @@ async function handle(route) {
     }
     if (home && (HOME.latency || (HOME.delay && !body.continuation))) await new Promise(r => setTimeout(r, HOME.latency + (body.continuation ? 0 : HOME.delay)));
     if (ep === 'next' && NEXT.latency && !body.continuation && !masked) await new Promise(r => setTimeout(r, NEXT.latency));
+    if (ep === 'next' && NEXT.gate && !body.continuation && !masked) await NEXT.gate;
     if (ep === 'next' && NEXT.contLatency && body.continuation) await new Promise(r => setTimeout(r, NEXT.contLatency));
     if (out && pageMask) { NEXT_MASK.served++; out = JSON.stringify(applyMask(parseMask(pageMask), JSON.parse(out))); }
     if (out && visionMask) { VISION_MASK.served++; out = JSON.stringify(applyMask(parseMask(visionMask), JSON.parse(out))); }

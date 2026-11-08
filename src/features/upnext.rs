@@ -19,7 +19,7 @@ pub struct Item {
     /// 0-based position in the playlist.
     pub idx: u32,
     pub cur: bool,
-    /// For a channel's members: a badge, or a row of its "Members-only videos" playlist (`UUMO…`).
+    /// For a channel's members: a badge, or a row of its "Members-only videos" playlist (`members_list`).
     pub members: bool,
 }
 
@@ -69,6 +69,12 @@ fn s<'a>(v: &'a Value, p: &str) -> Option<&'a str> {
     v.pointer(p).and_then(Value::as_str)
 }
 
+/// A channel's "Members-only videos" playlist: `UUMO` + the 22 characters of its id. (An ordinary uploads list
+/// is `UU` + the same 22: 24 characters, and a channel `UCMO…` has an uploads list that starts `UUMO` too.)
+fn members_list(id: &str) -> bool {
+    id.starts_with("UUMO") && id.len() == 26
+}
+
 pub fn parse(v: &Value) -> Up {
     let root = v.pointer("/contents/twoColumnWatchNextResults").unwrap_or(&Value::Null);
     let mut up = Up { countdown: 5, ..Default::default() };
@@ -96,7 +102,7 @@ pub fn parse(v: &Value) -> Up {
                     len: r.get("lengthText").and_then(text).unwrap_or_default(),
                     idx: r.pointer("/navigationEndpoint/watchEndpoint/index").and_then(Value::as_u64).map(|x| x as u32).unwrap_or(i as u32),
                     cur: r.get("selected").and_then(Value::as_bool).unwrap_or(false),
-                    members: id.starts_with("UUMO") || r.get("badges").and_then(Value::as_array).into_iter().flatten().any(|b| b.get("metadataBadgeRenderer").is_some_and(crate::parse::badge_members)),
+                    members: members_list(id) || r.get("badges").and_then(Value::as_array).into_iter().flatten().any(|b| b.get("metadataBadgeRenderer").is_some_and(crate::parse::badge_members)),
                 });
             }
             if pl.total == 0 {
@@ -123,9 +129,10 @@ fn locked(up: &Up, v: &str) -> bool {
     members::has(v) || up.cards.iter().any(|c| c.locked && c.v == v) || up.playlist.as_ref().is_some_and(|p| p.items.iter().any(|i| i.members && i.v == v))
 }
 
-/// The first video of the related column that isn't locked, nor `cur` (`now`: no countdown).
-fn open_card(up: &Up, cur: &str, now: bool) -> Option<Next> {
-    up.cards.iter().find(|c| c.v != cur && !locked(up, &c.v)).map(|c| Next { v: c.v.clone(), list: None, now })
+/// The first video of the related column that isn't locked, nor `cur`, nor one `skip` rules out (`now`: no
+/// countdown).
+fn open_card(up: &Up, cur: &str, now: bool, skip: &dyn Fn(&str) -> bool) -> Option<Next> {
+    up.cards.iter().find(|c| c.v != cur && !locked(up, &c.v) && !skip(&c.v)).map(|c| Next { v: c.v.clone(), list: None, now })
 }
 
 /// The video after `cur`: the next playlist item (always, like YouTube),
@@ -133,6 +140,12 @@ fn open_card(up: &Up, cur: &str, now: bool) -> Option<Next> {
 /// never chosen, whatever the Members-only switch says (a member can still open it): the next playlist
 /// item that isn't, and in place of a locked autoplay target the first related card that isn't.
 pub fn next(up: &Up, cur: &str, autoplay: bool) -> Option<Next> {
+    next_with(up, cur, autoplay, &|_| false)
+}
+
+/// `next`, where `skip` rules out related cards as a stand-in for a locked target (the app: seen in this tab, so
+/// autoplay never bounces between two videos; hidden by the filters).
+pub fn next_with(up: &Up, cur: &str, autoplay: bool, skip: &dyn Fn(&str) -> bool) -> Option<Next> {
     if let Some(pl) = &up.playlist {
         let pos = pl.items.iter().position(|i| i.v == cur).or_else(|| pl.items.iter().position(|i| i.cur));
         let after = match pos {
@@ -145,7 +158,7 @@ pub fn next(up: &Up, cur: &str, autoplay: bool) -> Option<Next> {
     }
     let (v, list) = up.auto.as_ref().filter(|_| autoplay)?;
     if locked(up, v) {
-        return open_card(up, cur, false);
+        return open_card(up, cur, false, skip);
     }
     // Never wrap around to an earlier item of the same playlist (no unasked loop).
     if let Some(pl) = up.playlist.as_ref().filter(|p| Some(&p.id) == list.as_ref()) {
@@ -169,8 +182,8 @@ pub fn prev(up: &Up, cur: &str) -> Option<Next> {
 
 /// What a pressed Next takes: `next` as with Autoplay on (the press asked for it), else the first
 /// related card that isn't locked.
-pub fn next_pressed(up: &Up, cur: &str) -> Option<Next> {
-    next(up, cur, true).or_else(|| open_card(up, cur, true))
+pub fn next_pressed(up: &Up, cur: &str, skip: &dyn Fn(&str) -> bool) -> Option<Next> {
+    next_with(up, cur, true, skip).or_else(|| open_card(up, cur, true, skip))
 }
 
 pub fn watch_href(v: &str, list: Option<&str>) -> String {
@@ -337,11 +350,23 @@ mod tests {
         // A press takes the first open card even without a target, without a countdown.
         up.auto = None;
         assert_eq!(next(&up, "aaaaaaaaaaa", true), None);
-        assert_eq!(next_pressed(&up, "hhhhhhhhhhh"), Some(Next { v: "iiiiiiiiiii".into(), list: None, now: true }));
+        assert_eq!(next_pressed(&up, "hhhhhhhhhhh", &|_| false), Some(Next { v: "iiiiiiiiiii".into(), list: None, now: true }));
+        // Seen or filtered cards are never the stand-in: no bouncing between two videos.
+        assert_eq!(next_pressed(&up, "hhhhhhhhhhh", &|v| v == "iiiiiiiiiii"), None);
+        up.auto = Some(("eeeeeeeeeee".into(), None));
+        up.cards = vec![card("eeeeeeeeeee", true), card("ggggggggggg", false), card("iiiiiiiiiii", false)];
+        assert_eq!(next_with(&up, "aaaaaaaaaaa", true, &|v| v == "ggggggggggg").unwrap().v, "iiiiiiiiiii");
+        assert_eq!(next_with(&up, "aaaaaaaaaaa", true, &|_| true), None);
+        up.auto = None;
         // The real "Members-only videos" panel carries no badge: its id says it (recorded 8 Nov 2026).
         let v = crate::json::jv!({"contents": {"twoColumnWatchNextResults": {"playlist": {"playlist": {"playlistId": "UUMO1cyGje-DRza7ei9M_oYHNA", "contents": [
             {"playlistPanelVideoRenderer": {"videoId": "J3M2L2pLhxA", "title": {"simpleText": "t"}}}]}}}}});
         assert!(parse(&v).playlist.unwrap().items[0].members);
+        // A channel whose id starts UCMO has an ordinary uploads list that starts UUMO (Practical Engineering).
+        let uploads = crate::json::jv!({"contents": {"twoColumnWatchNextResults": {"playlist": {"playlist": {"playlistId": "UUMOqf8ab-42UUQIdVoKwjlQ", "contents": [
+            {"playlistPanelVideoRenderer": {"videoId": "J3M2L2pLhxA", "title": {"simpleText": "t"}}}]}}}}});
+        assert!(!parse(&uploads).playlist.unwrap().items[0].members);
+        assert!(members_list("UUMO1cyGje-DRza7ei9M_oYHNA") && !members_list("UUMOqf8ab-42UUQIdVoKwjlQ") && !members_list("UUMFqf8ab-42UUQIdVoKwjlQab") && !members_list("PLx"));
         // The row says so.
         let h = panel(Some(&Playlist { id: "PLx".into(), total: 1, items: vec![Item { v: "aaaaaaaaaaa".into(), by: "Ch".into(), members: true, ..Default::default() }], ..Default::default() }), "");
         assert!(h.contains("Ch · Members only"), "{h}");

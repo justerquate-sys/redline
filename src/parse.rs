@@ -947,8 +947,10 @@ fn tile(x: &Value, stats: &mut Stats) -> Res {
         "TILE_CONTENT_TYPE_VIDEO" | "TILE_CONTENT_TYPE_SHORTS" => {
             let vid = Some(id).filter(|v| is_video_id(v)).or_else(|| st(cmd, &["watchEndpoint", "videoId"]).filter(|v| is_video_id(v))).or_else(|| short_cmd_id(cmd));
             let Some(vid) = vid else { return Res::Bad };
+            let line_badges = || arr(md, &["lines"]).iter().flat_map(|l| arr(l, &["lineRenderer", "items"]).iter()).filter_map(|it| at(it, &["lineItemRenderer", "badge", "metadataBadgeRenderer"]));
+            let members = line_badges().any(badge_members);
             if short {
-                return Res::Item(Item::Video(short_video(vid, title, join(&rest))));
+                return Res::Item(Item::Video(Video { members, ..short_video(vid, title, join(&rest)) }));
             }
             // 16:9 files (the TV lists 4:3 `sddefault` with bars): the 320 px webp, and hq720 when listed.
             let listed = arr(hdr, &["thumbnail", "thumbnails"]).iter().filter_map(|t| t.get("url").and_then(Value::as_str)).find(|u| u.contains("/hq720")).and_then(safe_img);
@@ -956,9 +958,7 @@ fn tile(x: &Value, stats: &mut Stats) -> Res {
                 Some((h, b)) => (Some(h), b),
                 None => (None, None),
             };
-            let line_badges = || arr(md, &["lines"]).iter().flat_map(|l| arr(l, &["lineRenderer", "items"]).iter()).filter_map(|it| at(it, &["lineItemRenderer", "badge", "metadataBadgeRenderer"]));
             let music = line_badges().any(|b| st(b, &["label"]).is_some_and(music_label));
-            let members = line_badges().any(badge_members);
             Res::Item(Item::Video(Video {
                 id: vid.into(),
                 title,
@@ -1538,6 +1538,13 @@ mod tests {
             let v = fixture(name);
             assert!(videos(&browse(&v)).iter().chain(videos(&search(&v)).iter()).all(|x| !x.members), "{name}");
         }
+
+        // A TV Shorts tile reads the same line.
+        let short_tile = crate::json::jv!({"tileRenderer": {"contentType": "TILE_CONTENT_TYPE_SHORTS", "contentId": "aaaaaaaaaaa", "metadata": {"tileMetadataRenderer": {"title": {"simpleText": "t"}, "lines": [
+            {"lineRenderer": {"items": [{"lineItemRenderer": {"badge": {"metadataBadgeRenderer": {"style": "BADGE_STYLE_TYPE_MEMBERS_ONLY"}}}}]}}]}}}});
+        let mut feed = Feed::default();
+        walk_into(&mut feed, &short_tile);
+        assert!(videos(&feed)[0].short && videos(&feed)[0].members);
 
         // `videoRenderer` and its kin: the enum, the icon alone, the label alone; the words of a title never.
         let vr = |badges: &str, title: &str| {

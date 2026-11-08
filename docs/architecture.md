@@ -895,11 +895,11 @@ What Try again can't change has no such button and no technical line: the headli
 `VISIONOS <STATUS>:` prefix; nothing when the headline already said it), the buttons, and a very quiet version under them. **Next video**
 (`upnext::next_pressed`: the next item or YouTube's target, else the first related card, never a locked one; whatever Autoplay says, the press asked for it) comes first and takes the
 focus, unless the viewer is typing somewhere; where YouTube's page knows more than we do (sign-in, age, a content check, no format here, the own player off) **Open on YouTube** does. `next` often
-answers after the player: the panel then gets the channel's name and the button in place (`App::panel_sync`; its card doesn't enter again). The raw reason stays in the debug overlay, the
-reports and incidents, and the panel's `data-r`. Try again stays where it can help: everything that retries, the bot check (it asks every route again), no connection, YouTube's "something went
-wrong"/"try again later", a live event "in a few moments". A premiere hours away has none: the viewer opens it again when it's time.
-Members-only: "This video is for members of <channel> at the <level> level or higher." VISIONOS is always asked in English (`api.rs`), so the sentence is known; the level is the channel's own
-word, whatever its language. No level in the sentence: YouTube's words, but never its "Join this channel…" (owner: "I'd rather not get the wantiness to buy anything").
+answers after the player: the panel then gets the button in place (`App::panel_sync`; its card doesn't enter again). The raw reason stays in the debug overlay, the
+reports and incidents, and the panel's `data-r`. Try again stays where it can help: everything that retries, the bot check (it asks every route again), no connection, any reason where YouTube says "went wrong"
+or "try again", a stream or premiere that may start any moment. Only hours, days or a date away has none (`far_off`): the viewer opens it again when it's time.
+Members-only (known phrases only: `fail::members_only`, never the word alone): "This video is for this channel's members." (owner: "I'd rather not get the wantiness to buy anything": no tier, no channel name, no
+invitation). A sentence starting "Join" or "Become a member" is dropped from any verdict's line; another sentence YouTube adds to a members verdict (when early access ends) stays. The line stops at three lines.
 
 *The automatic Try again* (8 Nov 2026, owner: "why not make it so that it refreshes by itself"; nobody presses Try again for
 what Try again would fix; `fail::permanent`, `fail::Auto`, `App::after_player`'s `Out::Failed`, the one choke point of every
@@ -1326,14 +1326,14 @@ for the hedge deadline.
   "Nur für Kanalmitglieder"); `metadataBadgeRenderer` (`style: BADGE_STYLE_TYPE_MEMBERS_ONLY`, `icon.iconType: SPONSORSHIP_STAR`) in `videoRenderer.badges`, a TV `tileRenderer`'s
   `lines[].lineRenderer.items[].lineItemRenderer.badge` and the watch page's own `videoPrimaryInfoRenderer.badges`. The enum or the icon decide; the words are a fallback, compared whole with a
   badge's own text only, so a title that says "members" never matches. Any other `…MEMBERS…` enum counts the same, so "Members first" (early access) is locked while YouTube sends it and free once it stops; that
-  badge itself was never seen in the recordings (34 channels scanned). A playlist panel's rows carry no badge: `UUMO…` says it for them. Every video card shows a **Members only** label on the duration's row, at the
-  other end (`features::card_badge`; desktop grid, Search, related, channels, playlists, History, Watch later, the TV's grid and Up next row; a playlist panel's row in its byline).
+  badge itself was never seen in the recordings (34 channels scanned). A playlist panel's rows carry no badge: a 26-character `UUMO…` id says it for them (a 24-character one is the ordinary uploads list of a channel `UCMO…`). Every video card shows a **Members only** label on the duration's row, at the
+  other end (`features::card_badge`; desktop grid, Search, related, channels, playlists, History, Watch later, the TV's grid and Up next row; a playlist panel's row in its byline). Beside a duration of 8+ characters on a related thumbnail it reads "Members"; a duration is never covered.
   **The switch** (default on: shown and labelled, the owner's public default; `yourTubeShowMembersV1`) off hides them on Home, Subscriptions (`Surface::Subs`: only this switch applies there), Search and next to
-  videos; channels, playlists and History keep them, like every filter's `Surface::Other`. The TV app has no Filters panel: labelled and shown. **Never next**: `upnext::next` skips what's known to be locked whatever the switch says: the next
-  playlist item that isn't, and in place of a locked autoplay target the first related card that isn't (end of video, countdown, prefetch). A viewer who is a member can still click the card: the player decides, and with
-  the usual anonymous route that means the panel with Open on YouTube, where the account is known. **Learning from a click**: YouTube doesn't always say (a card without the signal, a Short): the player's verdict
-  labels the id from then on, by the switch, never next (`features::members`, ≤ 100 ids, this tab's `sessionStorage` `ytc:members`, nothing leaves the device); a page kept in memory gets it when it returns
-  (`fx_members_stale`); a video that plays after all is forgotten at once.
+  videos; channels, playlists and History keep them, like every filter's `Surface::Other`. A feed whose first page the switch emptied says nothing false: more comes in silently; at the very end Home's note offers "Show members-only videos" and Subscriptions says a Filter hides them. The TV app has no Filters panel: labelled and shown. **Never next**: `upnext::next` skips what's known to be locked whatever the switch says: the next
+  playlist item that isn't, and in place of a locked autoplay target the first related card that isn't, visible and not yet seen in this tab, so autoplay never bounces (end of video, countdown, prefetch). A viewer who is a member can still click the card: the player decides, and with
+  the usual anonymous route that means the panel with Open on YouTube, where the account is known. **Learning without the signal**: YouTube doesn't always say (a playlist row, a card without the signal, a Short): any VISIONOS answer saying so, the check near the end of a video or of a card in view included, or the player's verdict on a click,
+  labels the id from then on, in place, by the switch, never next (`features::members`, ≤ 100 ids, this tab's `sessionStorage` `ytc:members`, nothing leaves the device); a page kept in memory gets it when it returns
+  (`fx_members_stale`); a video that plays after all is forgotten at once and loses its label. **If an automatic advance still lands on one** (the check couldn't tell), it moves on by itself, at most three times (`App::up_skip_locked`); a viewer's own click always shows the panel.
 - **Home topic row** (one row: All · YouTube's own chips · your topics · + Topic). **YouTube's chips** are the
   Home response's feed filter chips (signed in, e.g. Gaming, Podcasts); a click loads that chip's feed through
   the chip's own continuation token (the next chip uses the token from the current response's bar), All

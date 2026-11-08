@@ -221,6 +221,7 @@ const YTC = (() => {
     // Appends into the closest `sel` ancestor of the element under the pointer.
     hover_insert(sel, html) { const el = hoverEl && hoverEl.isConnected && hoverEl.closest(sel); if (el) insert(el, html); },
     remove_all(sel) { for (const el of d.querySelectorAll(sel)) el.remove(); },
+    append_all(sel, html) { for (const el of d.querySelectorAll(sel)) el.insertAdjacentHTML('beforeend', html); },
     class_all(sel, cls, on) { for (const el of d.querySelectorAll(sel)) el.classList.toggle(cls, !!on); },
     get_html: id => { const el = byId(id); return el ? el.innerHTML : ''; },
     attr(id, name, value) { const el = byId(id); if (el) el.setAttribute(name, value); },

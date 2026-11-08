@@ -221,7 +221,7 @@ pub fn quiet(reason: &str) -> bool {
     reason.starts_with(UPCOMING_REASON)
         || reason.starts_with("own player turned off")
         || (reason.starts_with("VISIONOS LOGIN_REQUIRED") && !reason.contains("bot"))
-        || reason.contains("members")
+        || super::fail::members_only(reason)
 }
 
 /// Digit keys: swallowed on watch pages without any effect.

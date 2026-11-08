@@ -634,7 +634,7 @@ pub fn page(head: &Head, items: &[Item], more_items: bool, empty: &str, plan: Im
             out.push_str("\" data-act=\"retry\">Try again</a></div>");
         }
     }
-    if items.is_empty() {
+    if items.is_empty() && !empty.is_empty() {
         out.push_str("<p class=\"empty\">");
         esc_into(&mut out, empty);
         out.push_str("</p>");

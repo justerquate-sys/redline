@@ -336,6 +336,9 @@ extern "C" {
     /// Removes every element matching `sel`.
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn remove_all(sel: &str);
+    /// Appends `html` inside every element matching `sel`.
+    #[wasm_bindgen(js_namespace = YTC)]
+    pub fn append_all(sel: &str, html: &str);
     /// Adds (`on`) or removes a class on every element matching `sel`.
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn class_all(sel: &str, cls: &str, on: bool);

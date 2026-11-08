@@ -9,7 +9,7 @@ use super::shared;
 use crate::util::is_video_id;
 use std::collections::HashSet;
 
-/// The card's label.
+/// The label.
 pub const LABEL: &str = "Members only";
 /// `sessionStorage`: the learned ids, comma-separated.
 pub const SESSION_KEY: &str = "ytc:members";
@@ -23,6 +23,8 @@ pub struct Known {
     /// Oldest first.
     learned: Vec<String>,
     seen: HashSet<String>,
+    /// Played after all: a page kept in memory may still show the label.
+    gone: Vec<String>,
 }
 
 impl Known {
@@ -54,6 +56,7 @@ pub fn learn(id: &str) {
         let l = &mut s.members.learned;
         l.retain(|x| x != id);
         l.push(id.to_string());
+        s.members.gone.retain(|x| x != id);
         if l.len() > LEARNED_MAX {
             let extra = l.len() - LEARNED_MAX;
             l.drain(..extra);
@@ -67,8 +70,20 @@ pub fn forget(id: &str) -> bool {
         let known = s.members.has(id);
         s.members.learned.retain(|x| x != id);
         s.members.seen.remove(id);
+        if known {
+            let g = &mut s.members.gone;
+            g.push(id.to_string());
+            if g.len() > LEARNED_MAX {
+                g.remove(0);
+            }
+        }
         known
     })
+}
+
+/// Forgotten since (`forget`).
+pub fn forgotten(id: &str) -> bool {
+    shared(|s| s.members.gone.iter().any(|x| x == id))
 }
 
 /// The learned ids for `sessionStorage`.
@@ -98,6 +113,10 @@ mod tests {
         assert_eq!(mirror(), "aaaaaaaaaaa", "labelled cards aren't kept past the tab's memory; garbage never");
         assert!(forget("bbbbbbbbbbb"));
         assert!(!forget("bbbbbbbbbbb"));
+        assert!(forgotten("bbbbbbbbbbb"));
+        learn("bbbbbbbbbbb");
+        assert!(!forgotten("bbbbbbbbbbb"), "known again");
+        forget("bbbbbbbbbbb");
         assert!(forget("aaaaaaaaaaa"));
         assert_eq!(mirror(), "");
         for i in 0..LEARNED_MAX + 5 {
