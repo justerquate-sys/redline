@@ -1222,8 +1222,10 @@ chrome.runtime.onMessage.addListener(m => {
       await p2.evaluate(id => document.querySelector('#ytc-list .c a.t[href^="/watch"]').setAttribute('href', '/watch?v=' + id), later);
       await p2.locator(`#ytc-list .c a.t[href="/watch?v=${later}"]`).evaluate(a => a.click());
       await p2.waitForFunction(id => new URLSearchParams(location.search).get('v') === id && +document.documentElement.dataset.ytcFirstFrame > 0, later, { timeout: 8000 });
-      assert.equal(vision(later).length, 1);
-      assert.ok(!new URL(vision(later)[0].url).searchParams.has('fields'));
+      for (let i = 0; i < 100 && !vision(later).length; i++) await p2.waitForTimeout(20);
+      // One request, or two if the answer takes over 400 ms on a busy machine (VISION_HEDGE_MS, by design): none is masked.
+      assert.ok([1, 2].includes(vision(later).length), `${vision(later).length} requests`);
+      assert.ok(vision(later).every(a => !new URL(a.url).searchParams.has('fields')));
       assert.deepEqual(problems(inc), [], 'no incident');
     } finally { VISION_MASK.refuse = null; await p2.close(); }
   });
