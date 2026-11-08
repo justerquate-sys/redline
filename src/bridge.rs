@@ -82,6 +82,8 @@ extern "C" {
     #[wasm_bindgen(js_namespace = YTC)]
     pub fn cookie() -> String;
     #[wasm_bindgen(js_namespace = YTC)]
+    pub fn key_held() -> bool;
+    #[wasm_bindgen(js_namespace = YTC)]
     pub fn lang() -> String;
     /// Replaces the whole document content and installs delegated listeners.
     #[wasm_bindgen(js_namespace = YTC)]

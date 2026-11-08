@@ -1174,7 +1174,7 @@ going to B, the video just left, and only then to A. Anything else opens as a ne
 Every TV account action uses the desktop's request path (`actions::post` → `tv::finish`: `TVHTML5` with the bearer). The
 anonymous watch and channel pages cannot tell the account's rating or subscription, so a quiet request as the account asks once
 (`Job::TvState`, `actions::watch::account_state`, read loosely: a subscription counts only when it names this channel, else
-it stays unknown); it never overrides a change made on this device (`tv_changed`). A refused action rolls back and writes the reason into `#ytc-tvnote`, the only part of `say` that can be
+it stays unknown); it never overrides a change made on this device (`tv_changed`). A refused action rolls back and writes the reason into `#ytc-tvactnote`, the only part of `say` that can be
 seen with no panel open; the Save panel uses its own line.
 
 `decoder_watch` used to skip when the end of stream had been signalled, so a fully buffered short video whose playhead froze

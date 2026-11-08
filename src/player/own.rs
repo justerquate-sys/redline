@@ -4699,6 +4699,11 @@ impl Own {
         }
     }
 
+    /// The element's own state, this instant (`paused` follows its events, a task later).
+    pub fn paused_now(&self) -> bool {
+        bridge::media_get(self.vid, "paused") > 0.0
+    }
+
     /// Whether playback is paused (the TV remote's OK toggles it).
     pub fn paused(&self) -> bool {
         self.paused

@@ -44,7 +44,7 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
     await chrome.storage.local.set({ ytcConfigV1: typeof o === 'string' ? JSON.stringify(j) : j });
   });
   const accountCall = (ep, n = -1) => { const c = calls(ep).at(n); assert.ok(c, `${ep} went out`); assert.equal(c.body.context.client.clientName, 'TVHTML5', `${ep} as the TV client`); assert.match(c.headers.authorization, /^Bearer ya29\./, `${ep} with the access token`); return c; };
-  const note = tv => tv.evaluate(() => { const n = document.getElementById('ytc-tvnote'), r = n.getBoundingClientRect(); return { text: n.textContent, shown: n.checkVisibility(), l: r.left, r: r.right, t: r.top, b: r.bottom }; });
+  const note = tv => tv.evaluate(() => { const n = document.getElementById('ytc-tvactnote'), r = n.getBoundingClientRect(); return { text: n.textContent, shown: n.checkVisibility(), l: r.left, r: r.right, t: r.top, b: r.bottom }; });
 
   await step('TV channel from the player (960×540 and 1920×1080): the row\'s first action, "Go to channel", opens it; Back returns to the video at its position; More info\'s first ↑ reaches View channel', async () => {
     const tv = await tvOpen();
@@ -148,7 +148,7 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         // Refused: the state comes back, and the reason is on screen.
         ACTS.fail.add('subscription/subscribe');
         await tv.keyboard.press('Enter');
-        await tv.waitForFunction(() => document.getElementById('ytc-sub-b').textContent === 'Subscribe' && document.getElementById('ytc-tvnote').textContent);
+        await tv.waitForFunction(() => document.getElementById('ytc-sub-b').textContent === 'Subscribe' && document.getElementById('ytc-tvactnote').textContent);
         ACTS.fail.clear();
         const refused = await note(tv);
         assert.ok(refused.shown && /Subscription not saved/.test(refused.text) && refused.r <= W * 0.975 + 1 && refused.t >= H * 0.035 - 1, `a readable notice: ${JSON.stringify(refused)}`);
@@ -564,6 +564,90 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
     } finally { await tvClose(tv); }
   });
 
+  await step('TV a held OK on the seek bar is one play or pause, and the hold that opens a video from a card does not pause it', async () => {
+    const tv = await tvOpen();
+    const hold = async (n, ms = 40) => { for (let i = 0; i < n; i++) { await tv.keyboard.down('Enter'); await tv.waitForTimeout(ms); } await tv.keyboard.up('Enter'); await tv.waitForTimeout(200); };
+    const count = () => tv.evaluate(() => { window.__toggles = []; if (!window.__togglesOn) { window.__togglesOn = true; for (const t of ['play', 'pause']) document.addEventListener(t, () => window.__toggles.push(t), true); } });
+    try {
+      await tv.setViewportSize({ width: 960, height: 540 });
+      await tvGo(tv, 'code', `https://www.youtube.com/watch?v=${VID}`);
+      await playing(tv, 0.5);
+      await tv.waitForFunction(() => document.activeElement?.id === 'ytc-seek');
+      await tv.keyboard.press('ArrowUp'); // (the overlay is awake: the next OK is play or pause, not its wake-up)
+      await count();
+      await hold(11);
+      assert.deepEqual(await tv.evaluate(() => window.__toggles), ['pause'], 'one pause in eleven key events');
+      assert.equal((await video(tv)).paused, true);
+      await count();
+      await hold(11);
+      assert.deepEqual(await tv.evaluate(() => window.__toggles), ['play'], 'one play');
+      assert.equal((await video(tv)).paused, false);
+      // Separate presses still toggle.
+      await count();
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => document.getElementById('ytc-video').paused);
+      await tv.waitForTimeout(100);
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => window.__toggles.length >= 2);
+      assert.deepEqual(await tv.evaluate(() => window.__toggles), ['pause', 'play']);
+
+      // A card held for a second and a half: the video opens and plays.
+      await tvGo(tv, 'code', 'https://www.youtube.com/results?search_query=held+ok');
+      await tv.waitForFunction(() => document.activeElement?.matches('#ytc-list a.t'));
+      await tv.locator('#ytc-list a.t[href^="/watch?"]').first().focus();
+      await count();
+      await hold(30, 50);
+      await tv.waitForFunction(() => location.pathname === '/watch');
+      await playing(tv, 0.3);
+      await tv.waitForTimeout(300);
+      const t = await tv.evaluate(() => window.__toggles);
+      assert.ok(!t.includes('pause'), 'not paused by the hold: ' + t);
+      assert.equal((await video(tv)).paused, false);
+      assert.deepEqual(tv.errors, []);
+    } finally { await tvClose(tv); }
+  });
+
+  await step('TV how a video was left for its channel is forgotten once it is opened anew: Back to it later returns where it was last, playing', async () => {
+    const tv = await tvOpen();
+    try {
+      await tv.setViewportSize({ width: 960, height: 540 });
+      await tvGo(tv, 'code', `https://www.youtube.com/watch?v=${VID}`);
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await playing(tv, 1);
+      await tv.evaluate(() => { document.getElementById('ytc-video').currentTime = 8; });
+      await tv.waitForFunction(() => document.getElementById('ytc-video').currentTime >= 8);
+      await tv.waitForFunction(() => document.activeElement?.id === 'ytc-seek');
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => document.getElementById('ytc-video').paused);
+      await walkRow(tv, '.tvch');
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => document.getElementById('ytc')?.dataset.nav !== 'watch' && document.activeElement?.matches('#ytc-list a.t'), null, { timeout: 8000 });
+      // Home by the rail, the same video from a card.
+      await tv.focus('#ytc-side .rl[data-nav=home]');
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => document.getElementById('ytc')?.dataset.nav === 'home', null, { timeout: 8000 });
+      await tv.waitForTimeout(500);
+      await tv.evaluate(v => { const a = document.createElement('a'); a.href = `/watch?v=${v}`; a.className = 't'; a.textContent = 'x'; document.querySelector('#ytc-main').prepend(a); a.focus(); }, VID);
+      await tv.keyboard.press('Enter');
+      await tv.waitForFunction(() => document.getElementById('ytc-video') && location.pathname === '/watch', null, { timeout: 8000 });
+      await tv.waitForFunction(() => { const v = document.getElementById('ytc-video'); return v.readyState >= 2 && v.currentTime > 0; }, null, { timeout: 15000 });
+      await tv.waitForTimeout(300);
+      await tv.evaluate(() => { const v = document.getElementById('ytc-video'); v.currentTime = 24.5; if (v.paused) v.play(); });
+      await tv.waitForFunction(() => { const v = document.getElementById('ytc-video'); return v.currentTime >= 24.5 && !v.paused; }, null, { timeout: 8000 });
+      await tv.waitForSelector('#ytc-tvch .tvch');
+      await tv.keyboard.press('MediaTrackNext');
+      await tv.waitForFunction(v => new URLSearchParams(location.search).get('v') !== v, VID, { timeout: 8000 });
+      await tv.waitForFunction(() => document.getElementById('ytc-video')?.currentTime > 0.2, null, { timeout: 15000 });
+      await tv.goBack({ waitUntil: 'commit' });
+      await tv.waitForFunction(v => new URLSearchParams(location.search).get('v') === v, VID, { timeout: 8000 });
+      await tv.waitForFunction(() => { const v = document.getElementById('ytc-video'); return v?.readyState >= 2 && v.currentTime > 0; }, null, { timeout: 15000 });
+      await tv.waitForTimeout(800);
+      const v = await video(tv);
+      assert.ok(!v.paused && v.t >= 24, `where it was last, playing, not an old 8 s paused: ${JSON.stringify(v)}`);
+      assert.deepEqual(tv.errors, []);
+    } finally { await tvClose(tv); }
+  });
+
   await step('TV Back from a channel page: one step only on the entry opened from a video; the same channel reached another way goes to the rail first, and the video comes back as it was left: paused stays paused, a video opened with t resumes where it was', async () => {
     const tv = await tvOpen();
     const toChannel = async () => {
@@ -765,7 +849,7 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         await tv.keyboard.press('Enter');
       };
       const settle = async () => {
-        await tv.waitForFunction(() => document.getElementById('ytc-tvnote').textContent, null, { timeout: 5000 });
+        await tv.waitForFunction(() => document.getElementById('ytc-tvactnote').textContent, null, { timeout: 5000 });
         ACTS.fail.clear(); ACTS.delay = 0;
       };
       await tvGo(tv, 'signed', `https://www.youtube.com/watch?v=${VID}`);
@@ -777,25 +861,25 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
       await tv.keyboard.press('Enter');
       await tv.waitForSelector('#ytc-comments.on');
       await settle();
-      const c = await tv.evaluate(() => { const n = document.getElementById('ytc-tvnote'), r = n.getBoundingClientRect(); return { shown: n.checkVisibility(), r: r.right, panel: document.getElementById('ytc-comments').getBoundingClientRect().left }; });
+      const c = await tv.evaluate(() => { const n = document.getElementById('ytc-tvactnote'), r = n.getBoundingClientRect(); return { shown: n.checkVisibility(), r: r.right, panel: document.getElementById('ytc-comments').getBoundingClientRect().left }; });
       assert.ok(c.shown && c.r <= c.panel, `beside Comments: ${JSON.stringify(c)}`);
       assert.deepEqual(await tvAudit(tv, 'notice beside Comments'), []);
       await back(tv);
-      await tv.waitForFunction(() => !document.getElementById('ytc-tvnote').textContent, null, { timeout: 9000 });
+      await tv.waitForFunction(() => !document.getElementById('ytc-tvactnote').textContent, null, { timeout: 9000 });
       await refuse();
       await tv.focus('#ytc-speed');
       await tv.keyboard.press('Enter');
       await tv.waitForSelector('#ytc-player.menu #ytc-menu');
       await settle();
-      const m = await tv.evaluate(() => { const n = document.getElementById('ytc-tvnote'), r = n.getBoundingClientRect(); return { shown: n.checkVisibility(), r: r.right, panel: document.getElementById('ytc-menu').getBoundingClientRect().left }; });
+      const m = await tv.evaluate(() => { const n = document.getElementById('ytc-tvactnote'), r = n.getBoundingClientRect(); return { shown: n.checkVisibility(), r: r.right, panel: document.getElementById('ytc-menu').getBoundingClientRect().left }; });
       assert.ok(m.shown && m.r <= m.panel, `beside a menu: ${JSON.stringify(m)}`);
       await back(tv);
-      await tv.waitForFunction(() => !document.getElementById('ytc-tvnote').textContent, null, { timeout: 9000 });
+      await tv.waitForFunction(() => !document.getElementById('ytc-tvactnote').textContent, null, { timeout: 9000 });
       await refuse();
       await tv.keyboard.press('/');
       await tv.waitForFunction(() => document.activeElement?.matches('#ytc-tvk .tvk-keys button'));
       await settle();
-      assert.ok(!(await tv.evaluate(() => document.getElementById('ytc-tvnote').checkVisibility())), 'not over Search');
+      assert.ok(!(await tv.evaluate(() => document.getElementById('ytc-tvactnote').checkVisibility())), 'not over Search');
       assert.deepEqual(tv.errors, []);
     } finally { ACTS.fail.clear(); ACTS.delay = 0; await tvClose(tv); }
   });
@@ -896,7 +980,7 @@ module.exports = async ({ step, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TV
         // Refused: rolled back, the reason over the picture.
         ACTS.fail.add('like/dislike');
         await tv.keyboard.press('Enter');
-        await tv.waitForFunction(() => document.getElementById('ytc-tvdl').getAttribute('aria-pressed') === 'false' && document.getElementById('ytc-tvnote').textContent);
+        await tv.waitForFunction(() => document.getElementById('ytc-tvdl').getAttribute('aria-pressed') === 'false' && document.getElementById('ytc-tvactnote').textContent);
         ACTS.fail.clear();
         const refused = await note(tv);
         assert.ok(refused.shown && /Rating not saved/.test(refused.text) && refused.r <= W * 0.975 + 1, JSON.stringify(refused));

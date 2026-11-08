@@ -203,7 +203,7 @@ impl App {
         }
         bridge::back_hook();
         self.tv.history.push(&self.url, false);
-        bridge::append("ytc", &format!("<div id=\"{SIGN}\" class=\"tvs\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Sign in\"></div><aside id=\"{INFO}\" class=\"tvi\" role=\"dialog\" aria-modal=\"true\" aria-label=\"More info\"></aside><aside id=\"{}\" class=\"tvi\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Save to playlist\"><header class=\"tvih\"><button type=\"button\" class=\"tvb tvx\" data-act=\"tv-save-close\">Back to video</button></header><div id=\"{}\" class=\"tvib\"></div></aside><div id=\"{}\" class=\"tvnote\" role=\"status\"></div>", crate::actions::TV_SAVE, crate::actions::TV_SAVE_BODY, crate::actions::TV_NOTE));
+        bridge::append("ytc", &format!("<div id=\"{SIGN}\" class=\"tvs\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Sign in\"></div><aside id=\"{INFO}\" class=\"tvi\" role=\"dialog\" aria-modal=\"true\" aria-label=\"More info\"></aside><aside id=\"{}\" class=\"tvi\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Save to playlist\"><header class=\"tvih\"><button type=\"button\" class=\"tvb tvx\" data-act=\"tv-save-close\">Back to video</button></header><div id=\"{}\" class=\"tvib\"></div></aside><div id=\"{}\" class=\"tvactnote\" role=\"status\"></div>", crate::actions::TV_SAVE, crate::actions::TV_SAVE_BODY, crate::actions::TV_NOTE));
         self.tv_slot();
         self.tv_ask_token(self.tv.hold);
         if self.tv.hold {
@@ -833,7 +833,7 @@ impl App {
                 if self.tv.left.len() > 64 {
                     self.tv.left.clear();
                 }
-                self.tv.left.insert(self.url.clone(), (p.resume_at(), p.paused()));
+                self.tv.left.insert(self.url.clone(), (p.resume_at(), p.paused_now()));
             }
         }
     }
@@ -850,6 +850,8 @@ impl App {
             self.tv.returned = self.tv.left.remove(&self.url);
         } else {
             self.tv.history.push(&self.url, from_watch);
+            // (Opened anew: how it was left on an older entry is not where it is now.)
+            self.tv.left.remove(&self.url);
         }
     }
 
@@ -1118,6 +1120,10 @@ impl App {
         let ok = matches!(key, "Enter" | " ");
         if !ok && d.is_none() {
             return None;
+        }
+        // A held OK is one press: not a play and pause on every repeat, and the hold that opened this video is not its pause.
+        if ok && bridge::key_held() {
+            return Some(true);
         }
         if bridge::any("#ytc-player .pfail") {
             // The failure panel: ←/→ between its actions (OK presses the focused one).

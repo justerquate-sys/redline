@@ -1469,12 +1469,12 @@ html[data-ytc-tv] #ytc .tvi .ya-opt.on .ya-ck svg{opacity:1}
 html[data-ytc-tv] #ytc .tvi .ya-err{margin:.75rem 0 0;font-size:.9375rem;line-height:1.375rem;color:var(--mu)}
 html[data-ytc-tv] .tvi #ytc-save-m{margin:1rem 0 0}
 /* A refused account action says why, over whatever is on screen (a panel has its own line). */
-html[data-ytc-tv] .tvnote{position:fixed;z-index:26;top:var(--sy);right:2.5rem;max-width:28rem;box-sizing:border-box;padding:.5rem 1rem;border:.0625rem solid var(--ln);border-radius:.5rem;background:var(--pn);color:var(--tx);font:400 .875rem/1.25rem var(--tvf);overflow-wrap:anywhere}
-html[data-ytc-tv] .tvnote:empty,html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on) .tvnote,html[data-ytc-tv] #ytc[data-tvq="1"] .tvnote{display:none}
+html[data-ytc-tv] .tvactnote{position:fixed;z-index:26;top:var(--sy);right:2.5rem;max-width:28rem;box-sizing:border-box;padding:.5rem 1rem;border:.0625rem solid var(--ln);border-radius:.5rem;background:var(--pn);color:var(--tx);font:400 .875rem/1.25rem var(--tvf);overflow-wrap:anywhere}
+html[data-ytc-tv] .tvactnote:empty,html[data-ytc-tv] #ytc:has(#ytc-tvinfo.on) .tvactnote,html[data-ytc-tv] #ytc[data-tvq="1"] .tvactnote{display:none}
 /* (Beside an open panel, never over its header: More info has its own line; Search hides it.) */
-html[data-ytc-tv] #ytc:has(#ytc-player.menu) .tvnote{right:19.5rem}
-html[data-ytc-tv] #ytc:has(#ytc-tvsave.on) .tvnote{right:26rem}
-html[data-ytc-tv] #ytc:has(#ytc-comments.tvcm.on) .tvnote{right:29.5rem}
+html[data-ytc-tv] #ytc:has(#ytc-player.menu) .tvactnote{right:19.5rem}
+html[data-ytc-tv] #ytc:has(#ytc-tvsave.on) .tvactnote{right:26rem}
+html[data-ytc-tv] #ytc:has(#ytc-comments.tvcm.on) .tvactnote{right:29.5rem}
 
 /* ---- comments: a readable, remote-operated sheet beside the video. Its header stays put while the list scrolls. */
 html[data-ytc-tv] #ytc-comments.tvcm{display:none;position:fixed;z-index:17;inset:0 0 0 auto;width:28.5rem;max-width:none;box-sizing:border-box;margin:0;padding:0;overflow:hidden;background:var(--pn);border-left:.0625rem solid var(--ln);color:var(--tx)}

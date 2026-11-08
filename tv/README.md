@@ -59,7 +59,8 @@ first), play/pause, Captions (its Auto-translate section: the device's language,
 a language chosen there stays for the next videos), Audio (only when the video has several tracks: YouTube's names,
 the current one marked; a dub's language plays by itself on the next video that has it, choosing a video's original
 ends that), speed, quality, and when signed in Like, Dislike, Watch later, Save (a panel of your playlists, OK checks
-one), then Comments and More info. Holding OK is one press, except on the keyboard's letters and Delete.
+one), then Comments and More info. Holding OK is one press everywhere (the seek bar and a card that opens a video too), except on the keyboard's
+letters and Delete and the speed menu's − and +.
 Comments opens a readable side panel with Top/Newest, replies and more pages; it loads only
 when opened. More info includes the description, channel (the first ↑ from the description), Subscribe when signed in,
 and chapters when available. A channel's page has Subscribe under its header (↑ from the first row of cards; signed

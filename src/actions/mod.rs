@@ -38,7 +38,7 @@ const TV_SUB: &str = "ytc-tvsub";
 const TV_SUB_B: &str = "ytc-tvsub-b";
 const TV_MSG: &str = "ytc-tvact-msg";
 /// TV: the notice over the picture or page (a refused action says why, whatever has the focus).
-pub const TV_NOTE: &str = "ytc-tvnote";
+pub const TV_NOTE: &str = "ytc-tvactnote";
 /// TV: Subscribe in the player's row (its button id and its focused label), and on the channel page.
 const TV_ROW_B: &str = "ytc-tvsubr-b";
 const TV_ROW_L: &str = "ytc-tvsubr-l";

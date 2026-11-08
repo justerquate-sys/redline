@@ -36,7 +36,7 @@ const YTC = (() => {
     depth++;
     try { return wasm_bindgen[name](...args); } catch (e) { console.error('[Redline]', name, e); } finally { depth--; }
   };
-  let io = null, lastHover = null, lastCls = null, hoverEl = null, clicked = null, shownWatch = null, docHeld = null;
+  let io = null, lastHover = null, lastCls = null, hoverEl = null, clicked = null, shownWatch = null, docHeld = null, keyHeld = false;
   const insert = (el, html) => {
     if (policy) el.insertAdjacentHTML('beforeend', policy.createHTML(html));
     else try { el.insertAdjacentHTML('beforeend', html); } catch { setHTML(el, el.innerHTML + html); }
@@ -66,7 +66,7 @@ const YTC = (() => {
       // 32: keyboard activation (Enter/Space on a focused control: click with detail 0 and no pointer position).
       // 64: and that key is being held (an auto-repeat activated it, not a press).
       const kbd = e.detail === 0 && !e.clientX && !e.clientY;
-      const mods = (e.ctrlKey ? 1 : 0) | (e.metaKey ? 2 : 0) | (e.shiftKey ? 4 : 0) | (e.altKey ? 8 : 0) | (el.target === '_blank' ? 16 : 0) | (kbd ? 32 : 0) | (kbd && held ? 64 : 0);
+      const mods = (e.ctrlKey ? 1 : 0) | (e.metaKey ? 2 : 0) | (e.shiftKey ? 4 : 0) | (e.altKey ? 8 : 0) | (el.target === '_blank' ? 16 : 0) | (kbd ? 32 : 0) | (kbd && keyHeld ? 64 : 0);
       if (call('on_click', el.getAttribute('href') || '', el.dataset.act || '', el.dataset.arg || '', mods)) e.preventDefault();
     });
     d.addEventListener('submit', e => {
@@ -93,15 +93,14 @@ const YTC = (() => {
     // A microtask later: focus moved by Rust itself (the TV remote's spatial_focus) fires focusin inside
     // that Rust call, where a nested call would be dropped.
     // A held key (a remote's arrow held down) passes links by: only where it rests is intent, on the key's release.
-    let held = false;
-    d.addEventListener('keydown', e => { held = e.repeat; }, { capture: true, passive: true });
+    d.addEventListener('keydown', e => { keyHeld = e.repeat; }, { capture: true, passive: true });
     d.addEventListener('keyup', () => {
-      if (!held) return;
-      held = false;
+      if (!keyHeld) return;
+      keyHeld = false;
       const a = d.activeElement && d.activeElement.closest && d.activeElement.closest('a[href]');
       if (a) call('on_intent', a.getAttribute('href'));
     }, { capture: true, passive: true });
-    d.addEventListener('focusin', e => { const a = !held && e.target.closest && e.target.closest('a[href]'); if (a) { const h = a.getAttribute('href'); queueMicrotask(() => call('on_intent', h)); } });
+    d.addEventListener('focusin', e => { const a = !keyHeld && e.target.closest && e.target.closest('a[href]'); if (a) { const h = a.getAttribute('href'); queueMicrotask(() => call('on_intent', h)); } });
     d.addEventListener('visibilitychange', () => { call(d.visibilityState === 'hidden' ? 'on_hide' : 'on_show'); });
     addEventListener('focus', () => call('on_window_focus'));
     addEventListener('blur', () => call('on_window_blur'));
@@ -165,6 +164,8 @@ const YTC = (() => {
     epoch: () => Date.now(),
     href: () => location.pathname + location.search + location.hash,
     cookie: () => d.cookie,
+    // The key being handled is an auto-repeat of one held down.
+    key_held: () => keyHeld,
     lang: () => { try { const t = localStorage.getItem('ytc-test-lang'); if (t) return t; } catch {} return navigator.language || 'en'; },
     doc(html) {
       const root = d.documentElement;
