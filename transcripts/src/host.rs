@@ -96,6 +96,15 @@ extern "C" {
     /// Copies a text that arrives later: the pending item is handed over inside the click.
     #[wasm_bindgen(js_namespace = TR)]
     fn clipboard_later(text: &Promise) -> Promise;
+    /// Opens the file chooser of input `id`.
+    #[wasm_bindgen(js_namespace = TR)]
+    pub fn pick(id: &str);
+    /// Reads input `id`'s file: `{"items":[{"k":key,"t":kind}]}` or `{"error":…}`. The values stay in the host.
+    #[wasm_bindgen(js_namespace = TR)]
+    fn file_peek(id: &str, max_bytes: f64) -> Promise;
+    /// Writes the chosen keys of the file last read to `chrome.storage.local`.
+    #[wasm_bindgen(js_namespace = TR)]
+    fn file_commit(keys: &str) -> Promise;
     /// Local date and time of an ISO string.
     #[wasm_bindgen(js_namespace = TR)]
     pub fn local_time(iso: &str) -> String;
@@ -162,6 +171,12 @@ pub async fn options() -> Result<(), String> {
 }
 pub async fn send_message(message: &str) -> String {
     string(send(message)).await.unwrap_or_default()
+}
+pub async fn peek_file(id: &str, max_bytes: f64) -> String {
+    string(file_peek(id, max_bytes)).await.unwrap_or_default()
+}
+pub async fn commit_file(keys: &str) -> bool {
+    JsFuture::from(file_commit(keys)).await.is_ok()
 }
 pub async fn copy_text(text: &str) -> bool {
     JsFuture::from(clipboard(text)).await.is_ok()

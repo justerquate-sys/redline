@@ -19,7 +19,7 @@ const TR = (() => {
     q.onerror = () => no(q.error);
   }));
   const timers = new Map();
-  let lastHover = null, listening = false;
+  let lastHover = null, listening = false, pending = null;
   return {
     http(url, method, headers, body, timeoutMs) {
       const c = new AbortController(), t = setTimeout(() => c.abort(), timeoutMs);
@@ -96,6 +96,29 @@ const TR = (() => {
     clipboard(text) { return navigator.clipboard.writeText(text).then(() => ''); },
     clipboard_later(text) {
       return navigator.clipboard.write([new ClipboardItem({ 'text/plain': text.then(t => new Blob([t], { type: 'text/plain' })) })]).then(() => '');
+    },
+    // A settings file: its values stay in this closure and never enter Wasm (a Deepgram key is among them). file_peek
+    // answers with key names and kinds only; file_commit writes the keys Rust chose.
+    pick(id) { const n = el(id); if (n) { n.value = ''; n.click(); } },
+    file_peek(id, maxBytes) {
+      const f = el(id) && el(id).files[0];
+      if (!f) return Promise.resolve('{"error":"none"}');
+      if (f.size > maxBytes) return Promise.resolve('{"error":"big"}');
+      return f.text().then(text => {
+        const v = JSON.parse(text);
+        if (!v || typeof v !== 'object' || Array.isArray(v)) return '{"error":"shape"}';
+        const items = v.redlineSettings === 1 ? v.items : v;
+        if (!items || typeof items !== 'object' || Array.isArray(items)) return '{"error":"shape"}';
+        pending = items;
+        const kind = x => (x === null ? 'null' : Array.isArray(x) ? 'array' : typeof x);
+        return JSON.stringify({ items: Object.keys(items).map(k => ({ k, t: kind(items[k]) })) });
+      }).catch(() => '{"error":"shape"}');
+    },
+    file_commit(keys) {
+      const items = pending, out = {};
+      pending = null;
+      for (const k of JSON.parse(keys)) if (items && Object.hasOwn(items, k)) out[k] = items[k];
+      return chrome.storage.local.set(out).then(() => '');
     },
     local_time(iso) { const t = iso ? new Date(iso) : null; return t && !Number.isNaN(t.getTime()) ? t.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : ''; },
     number(n) { return Number(n).toLocaleString(); },

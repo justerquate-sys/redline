@@ -153,3 +153,4 @@ details.tx-panel>*+*{margin-top:16px}
   .tx-panel{padding:16px}
   .tx-toast{left:16px;bottom:16px;max-width:calc(100vw - 32px)}
 }
+#settings-file b{color:var(--tx);font-weight:600}

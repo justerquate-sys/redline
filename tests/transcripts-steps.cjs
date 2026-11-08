@@ -80,6 +80,8 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
   // ---- someone who never set it up: nothing at all.
   await step('transcripts off: Home, watch and channel pages have no controls, no extra card DOM, no request and no native attempt', async () => {
     await disable();
+    // (An earlier step in this browser session, members-only and Transcripts, may have loaded it: what counts is this.)
+    await worker(() => { trCore = null; });
     const [f0, n0, m0] = [await fetches(), await native(), mock.log.length];
     const p = await home();
     await p.waitForTimeout(500);
@@ -97,7 +99,7 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     assert.equal(await fetches(), f0, 'no request to 127.0.0.1');
     assert.equal(await native(), n0, 'no native-messaging attempt');
     assert.equal(mock.log.length, m0, 'the helper saw nothing');
-    assert.equal(await worker(() => trCore === null), true, 'the worker never even loaded the second Wasm');
+    assert.equal(await worker(() => trCore === null), true, 'nothing on these pages asked the worker to load the second Wasm');
     assert.equal(await p.evaluate(() => [...performance.getEntriesByType('resource')].filter(e => e.name.includes('127.0.0.1')).length), 0);
     assert.deepEqual(await worker(() => chrome.alarms.getAll().then(a => a.length)), 0, 'no alarm');
     assert.deepEqual(p.errors, []);
@@ -580,6 +582,61 @@ async function steps({ step, ctx, sw, mock, incidents, HOME }) {
     assert.equal(await worker(() => chrome.storage.local.get('pairingToken').then(o => o.pairingToken ?? null)), null, 'gone from content scripts\' reach');
     const src = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background.js'), 'utf8');
     assert.ok(src.includes("setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' })"), 'storage stays readable for content scripts');
+  });
+
+  await step('transcripts settings: Import all settings brings an exported file back, without a pairing token or the switch; a wrong file changes nothing; values never pass through Wasm', async () => {
+    mock.reset();
+    await disable();
+    const seed = { ytcConfigV1: { p: { sbo: false } }, ytcVoiceKeyV1: 'e2e-import-deepgram', yourTubeHistoryV1: { version: 1, entries: [['q', 1]] }, shortsInFeeds: true, yourTubeShowMembersV1: false };
+    const keep = await worker(() => chrome.storage.local.get(null));
+    await worker(s => chrome.storage.local.set(s), seed);
+    // Even if these sat in storage, the export leaves them out.
+    await worker(t => chrome.storage.local.set({ pairingToken: t, ytcTranscriptsV1: { on: true } }), TOKEN);
+    const s = await open(ext('settings.html'));
+    const tabbed = ctx.waitForEvent('page');
+    await s.click('#export-all');
+    const tab = await tabbed;
+    await tab.waitForSelector('#popup-export-save');
+    await shot(tab, 'export-page-1400');
+    const saving = tab.waitForEvent('download');
+    await tab.click('#popup-export-save');
+    const file = await saving, filePath = await file.path();
+    const saved = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    await tab.close();
+    assert.equal(saved.items.ytcVoiceKeyV1, 'e2e-import-deepgram');
+    assert.ok(!('pairingToken' in saved.items) && !('ytcTranscriptsV1' in saved.items), 'never in the file');
+    assert.ok(!fs.readFileSync(filePath, 'utf8').includes(TOKEN));
+    // A fresh install: nothing there. Import.
+    await worker(() => chrome.storage.local.clear());
+    await s.setInputFiles('#import-file', filePath);
+    await s.waitForFunction(() => /Imported \d+ settings/.test(document.querySelector('#import-notice').textContent));
+    assert.match(await s.locator('#import-notice').textContent(), /Reload your YouTube tabs/);
+    const after = await worker(() => chrome.storage.local.get(null));
+    for (const k of Object.keys(seed)) assert.deepEqual(after[k], seed[k], k);
+    assert.ok(!('pairingToken' in after) && !('ytcTranscriptsV1' in after));
+    // A console dump works too; what is not ours stays out, even with a token in it.
+    const dump = path.join(os.tmpdir(), `ytc-dump-${Date.now()}.json`);
+    fs.writeFileSync(dump, JSON.stringify({ shortsInFeeds: false, pairingToken: TOKEN, ytcTranscriptsV1: { on: true }, ytcCollectorV1: 'https://evil.example/', other: 1 }));
+    await s.setInputFiles('#import-file', dump);
+    await s.waitForFunction(() => /Imported 1 setting\. 4 other entries left out/.test(document.querySelector('#import-notice').textContent));
+    const after2 = await worker(() => chrome.storage.local.get(null));
+    assert.equal(after2.shortsInFeeds, false);
+    assert.ok(!('pairingToken' in after2) && !('ytcTranscriptsV1' in after2) && !('ytcCollectorV1' in after2) && !('other' in after2));
+    // Not settings at all: nothing changes.
+    for (const [text, why] of [['not json', /not a Redline settings file/], ['[1,2]', /not a Redline settings file/], ['{"other":1}', /holds no Redline settings/]]) {
+      const wrong = `${dump}.${Buffer.from(text).toString('hex').slice(0, 8)}.json`;
+      fs.writeFileSync(wrong, text);
+      await s.setInputFiles('#import-file', wrong);
+      await s.waitForFunction(w => new RegExp(w).test(document.querySelector('#import-notice').textContent), why.source, { timeout: 8000 }).catch(async e => { throw new Error(`${text}: ${await s.locator('#import-notice').textContent()} | ${s.errors} | ${e.message}`); });
+    }
+    assert.deepEqual(await worker(() => chrome.storage.local.get(null)), after2);
+    await s.bringToFront();
+    await s.locator('#settings-file').scrollIntoViewIfNeeded();
+    await shot(s, 'settings-file-1400');
+    for (const f of fs.readdirSync(os.tmpdir())) if (f.startsWith(path.basename(dump))) fs.rmSync(path.join(os.tmpdir(), f), { force: true });
+    assert.deepEqual(s.errors, []);
+    await s.close();
+    await worker(k => chrome.storage.local.clear().then(() => chrome.storage.local.set(k)), keep);
   });
 
   // ---- the popup.

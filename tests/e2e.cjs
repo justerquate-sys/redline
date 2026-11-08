@@ -9270,7 +9270,7 @@ chrome.runtime.onMessage.addListener(m => {
   await require('./tv-watch.cjs')(tvChecks);
   await require('./tv-actions.cjs')(tvChecks);
   await require('./tv-motion.cjs')(tvChecks);
-  await require('./members.cjs')({ ...tvChecks, page, ctx, sw, HOOK: MEMBERS_HOOK, json, fixture, homeFirst, nextStr, searchStr, VER, NEXT, nativeOk, problems, readyDel });
+  await require('./members.cjs')({ ...tvChecks, page, ctx, sw, trMock, HOOK: MEMBERS_HOOK, json, fixture, homeFirst, nextStr, searchStr, VER, NEXT, nativeOk, problems, readyDel });
   await step('TV browsing (960×540 and 1920×1080): rail, Home signed out and in, topic chips, the grid walk with its fixed row, Search screen and results, channel, playlist, a failed page; every screen inside the safe area, ≥ 17 px type, rings never clipped, no dead ends, Back rules', async () => {
     const tv = await tvOpen();
     const geo = {};

@@ -647,6 +647,10 @@ async fn route(message: &Value, sender: &Value, trusted: bool) -> Result<Value, 
             host::options().await?;
             Ok(Value::Null)
         }
+        "openExportPage" => {
+            host::open("popup.html?file=export").await?;
+            Ok(Value::Null)
+        }
         "connectHelper" => {
             pair().await?;
             let _ = settings_read(Options::default()).await;

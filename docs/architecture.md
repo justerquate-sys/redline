@@ -1326,10 +1326,23 @@ under `youtube.com`'s own storage matters (`localStorage` holds test switches on
 | `ytcPlayerLogV1` | The last ten player failures, for the debug overlay |
 | Scribe's `allZipExclusions:*` | Folders left out of the All ZIP |
 
-The app's Import dialog reads the older YourTube extension's records only, so it does not cover this. The move is a copy
-in the two workers' consoles (`chrome.storage.local.get(null, d => copy(JSON.stringify(d)))`, then
-`chrome.storage.local.set(<paste>)`). Lost with the old id only what is rebuilt by itself: the session's ready Home
-(memory) and the pairing token (paired again through native messaging).
+Also `yourTubeShowMembersV1` (the Members-only switch). The app's Import dialog reads the older YourTube extension's
+records only, so it does not cover this.
+
+**The settings file.** Popup → Export all settings opens a small page in its own tab (a toolbar popup closes when a save
+dialog takes the focus, and its download with it), and it saves `redline-settings.json`: `{redlineSettings: 1, exportedAt,
+items}`, everything in `chrome.storage.local` except `pairingToken` and `ytcTranscriptsV1`. Settings → Import all settings
+reads such a file (or a plain object of keys, as a console dump gives). The values stay in JavaScript (`bridge::storage_export`,
+`TR.file_peek`, `TR.file_commit`): Rust sees only key names and kinds and decides by a fixed list which to write
+(`core::import_choice`), because a Deepgram key is among them and it never enters Wasm. A pairing token, the switch,
+debug keys and anything unknown stay out; a wrong file changes nothing. The page says the file holds the Deepgram key.
+
+**Before the id changes.** A build with the manifest's `key` has the new id from its first load, so it can't read the old
+id's storage. The export therefore landed first, in a commit without the `key`: a Redline reloaded from the same folder
+keeps its id and data, exports, and only then moves to the build with the `key`. Lost with the old id only what is rebuilt
+by itself: the session's ready Home (memory) and the pairing token (paired again through native messaging). Scribe had no
+export; its only record worth keeping, the Folders ZIP choice, comes from its worker's console
+(`chrome.storage.local.get(null, d => { delete d.pairingToken; copy(JSON.stringify(d)) })`) into a file that Import reads.
 
 ## Moving from the old YourTube extension
 

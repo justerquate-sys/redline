@@ -80,6 +80,9 @@ steps). `tests/live-*.cjs` talk to real YouTube or Deepgram: run them by hand, r
   - `chrome.storage.local` gains `ytcTranscriptsV1` and `allZipExclusions:<root token>` (at most one list of folder names
     per save folder, bounded by the helper's 1,000). The worker's IndexedDB holds the pairing token, the toolbar's
     lifecycle (counts and a batch id) and up to 200 channel-preview ownership records.
+  - The settings file (popup → Export all settings, settings → Import all settings) holds everything in
+    `chrome.storage.local` but the pairing token and the switch, so it holds the Deepgram key, and both pages say so. The
+    values stay in JavaScript: Rust decides from key names and kinds only, and the key never enters Wasm.
   - Never on TV: compiled out of the bundle (`tests/check-tv-bundle.cjs` fails the build otherwise) and off at runtime
     in TV mode.
   - `helper/` and `transcripts/` are public: `npm run check:public` scans them for personal paths, addresses, IPs and

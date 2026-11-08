@@ -121,7 +121,7 @@ const TR = (() => {
     q.onerror = () => no(q.error);
   }));
   const timers = new Map();
-  let lastHover = null, listening = false;
+  let lastHover = null, listening = false, pending = null;
   return {
     http(url, method, headers, body, timeoutMs) {
       const c = new AbortController(), t = setTimeout(() => c.abort(), timeoutMs);
@@ -198,6 +198,29 @@ const TR = (() => {
     clipboard(text) { return navigator.clipboard.writeText(text).then(() => ''); },
     clipboard_later(text) {
       return navigator.clipboard.write([new ClipboardItem({ 'text/plain': text.then(t => new Blob([t], { type: 'text/plain' })) })]).then(() => '');
+    },
+    // A settings file: its values stay in this closure and never enter Wasm (a Deepgram key is among them). file_peek
+    // answers with key names and kinds only; file_commit writes the keys Rust chose.
+    pick(id) { const n = el(id); if (n) { n.value = ''; n.click(); } },
+    file_peek(id, maxBytes) {
+      const f = el(id) && el(id).files[0];
+      if (!f) return Promise.resolve('{"error":"none"}');
+      if (f.size > maxBytes) return Promise.resolve('{"error":"big"}');
+      return f.text().then(text => {
+        const v = JSON.parse(text);
+        if (!v || typeof v !== 'object' || Array.isArray(v)) return '{"error":"shape"}';
+        const items = v.redlineSettings === 1 ? v.items : v;
+        if (!items || typeof items !== 'object' || Array.isArray(items)) return '{"error":"shape"}';
+        pending = items;
+        const kind = x => (x === null ? 'null' : Array.isArray(x) ? 'array' : typeof x);
+        return JSON.stringify({ items: Object.keys(items).map(k => ({ k, t: kind(items[k]) })) });
+      }).catch(() => '{"error":"shape"}');
+    },
+    file_commit(keys) {
+      const items = pending, out = {};
+      pending = null;
+      for (const k of JSON.parse(keys)) if (items && Object.hasOwn(items, k)) out[k] = items[k];
+      return chrome.storage.local.set(out).then(() => '');
     },
     local_time(iso) { const t = iso ? new Date(iso) : null; return t && !Number.isNaN(t.getTime()) ? t.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : ''; },
     number(n) { return Number(n).toLocaleString(); },
@@ -418,6 +441,14 @@ let wasm_bindgen = (function(exports) {
                 const ret = TR.epoch();
                 return ret;
             },
+            __wbg_file_commit_c0f782d7a82c8fc7: function(arg0, arg1) {
+                const ret = TR.file_commit(getStringFromWasm0(arg0, arg1));
+                return ret;
+            },
+            __wbg_file_peek_ea6907141a0eb718: function(arg0, arg1, arg2) {
+                const ret = TR.file_peek(getStringFromWasm0(arg0, arg1), arg2);
+                return ret;
+            },
             __wbg_focus_a8ffe09661ce71ef: function(arg0, arg1) {
                 TR.focus(getStringFromWasm0(arg0, arg1));
             },
@@ -518,6 +549,9 @@ let wasm_bindgen = (function(exports) {
             __wbg_open_page_602ae88a9b823a2e: function(arg0, arg1) {
                 const ret = TR.open_page(getStringFromWasm0(arg0, arg1));
                 return ret;
+            },
+            __wbg_pick_a6b6cad28276b2a9: function(arg0, arg1) {
+                TR.pick(getStringFromWasm0(arg0, arg1));
             },
             __wbg_push_url_311f1768aa8e9e6e: function(arg0, arg1) {
                 TR.push_url(getStringFromWasm0(arg0, arg1));
@@ -629,7 +663,7 @@ let wasm_bindgen = (function(exports) {
                 return ret;
             },
             __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-                // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 197, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+                // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 200, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
                 const ret = makeMutClosure(arg0, arg1, wasm_bindgen_3d0bd8a515793b3f___convert__closures_____invoke___wasm_bindgen_3d0bd8a515793b3f___JsValue__core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_3d0bd8a515793b3f___JsError___true_);
                 return ret;
             },

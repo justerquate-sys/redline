@@ -3,7 +3,7 @@
 'use strict';
 const fs = require('node:fs'), path = require('node:path');
 // Words of the feature itself. (YouTube's own 'transcript' panels and 'subscribe' are not it, so the plain word is no test.)
-const NEVER = ['Full transcript', 'Transcripts', 'ytcTranscripts', 'transcripts.wasm', 'transcripts-core', 'tsc-', 'tsc:', 'scribe-helper', 'pairingToken', 'getVideoStatuses', 'openReaderVideo', 'channelPanel', '127.0.0.1:8765', '/videos/status', '/queue/status', '/channels/import', 'com.fulltranscript', 'nativeMessaging', 'sendNativeMessage', 'Azure', 'data-tr-page', 'popup-transcripts'];
+const NEVER = ['Full transcript', 'Transcripts', 'ytcTranscripts', 'transcripts.wasm', 'transcripts-core', 'tsc-', 'tsc:', 'scribe-helper', 'pairingToken', 'getVideoStatuses', 'openReaderVideo', 'channelPanel', '127.0.0.1:8765', '/videos/status', '/queue/status', '/channels/import', 'com.fulltranscript', 'nativeMessaging', 'sendNativeMessage', 'Azure', 'data-tr-page', 'popup-transcripts', 'popup-export', 'redline-settings.json'];
 
 function check(dir) {
   const problems = [];

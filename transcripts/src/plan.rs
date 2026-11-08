@@ -421,7 +421,7 @@ pub fn plan(message: &Value, trusted: bool) -> Result<Option<Value>, String> {
             }
             return Ok(None);
         }
-        "openSettings" | "connectHelper" | "getSettings" | "forgetSettings" => return Ok(None),
+        "openSettings" | "openExportPage" | "connectHelper" | "getSettings" | "forgetSettings" => return Ok(None),
         "getAzureSettings" => request("/settings", "GET"),
         "saveAzureSettings" => {
             let endpoint = optional_string(&message["endpoint"]).trim().to_owned();
@@ -471,6 +471,7 @@ mod tests {
             "getLibraryStats",
             "openReader",
             "openSettings",
+            "openExportPage",
             "connectHelper",
             "getSettings",
             "saveSettings",

@@ -29,7 +29,7 @@ const setDuration = (l, text) => { const b = l.contentImage.thumbnailViewModel.o
 const lock = (l, text) => { l.metadata.lockupMetadataViewModel.metadata.contentMetadataViewModel.metadataRows.push(rowBadge(text)); };
 
 module.exports = async function membersTests(h) {
-  const { step, page, ctx, sw, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TVSIZES, HOOK, json, fixture, homeFirst, nextStr, searchStr, VER, NEXT, nativeOk, incidents, problems, readyDel, log } = h;
+  const { step, page, ctx, sw, trMock, tvOpen, tvClose, tvGo, tvAudit, tvShot, back, TVSIZES, HOOK, json, fixture, homeFirst, nextStr, searchStr, VER, NEXT, nativeOk, incidents, problems, readyDel, log } = h;
   const shots = process.env.YTC_SHOTS;
   const shotPage = async (name, clip) => { if (shots) { await page.waitForTimeout(120); await page.screenshot({ path: path.join(shots, `${name}.png`), ...(clip ? { clip } : {}) }); } };
 
@@ -440,6 +440,83 @@ module.exports = async function membersTests(h) {
     checkLabels(await labelGeometry(), 'added in place');
     // The list wasn't rendered again under the pointer: the same elements.
     assert.deepEqual(await page.evaluate(id => [document.querySelector('#ytc-list .c').dataset.same, document.querySelector(`#ytc-list .c[data-v="${id}"]`).dataset.same], CLICK), ['1', '1']);
+  }));
+
+  // With Transcripts set up (the public build's e2e copy): the label and the chip share the thumbnail.
+  if (trMock) await step('members-only and Transcripts: the chip at the top right overlaps neither the label nor the duration, whatever it says, at any width; a label added in place keeps the chip', withHook(async () => {
+    const clear = async () => {
+      const overlaps = await page.evaluate(() => {
+        const box = n => n.getBoundingClientRect(), hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom, out = [];
+        for (const th of document.querySelectorAll('.th')) {
+          const chip = th.querySelector('.tsc');
+          if (!chip || !chip.getClientRects().length) continue;
+          const c = box(chip), t = box(th), bs = [...th.querySelectorAll('b')];
+          const inset = [Math.round(t.right - c.right), Math.round(c.top - t.top)];
+          if (inset[0] < 3 || inset[0] > 7 || inset[1] < 3 || inset[1] > 7) out.push('corner ' + inset);
+          if (c.left < t.left) out.push('wider than its thumbnail');
+          for (const b of bs) if (hit(c, box(b))) out.push(th.closest('.c').dataset.v + ': the chip touches ' + b.className + ' ' + b.textContent);
+          const mo = bs.find(b => b.classList.contains('mo')), dur = bs.find(b => !b.classList.contains('mo'));
+          if (mo && dur && Math.abs(box(mo).top - box(dur).top) > 2) out.push('the label left the duration\'s row');
+        }
+        return { out, withLabel: [...document.querySelectorAll('.th')].filter(t => t.querySelector('.tsc') && t.querySelector('b.mo')).length };
+      });
+      assert.deepEqual(overlaps.out, []);
+      return overlaps.withLabel;
+    };
+    trMock.reset();
+    trMock.state.configured = true; trMock.state.hasKey = true; trMock.state.endpoint = 'https://r.cognitiveservices.azure.com';
+    await sw.evaluate(() => chrome.storage.local.set({ ytcTranscriptsV1: { on: true } }));
+    try {
+      // A label added in place by the speculative check: the same element keeps its chip, and only one of each.
+      let release = () => {};
+      NEXT.gate = new Promise(r => { release = r; });
+      try {
+        await open('/');
+        await waitCard(CLICK);
+        await page.waitForSelector(`#ytc-list .c[data-v="${CLICK}"] .tsc`, { state: 'attached', timeout: 15000 });
+        assert.equal(await cardBadge(CLICK).count(), 0, 'not labelled yet');
+        await page.evaluate(id => { document.querySelector(`#ytc-list .c[data-v="${id}"] .tsc`).dataset.same = '1'; }, CLICK);
+      } finally { release(); NEXT.gate = null; }
+      await page.waitForSelector(`#ytc-list .c[data-v="${CLICK}"] .th b.mo`, { timeout: 15000 });
+      assert.equal(await page.locator(`#ytc-list .c[data-v="${CLICK}"] .tsc`).count(), 1, 'one chip');
+      assert.equal(await page.locator(`#ytc-list .c[data-v="${CLICK}"] .tsc`).getAttribute('data-same'), '1', 'the same chip: the label did not rewrite the thumbnail');
+      assert.equal(await cardBadge(CLICK).count(), 1, 'one label');
+      assert.ok(await clear() >= 2, 'labelled cards with chips were measured');
+      // That chip still works after the label came.
+      await page.locator(`#ytc-list .c[data-v="${CLICK}"] a.th`).hover();
+      await page.locator(`#ytc-list .c[data-v="${CLICK}"] .tsc`).click();
+      await page.waitForFunction(id => document.querySelector(`#ytc-list .c[data-v="${id}"] .tsc`)?.dataset.s === 'on', CLICK, { timeout: 8000 });
+      await page.mouse.move(2, 2);
+      await clear();
+      // The widest thing a chip says, on every locked card; both label forms (a long duration shortens the label).
+      for (const id of [feed.locked, feed.russian]) trMock.state.jobs.push(trMock.job('job-' + id, id, 'downloading', { progress: 3 }));
+      for (const [w, h] of [[1400, 900], [800, 800], [480, 900]]) {
+        await page.setViewportSize({ width: w, height: h });
+        await open('/');
+        await waitCard(feed.locked);
+        await page.waitForFunction(id => /Downloading/.test(document.querySelector(`#ytc-list .c[data-v="${id}"] .tsc`)?.textContent || ''), feed.locked, { timeout: 12000 });
+        assert.ok(await clear() >= 2, `measured at ${w}`);
+        // Related: the smallest thumbnails, with labelled cards.
+        await open(`/watch?v=${WATCH}`);
+        await page.waitForSelector('#ytc-list .c .th b.mo', { timeout: 15000 });
+        await page.waitForSelector('#ytc-list .c .tsc', { state: 'attached', timeout: 15000 });
+        assert.ok(await clear() >= 1, `related measured at ${w}`);
+      }
+      await page.setViewportSize({ width: 1400, height: 900 });
+      // A switch-off removes a labelled card, chip and all; nothing stays behind.
+      assert.equal(await page.locator('.tsc:not(.c .tsc):not(.pli .tsc)').count(), 0);
+    } finally {
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await sw.evaluate(() => chrome.storage.local.remove('ytcTranscriptsV1'));
+      await page.goto('about:blank');
+      trMock.reset();
+      // The worker's next read finds the queue empty: it goes quiet by itself, and leaves nothing for the next step.
+      for (let i = 0; i < 300; i++) {
+        const quiet = await sw.evaluate(async () => (await chrome.action.getTitle({})) === 'Redline preferences' && (await chrome.alarms.getAll()).length === 0);
+        if (quiet) break;
+        await page.waitForTimeout(100);
+      }
+    }
   }));
 
   await step('members-only: an ordinary uploads list of a channel whose id starts UCMO is not the members list: no labels, its rows play next', withHook(async () => {

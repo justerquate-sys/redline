@@ -374,10 +374,64 @@ pub fn live_jobs(jobs: &Value) -> Value {
     Value::Object(out)
 }
 
+/// A settings file is at most this big (2,000 resume records are about 200 KB).
+pub const IMPORT_MAX_BYTES: f64 = 4.0 * 1024.0 * 1024.0;
+
+/// What may be imported, by exact key and JSON kind: the records the client documents. A pairing token, the Transcripts
+/// switch, anything unknown or of another kind stays out, however the file was made.
+const IMPORTABLE: &[(&str, &[&str])] = &[
+    ("ytcConfigV1", &["object"]),
+    ("ytcVoiceKeyV1", &["string"]),
+    ("ytcPlayerLogV1", &["array"]),
+    ("yourTubeHistoryV1", &["object", "array"]),
+    ("yourTubeProgressV1", &["object", "array"]),
+    ("yourTubeBlockedWebsitesV1", &["object", "array"]),
+    ("yourTubeRecommendationTopicsV1", &["object", "array"]),
+    ("yourTubeNativeTopicsV1", &["object", "array"]),
+    ("yourTubeMinimumHomeDurationV1", &["number", "string"]),
+    ("yourTubeHomeOrderV1", &["string"]),
+    ("yourTubeShowMusicV1", &["boolean"]),
+    ("yourTubeShowLiveV1", &["boolean"]),
+    ("yourTubeHomePlaylistsOnlyV1", &["boolean"]),
+    ("yourTubeShowMembersV1", &["boolean"]),
+    ("shortsInFeeds", &["boolean"]),
+];
+
+/// Decides from a file's manifest (`[{"k":key,"t":kind}]`: names and kinds only, the values stay out of Wasm because a
+/// Deepgram key is among them) which keys to write: `(keep, skipped)`.
+pub fn import_choice(manifest: &Value) -> (Vec<String>, usize) {
+    let mut keep = vec![];
+    let mut skipped = 0;
+    for entry in manifest.as_array().into_iter().flatten() {
+        let (k, t) = (entry["k"].as_str().unwrap_or(""), entry["t"].as_str().unwrap_or(""));
+        let known = IMPORTABLE.iter().any(|(key, kinds)| *key == k && kinds.contains(&t));
+        let zip = t == "array" && k.strip_prefix("allZipExclusions:").is_some_and(|r| r.len() == 64 && r.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
+        if known || zip {
+            keep.push(k.to_owned());
+        } else {
+            skipped += 1;
+        }
+    }
+    (keep, skipped)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_settings_file_brings_documented_records_only() {
+        let zip = format!("allZipExclusions:{}", "a".repeat(64));
+        let m = json!([
+            {"k":"ytcConfigV1","t":"object"},{"k":"ytcVoiceKeyV1","t":"string"},{"k":"shortsInFeeds","t":"boolean"},{"k":zip,"t":"array"},
+            {"k":"pairingToken","t":"string"},{"k":"ytcTranscriptsV1","t":"object"},{"k":"ytcSockTestV1","t":"string"},{"k":"ytcCollectorV1","t":"string"},
+            {"k":"ytcConfigV1x","t":"object"},{"k":"ytcVoiceKeyV1","t":"object"},{"k":"allZipExclusions:short","t":"array"},{"k":"unknown","t":"string"}
+        ]);
+        let (keep, skipped) = import_choice(&m);
+        assert_eq!(keep, vec!["ytcConfigV1".to_owned(), "ytcVoiceKeyV1".to_owned(), "shortsInFeeds".to_owned(), zip]);
+        assert_eq!(skipped, 8);
+        assert_eq!(import_choice(&json!("nonsense")), (vec![], 0));
+    }
     #[test]
     fn cancelled_does_not_produce_success() {
         let view = json!({"kind":"processing","saved":5,"cancelled":0,"removed":0,"batchId":"b"});

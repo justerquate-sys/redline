@@ -2,7 +2,7 @@
 //! is the one place an unconfigured person's browser ever talks to the helper, and only because they opened it.
 
 use crate::html::esc;
-use crate::host;
+use crate::{core, host};
 use crate::ui::{disable, notice, put, send, set};
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -33,13 +33,14 @@ pub fn boot() {
 fn shell() -> String {
     format!(
         r##"<div class="tx-app"><header class="tx-top"><a class="tx-brand" href="reader.html">{mark}<span>Transcripts</span></a><span class="tx-gap"></span><a class="tx-b quiet" href="reader.html">Library</a></header>
-<div class="tx-shell settings"><nav class="tx-nav" aria-label="Settings sections"><a href="#save-folder">Save folder</a><a href="#helper">Local helper</a><a href="#azure">Azure</a><a href="#use">Using transcripts</a><a href="#pairing">Manual pairing</a></nav>
+<div class="tx-shell settings"><nav class="tx-nav" aria-label="Settings sections"><a href="#save-folder">Save folder</a><a href="#helper">Local helper</a><a href="#azure">Azure</a><a href="#use">Using transcripts</a><a href="#pairing">Manual pairing</a><a href="#settings-file">Settings file</a></nav>
 <main class="tx-settings"><h1>Settings</h1>
 <section id="save-folder" class="tx-panel"><div class="tx-row spread wrap"><h2>Save folder</h2><span id="export-status" class="tx-state">Loading</span></div><p class="tx-hint">A folder on this computer. Each finished transcript can save here automatically; library folders become its subfolders.</p><p id="export-directory" class="tx-path">Loading</p><button type="button" id="choose-directory" class="tx-b primary" data-tx="choose-directory" disabled>Choose save folder</button><form id="export-form" class="tx-stack" data-tx-submit="export"><label class="tx-check"><input id="auto-export" type="checkbox" disabled>Save each finished transcript automatically</label><div class="tx-field"><label for="export-format">Document format</label><select id="export-format" disabled><option value="txt">Plain text (.txt)</option><option value="md">Markdown (.md)</option></select></div><p id="export-help" class="tx-hint"></p><div><button type="submit" id="save-export" class="tx-b" disabled>Save these choices</button></div></form><div id="export-notice" class="tx-notice" role="status" hidden></div></section>
 <section id="helper" class="tx-panel"><div class="tx-row spread wrap"><h2>Local helper</h2><button type="button" id="check-health" class="tx-b small" data-tx="check">Check connection</button></div><span id="helper-status" class="tx-state" role="status">Connecting</span><p id="helper-description" class="tx-hint">Looking for the helper on this computer.</p><dl id="health-details" class="tx-facts"></dl><div id="helper-notice" class="tx-notice" role="status" hidden></div></section>
 <section id="azure" class="tx-panel"><div class="tx-row spread wrap"><h2>Azure connection</h2><span id="azure-status" class="tx-state">Loading</span></div><form id="azure-form" class="tx-stack" data-tx-submit="azure"><div class="tx-field"><label for="azure-endpoint">Azure endpoint or Microsoft Foundry project URL</label><input id="azure-endpoint" type="url" autocomplete="off" spellcheck="false" placeholder="https://your-resource.services.ai.azure.com/api/projects/your-project" required data-tx-input="azure"><p class="tx-hint">Your resource endpoint or Foundry project URL. The helper converts it to the right transcription endpoint.</p></div><div class="tx-field"><label for="azure-key">Azure API key</label><input id="azure-key" type="password" autocomplete="off" spellcheck="false" placeholder="Enter your Azure API key" data-tx-input="azure"><p id="key-state" class="tx-hint">The key is saved by the local helper on this computer, outside browser storage.</p></div><div class="tx-stack tight"><label class="tx-check"><input id="use-brave-login" type="checkbox" data-tx-change="azure">Use my Brave login for YouTube downloads</label><p class="tx-hint">Optional, if YouTube asks you to sign in. The helper reads your local Brave cookies to reach YouTube. Cookies are never sent to Azure.</p></div><div class="tx-row wrap"><button type="submit" id="save-azure" class="tx-b primary" disabled>Save connection</button><button type="button" id="test-azure" class="tx-b" data-tx="test" disabled>Test Azure connection</button></div><p class="tx-hint">The test sends 0.75 seconds of silent audio to Azure. A tiny usage charge may apply.</p></form><div id="notice" class="tx-notice" role="status" hidden></div></section>
 <section id="use" class="tx-panel"><h2>Using transcripts</h2><p class="tx-hint">Once Azure is connected, a small transcript control appears when you point at a video card on YouTube, and a Transcript button on each video page. Videos join your queue while you keep browsing. Open the library to read, copy or save them.</p><p class="tx-hint">On a channel page, choose All videos or Past year to queue that channel. Shorts stay out unless you include them.</p><p class="tx-hint">The helper and Azure costs are yours. Setup is described in the <a href="https://github.com/justerquate-sys/redline#transcripts" target="_blank" rel="noopener noreferrer">README</a>.</p></section>
 <details id="pairing" class="tx-panel"><summary>Manual pairing</summary><p class="tx-hint">Automatic pairing is recommended. A helper you manage by hand can use a pairing token instead.</p><form id="pair-form" class="tx-stack" data-tx-submit="pair"><div class="tx-field"><label for="pairing-token">Local helper pairing token</label><input id="pairing-token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a local pairing token" required><p id="pair-state" class="tx-hint">Checking saved pairing</p></div><div class="tx-row wrap"><button type="submit" id="save-token" class="tx-b">Save manual pairing</button><button type="button" id="auto-pair" class="tx-b quiet" data-tx="auto-pair">Pair automatically</button><button type="button" id="forget-token" class="tx-b quiet" data-tx="forget">Forget token</button></div></form><div id="pair-notice" class="tx-notice" role="status" hidden></div></details>
+<section id="settings-file" class="tx-panel"><h2>Settings file</h2><p class="tx-hint">Everything Redline keeps in this browser, in one file: preferences, searches, resume positions, topics, blocked websites and filters. Use it to move to another browser or install.</p><p class="tx-hint"><b>It also holds your Deepgram key, if you saved one.</b> Keep the file private, and delete it once you have imported it. Importing replaces these settings here. The helper’s pairing token is never in the file.</p><div class="tx-row wrap"><button type="button" id="export-all" class="tx-b" data-tx="export-all">Export all settings</button><button type="button" id="import-all" class="tx-b" data-tx="import-all">Import all settings</button><input type="file" id="import-file" accept="application/json,.json" data-tx-change="import-file" hidden></div><div id="import-notice" class="tx-notice" role="status" hidden></div></section>
 <p class="tx-hint tx-foot">Transcripts stay on this computer. Audio goes to your own Azure resource for transcription, and nowhere else. Your API key stays in the local helper’s settings and is never returned to the extension or saved in browser storage.</p>
 <p class="tx-hint">Version {version}</p>
 </main></div></div>"##,
@@ -208,8 +209,39 @@ async fn check_connection(load: bool) {
     disable("check-health", false);
 }
 
+async fn import_file() {
+    let raw = host::peek_file("import-file", core::IMPORT_MAX_BYTES).await;
+    let v: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+    let failed = match v["error"].as_str() {
+        Some("none") => return,
+        Some("big") => Some("This file is too big to be a Redline settings file."),
+        Some(_) => Some("This is not a Redline settings file. Nothing changed."),
+        None => None,
+    };
+    if let Some(message) = failed {
+        return notice("import-notice", message, "error");
+    }
+    let (keep, skipped) = core::import_choice(&v["items"]);
+    if keep.is_empty() {
+        return notice("import-notice", "This file holds no Redline settings. Nothing changed.", "error");
+    }
+    if host::commit_file(&json!(keep).to_string()).await {
+        let left = if skipped > 0 { format!(" {skipped} other {} left out.", if skipped == 1 { "entry" } else { "entries" }) } else { String::new() };
+        notice("import-notice", &format!("Imported {} {}.{left} Reload your YouTube tabs to use them.", keep.len(), if keep.len() == 1 { "setting" } else { "settings" }), "success");
+    } else {
+        notice("import-notice", "Could not write the settings. Nothing changed.", "error");
+    }
+}
+
 pub fn on_event(kind: &str, name: &str, _arg: &str, _value: &str) {
     match (kind, name) {
+        ("click", "export-all") => spawn_local(async {
+            if let Err(e) = send("openExportPage", json!({})).await {
+                notice("import-notice", &e, "error");
+            }
+        }),
+        ("click", "import-all") => host::pick("import-file"),
+        ("change", "import-file") => spawn_local(import_file()),
         ("click", "check") => {
             let load = with(|s| s.saved.is_none());
             spawn_local(check_connection(load));
