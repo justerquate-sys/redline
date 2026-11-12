@@ -153,8 +153,9 @@ pub async fn native_call(host: &str, message: &str) -> String {
 pub async fn vault_read(key: &str) -> String {
     string(vault_get(key)).await.unwrap_or_default()
 }
-pub async fn vault_write(key: &str, value: &str) {
-    let _ = JsFuture::from(vault_set(key, value)).await;
+/// False when the write was not committed.
+pub async fn vault_write(key: &str, value: &str) -> bool {
+    JsFuture::from(vault_set(key, value)).await.is_ok()
 }
 pub async fn vault_remove(key: &str) {
     let _ = JsFuture::from(vault_del(key)).await;

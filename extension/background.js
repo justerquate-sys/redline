@@ -121,9 +121,10 @@ const TR = (() => {
     r.onerror = () => no(r.error);
   }));
   const tx = (mode, f) => vault().then(d => new Promise((ok, no) => {
-    const q = f(d.transaction('v', mode).objectStore('v'));
-    q.onsuccess = () => ok(q.result);
-    q.onerror = () => no(q.error);
+    // Answered when the transaction is committed, not when the request is: a put whose transaction then aborts is lost.
+    const t = d.transaction('v', mode), q = f(t.objectStore('v'));
+    t.oncomplete = () => ok(q.result);
+    t.onabort = t.onerror = () => no(t.error || q.error);
   }));
   const timers = new Map();
   let lastHover = null, listening = false, pending = null;

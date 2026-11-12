@@ -760,6 +760,10 @@ async function steps({ step, ctx, sw, mock, incidents, HOME, CT_SKY }) {
     await p.waitForSelector('#ytc-list .c[data-v] .t');
     await p.waitForTimeout(600);
     assert.equal(mock.log.length, before, 'no request from YouTube while off');
+    // A tab's request that was already on its way when it was turned off: the worker refuses it, nothing reaches the helper.
+    const late = JSON.parse(await worker(() => wasm_bindgen.on_message(JSON.stringify({ action: 'startJob', url: 'https://www.youtube.com/watch?v=dddddddddd1' }), JSON.stringify({ id: chrome.runtime.id, url: 'https://www.youtube.com/', tab: { id: 1 }, frameId: 0 }))));
+    assert.equal(late.ok, false, 'a late start is refused while off');
+    assert.equal(mock.log.length, before, 'and it never reaches the helper');
     await s.waitForSelector('#turn-on:not([hidden])');
     await s.click('#turn-on');
     await waitFor(async () => (await flag())?.on === true, 'on again by asking', 8000);

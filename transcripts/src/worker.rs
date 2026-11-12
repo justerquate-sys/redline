@@ -554,6 +554,11 @@ async fn settings_read(o: Options) -> Result<Value, Failure> {
 
 async fn route(message: &Value, sender: &Value, trusted: bool) -> Result<Value, Failure> {
     let action = message["action"].as_str().unwrap_or("");
+    // Turned off is enforced here, not only by hiding the controls: a tab's request already on its way when the owner
+    // turned the feature off must not start work that costs money. The extension's own pages stay able to turn it on.
+    if !trusted && !host::vault_read(OFF_RECORD).await.is_empty() {
+        return Err(Failure { message: "Transcripts are turned off.".into(), status: 403 });
+    }
     if let Some(p) = plan::plan(message, trusted)? {
         let path = p["path"].as_str().unwrap_or("/").to_owned();
         let o = Options {
@@ -711,8 +716,11 @@ async fn route(message: &Value, sender: &Value, trusted: bool) -> Result<Value, 
         }
         "getSettings" => Ok(json!({"paired":!host::vault_read(TOKEN_KEY).await.is_empty(),"on":flag_on().await,"turned_off":!host::vault_read(OFF_RECORD).await.is_empty()})),
         "turnOff" => {
-            host::vault_write(OFF_RECORD, "1").await;
+            let kept = host::vault_write(OFF_RECORD, "1").await;
             set_enabled(false).await;
+            if !kept {
+                return Err(Failure { message: "Could not save that transcripts are off. Try again.".into(), status: 500 });
+            }
             Ok(json!({"on":false,"turned_off":true}))
         }
         "turnOn" => {
@@ -722,7 +730,9 @@ async fn route(message: &Value, sender: &Value, trusted: bool) -> Result<Value, 
         }
         "saveSettings" => {
             let token = message["pairingToken"].as_str().unwrap_or("").trim();
-            host::vault_write(TOKEN_KEY, token).await;
+            if !host::vault_write(TOKEN_KEY, token).await {
+                return Err(Failure { message: "Could not save the pairing. Try again.".into(), status: 500 });
+            }
             Ok(json!({"paired":true}))
         }
         "forgetSettings" => {

@@ -1,6 +1,6 @@
 [package]
 name = "ytc-client"
-version = "0.14.4"
+version = "0.15.0"
 edition = "2024"
 description = "Redline: a fast, ad-free client for YouTube, written in Rust (Wasm) as a browser extension"
 license = "MIT"
