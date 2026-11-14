@@ -3366,7 +3366,11 @@ impl App {
                     let retriable = how != player::fail::Retries::Never;
                     self.auto.failed(&reason, bridge::now());
                     // (`ytc-test-noautotry`, localStorage, tests only: no automatic retry.)
-                    let delay = if bridge::local_flag("ytc-test-noautotry") { None } else { self.auto.delay(bridge::now(), played, how) };
+                    let mut delay = if bridge::local_flag("ytc-test-noautotry") { None } else { self.auto.delay(bridge::now(), played, how) };
+                    // (`ytc-test-shortbot`, localStorage, tests only: the bot check's long waits are 1.5 s.)
+                    if how == player::fail::Retries::Slow && bridge::local_flag("ytc-test-shortbot") {
+                        delay = delay.map(|_| 1500);
+                    }
                     if !player::own::quiet(&reason) {
                         self.incident(if delay.is_some() { "player-retry" } else { "player-failed" }, &reason, Some(p.report()));
                     }

@@ -103,7 +103,13 @@ pub enum Retries {
     Fast,
     /// At most one automatic retry in the window, none if others went out, after this wait (ms).
     Once(u32),
+    /// The bot check: YouTube's block on this network usually lifts within minutes, so the waits are
+    /// long (`BOT_DELAYS_MS`) and few.
+    Slow,
 }
+
+/// The bot check's automatic Try again waits (live 14 Nov 2026: a block that had lifted minutes later).
+pub const BOT_DELAYS_MS: [u32; 3] = [20_000, 60_000, 180_000];
 
 /// YouTube's player service says "too many requests": one retry, a minute later.
 pub const RATE_LIMIT_WAIT_MS: u32 = 60_000;
@@ -117,8 +123,11 @@ fn service_status(reason: &str) -> Option<u32> {
 
 /// How a failure reason is retried. `played`: the failed player had shown a picture. YouTube's
 /// `ERROR` during a refresh of a video that was playing seconds ago may be a passing one (one retry;
-/// the new player's answer at its start is the verdict). The bot check is never retried.
+/// the new player's answer at its start is the verdict). The bot check is retried slowly.
 pub fn retries(reason: &str, played: bool) -> Retries {
+    if reason.starts_with("VISIONOS LOGIN_REQUIRED") && super::own::bot_check("LOGIN_REQUIRED", reason) {
+        return Retries::Slow;
+    }
     if let Some(code) = service_status(reason) {
         return match code {
             429 => Retries::Once(RATE_LIMIT_WAIT_MS),
@@ -182,6 +191,7 @@ impl Auto {
         }
         match how {
             Retries::Once(ms) => self.at.is_empty().then_some(ms),
+            Retries::Slow => BOT_DELAYS_MS.get(self.at.len()).copied(),
             _ => AUTO_DELAYS_MS.get(self.at.len()).copied(),
         }
     }
@@ -884,6 +894,18 @@ mod tests {
         assert_eq!(b.delay(100.0, false, Retries::Once(REFUSED_WAIT_MS)), None);
         assert_eq!(b.delay(AUTO_WINDOW_MS + 1.0, false, Retries::Once(REFUSED_WAIT_MS)), Some(REFUSED_WAIT_MS), "the window slid");
         assert_eq!(Auto::default().delay(0.0, true, Retries::Never), None);
+        // The bot check: three slow retries, then the panel.
+        let bot = "VISIONOS LOGIN_REQUIRED: Sign in to confirm you\u{2019}re not a bot \u{b7} tried: anonymous (bot check)";
+        assert_eq!(retries(bot, false), Retries::Slow);
+        assert_eq!(retries("VISIONOS LOGIN_REQUIRED: Sign in to confirm your age", false), Retries::Never);
+        let mut c = Auto::default();
+        let mut now = 0.0;
+        for want in BOT_DELAYS_MS {
+            assert_eq!(c.delay(now, false, Retries::Slow), Some(want));
+            now += f64::from(want);
+            c.spend(now);
+        }
+        assert_eq!(c.delay(now, false, Retries::Slow), None, "then the panel");
     }
 
     #[test]
@@ -905,7 +927,7 @@ mod tests {
         let e = "VISIONOS ERROR: Something went wrong";
         assert_eq!(retries(e, true), Retries::Once(AUTO_DELAYS_MS[0]));
         assert_eq!(retries(e, false), Retries::Never, "at a start it is the verdict");
-        assert_eq!(retries("VISIONOS LOGIN_REQUIRED: Sign in to confirm you’re not a bot", true), Retries::Never);
+        assert_eq!(retries("VISIONOS LOGIN_REQUIRED: Sign in to confirm you’re not a bot", true), Retries::Slow, "the block usually lifts");
         assert_eq!(retries("VISIONOS UNPLAYABLE: x", true), Retries::Never);
         assert_eq!(retries("VISIONOS ERROR: for members only", true), Retries::Never);
         assert_eq!(retries("no compatible formats (x)", true), Retries::Never);

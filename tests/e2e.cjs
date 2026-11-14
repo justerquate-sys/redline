@@ -4168,6 +4168,8 @@ chrome.runtime.onMessage.addListener(m => {
     const had = (await ctx.cookies('https://www.youtube.com')).find(c => c.name === 'SAPISID');
     await ctx.addCookies([{ name: 'SAPISID', value: 'e2e-sapisid', domain: '.youtube.com', path: '/', secure: true }]);
     FX.bot = 'all';
+    // The automatic Try again has its own step below; here the panel comes at once.
+    await page.evaluate(() => localStorage.setItem('ytc-test-noautotry', '1'));
     const mark = log.api.length, inc0 = incidents.length;
     try {
       await page.goto('https://www.youtube.com/watch?v=botall00001&t=5', { waitUntil: 'commit' });
@@ -4209,7 +4211,33 @@ chrome.runtime.onMessage.addListener(m => {
       assert.equal(new URL(page.url()).search, '?v=botall00002');
     } finally {
       FX.bot = null;
+      await page.evaluate(() => localStorage.removeItem('ytc-test-noautotry')).catch(() => {});
       if (had) await ctx.addCookies([had]); else await ctx.clearCookies({ name: 'SAPISID' });
+    }
+  });
+
+  await step('own player: a bot check is tried again by itself (slowly); once YouTube lets go it plays with no click; still blocked after the last one, the panel', async () => {
+    await page.evaluate(() => localStorage.setItem('ytc-test-shortbot', '1'));
+    FX.bot = 'all';
+    try {
+      // Still blocked: the automatic retries go out, then the panel.
+      let mark = log.api.length;
+      await page.goto('https://www.youtube.com/watch?v=botauto0001', { waitUntil: 'commit' });
+      await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 20000 });
+      assert.ok(visCalls('botauto0001', mark).length >= 4, 'the first attempt and its automatic retries: ' + visCalls('botauto0001', mark).length);
+      assert.equal((await panel()).m, "YouTube asks to sign in to confirm you're not a bot");
+      // The block lifts while the first wait runs: it plays by itself.
+      mark = log.api.length;
+      await page.goto('https://www.youtube.com/watch?v=botauto0002', { waitUntil: 'commit' });
+      for (let i = 0; i < 80 && !visCalls('botauto0002', mark).length; i++) await page.waitForTimeout(100);
+      await page.waitForTimeout(300);
+      FX.bot = null;
+      await waitT(() => document.documentElement.dataset.ytcFirstFrame, null, 10000);
+      await page.waitForSelector('#ytc-video');
+      assert.ok(!(await page.$('#ytc-player.failed')), 'no panel');
+    } finally {
+      FX.bot = null;
+      await page.evaluate(() => localStorage.removeItem('ytc-test-shortbot')).catch(() => {});
     }
   });
 
@@ -5028,8 +5056,11 @@ chrome.runtime.onMessage.addListener(m => {
     // A bot check on every route blocks VISIONOS for a while; an automatic retry of another video leaves that.
     FX.bot = 'all';
     try {
+      // (The bot check's own slow retries have their step: here the panel at once.)
+      await page.evaluate(() => localStorage.setItem('ytc-test-noautotry', '1'));
       await page.goto('https://www.youtube.com/watch?v=botall00009', { waitUntil: 'commit' });
       await page.waitForSelector('#ytc-player.failed .pfail', { timeout: 8000 });
+      await page.evaluate(() => localStorage.removeItem('ytc-test-noautotry'));
       const c = 'vis500http1', inc0 = incidents.length;
       await page.evaluate(c => { history.pushState(null, '', `/watch?v=${c}`); dispatchEvent(new PopStateEvent('popstate')); }, c);
       for (let i = 0; i < 120 && kindsOf(inc0).filter(k => k === 'player-retry').length < 2; i++) await page.waitForTimeout(50);
@@ -5038,7 +5069,7 @@ chrome.runtime.onMessage.addListener(m => {
       await page.locator('#ytc-player .pstuck [data-act="pf-retry"]').click({ timeout: 2000 });
       await page.waitForTimeout(100);
       assert.doesNotMatch(await playerNotes(), /VISIONOS skipped for \d+ s more/, 'a pressed Try again lifts it');
-    } finally { FX.bot = null; }
+    } finally { FX.bot = null; await page.evaluate(() => localStorage.removeItem('ytc-test-noautotry')).catch(() => {}); }
   }));
 
   await step('own player: YouTube\'s ERROR during a refresh of a video that was playing gets one automatic Try again; at a start it is the verdict', () => noHedge(async () => {
