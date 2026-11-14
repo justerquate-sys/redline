@@ -5273,6 +5273,49 @@ chrome.runtime.onMessage.addListener(m => {
     }
   });
 
+  await step('self-update: a newer release in the folder reloads the extension by itself, and an open YouTube tab refreshes into it; a playing video waits', async () => {
+    if (DEV_BUILD) return;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ytc-selfup-ext-'));
+    fs.cpSync(load, dir, { recursive: true });
+    const prof = fs.mkdtempSync(path.join(os.tmpdir(), 'ytc-selfup-'));
+    const c2 = await chromium.launchPersistentContext(prof, { headless: true, ...chromiumOptions(), viewport: { width: 1400, height: 900 },
+      args: [`--disable-extensions-except=${dir}`, `--load-extension=${dir}`, '--autoplay-policy=no-user-gesture-required'] });
+    try {
+      await c2.route('**/*', handle);
+      await c2.route('chrome-extension://**/*', route => route.continue());
+      const sw = c2.serviceWorkers()[0] || await c2.waitForEvent('serviceworker');
+      const version = await sw.evaluate(() => chrome.runtime.getManifest().version);
+      const playing = await c2.newPage();
+      await playing.addInitScript(() => localStorage.setItem('ytc-test-update', '1'));
+      await playing.goto('https://www.youtube.com/watch?v=selfup00001', { waitUntil: 'commit' });
+      await playing.waitForFunction(() => document.documentElement.dataset.ytcFirstFrame && document.getElementById('ytc-video').currentTime > 0.5, null, { timeout: 20000 });
+      const idle = await c2.newPage();
+      await idle.goto('https://www.youtube.com/results?search_query=self+update', { waitUntil: 'commit' });
+      await idle.waitForSelector('#ytc-list .c');
+      for (const p of [playing, idle]) await p.evaluate(() => { window.__before = 1; });
+      // Nothing new on disk: no reload.
+      await idle.waitForTimeout(2500);
+      assert.equal(await idle.evaluate(() => window.__before), 1, 'the same release: the tab stays');
+      // A newer release lands in the folder (manifest.json last, as the build writes it).
+      const mf = path.join(dir, 'manifest.json'), m = JSON.parse(fs.readFileSync(mf, 'utf8'));
+      m.version = version.replace(/\d+$/, d => String(Number(d) + 1));
+      fs.writeFileSync(mf, JSON.stringify(m, null, 2));
+      await idle.waitForFunction(() => window.__before === undefined, null, { timeout: 20000 }).catch(() => {});
+      assert.equal(await idle.evaluate(() => window.__before), undefined, 'the extension reloaded and the idle tab refreshed by itself');
+      // (The test browser never brings back an extension that reloaded itself, even an unchanged one, so the new
+      // release's own start is not seen here; Brave and Chrome bring it back, as the development build's reload shows.)
+      // The playing video was not interrupted; paused, it refreshes too.
+      assert.equal(await playing.evaluate(() => window.__before), 1, 'a playing video is never cut');
+      assert.equal(await playing.evaluate(() => document.getElementById('ytc-video').paused), false);
+      await playing.evaluate(() => document.getElementById('ytc-video').pause());
+      await playing.waitForFunction(() => window.__before === undefined, null, { timeout: 10000 });
+    } finally {
+      await c2.close().catch(() => {});
+      fs.rmSync(prof, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   await step('own player: a tab orphaned for real (the extension reloaded under it) keeps playing and navigating; a player out of retries then reloads the page', async () => {
     const prof = fs.mkdtempSync(path.join(os.tmpdir(), 'ytc-orphan-'));
     const c2 = await chromium.launchPersistentContext(prof, { headless: true, ...chromiumOptions(), viewport: { width: 1400, height: 900 },
@@ -9653,6 +9696,43 @@ chrome.runtime.onMessage.addListener(m => {
       }
       assert.deepEqual(tv.errors, []);
     } finally { await tvClose(tv); }
+  });
+
+  await step('TV updates install themselves: a downloaded interface loads at a quiet moment (no video, About closed, the remote at rest); never under a video', async () => {
+    const tv = await tvOpen();
+    const info = seq => JSON.stringify({ version: '0.6.0', version_code: 6000, bundle: { seq, client: '0.9.' + (seq / 100), source: seq > 100 ? 'release' : 'builtin' }, update: { state: 'ok', at: Date.now(), needs_shell: false }, offer: null, repo: 'o/r' });
+    const shell = seq => tv.evaluate(j => { for (const k of ['ytc:shell', 'e2e:tvshell']) { const t = JSON.parse(localStorage.getItem(k) || '{}'); t.shell_info = j; localStorage.setItem(k, JSON.stringify(t)); } }, info(seq));
+    try {
+      await tvGo(tv, 'code', 'https://www.youtube.com/');
+      await shell(100);
+      await tvGo(tv, 'code', 'https://www.youtube.com/');
+      await tv.waitForSelector('#ytc-side .rl[data-nav=about]');
+      // (Set after the loads: the TV page's setup starts each load with a clean slate.)
+      await tv.evaluate(() => localStorage.setItem('ytc-test-applyidle', '1'));
+      // The shell downloads a newer interface while this page runs.
+      await shell(200);
+      await tv.evaluate(() => { window.__e2eOld = 1; });
+      // About opened (it asks the shell): not while it is open.
+      await tv.focus('#ytc-side .rl[data-nav=about]');
+      await tv.keyboard.press('Enter');
+      await tv.waitForSelector('#ytc-tvabout.on');
+      await tv.waitForTimeout(1500);
+      assert.equal(await tv.evaluate(() => window.__e2eOld), 1, 'not while About is open');
+      assert.deepEqual(await back(tv), { handled: true, exit: false });
+      // Straight into a video: it waits under it.
+      await tv.evaluate(() => { history.pushState({}, '', '/watch?v=tvapply0001'); dispatchEvent(new PopStateEvent('popstate')); });
+      await tv.waitForFunction(() => document.documentElement.dataset.ytcFirstFrame, null, { timeout: 15000 });
+      await tv.waitForTimeout(2500);
+      assert.equal(await tv.evaluate(() => window.__e2eOld), 1, 'never under a video');
+      // Back to Home, the remote at rest: it loads by itself.
+      await tv.evaluate(() => { history.pushState({}, '', '/'); dispatchEvent(new PopStateEvent('popstate')); });
+      await tv.waitForFunction(() => !window.__e2eOld && document.querySelector('#ytc-side .rl[data-nav=about]'), null, { timeout: 10000 });
+      assert.equal(await tv.locator('#ytc-tvup.on').count(), 0, 'no notice once it runs');
+      assert.deepEqual(tv.errors, []);
+    } finally {
+      await tv.evaluate(() => { localStorage.removeItem('ytc-test-applyidle'); localStorage.removeItem('e2e:tvshell'); }).catch(() => {});
+      await tvClose(tv);
+    }
   });
 
   await step('TV voice search and what the shell hands the page (960×540 and 1920×1080): the mic only with the shell\'s capability, reached from the query row; what was heard runs the search, a cancel returns the focus, no match a calm notice that goes; the search and voice keys, not over a panel; a search or link from outside, on a page that starts later too; the desktop keeps its own mic', async () => {

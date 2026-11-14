@@ -50,6 +50,20 @@ chrome.runtime.onInstalled.addListener(() => { trAdopt(); trTidy(); });
 // never starts or pairs the helper.
 trStartup();
 
+// ---- Self-update (public build, loaded unpacked from a folder). When the folder gets a newer release (a pull, a new
+// build), the version in manifest.json on disk differs from the one the browser loaded: the extension reloads itself,
+// and each open YouTube tab then refreshes into it, waiting while a video plays. An installed package never changes on
+// disk, so it never reloads. browser/build.cjs writes manifest.json last, so the rest of the release is already there.
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message !== 'ytc-update-check' || !sender.tab) return;
+  // (Asked twice, 3 s apart: a pull that is still writing files gets the time to finish.)
+  const disk = () => fetch(chrome.runtime.getURL('manifest.json'), { cache: 'no-store' }).then(r => r.json()).then(m => (m && typeof m.version === 'string' ? m.version : ''));
+  const loaded = chrome.runtime.getManifest().version;
+  disk().then(v => (v && v !== loaded ? new Promise(ok => setTimeout(ok, 3000)).then(disk) : ''))
+    .then(v => { if (v && v !== loaded) chrome.runtime.reload(); })
+    .catch(() => {});
+});
+
 /* @dev-start */
 // ---- Auto-update (development builds). Open YouTube tabs ping this worker. When the files on
 // disk change (browser/build.cjs rewrites build-id.txt on every dev build) the extension reloads

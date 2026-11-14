@@ -1,6 +1,6 @@
 {
   "name": "redline",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "private": true,
   "description": "Redline: a fast, ad-free client for YouTube, a Rust (Wasm) browser extension.",
   "license": "MIT",

@@ -266,6 +266,8 @@ enum Timer {
     TvScrub { generation: u32 },
     /// TV: ask the shell about updates (repeats; `fast` = while an app update downloads).
     TvUpdates { fast: bool },
+    /// A downloaded interface waits for a quiet moment to load itself (`tv_auto_apply`).
+    TvApply,
     /// Home's "shown" signals: the batch's time came.
     ImpFlush,
 }
@@ -1539,6 +1541,10 @@ impl App {
             Some(Timer::HomeSlow { nav }) => self.home_slow(nav),
             Some(Timer::TvScrub { generation }) => self.tv_scrub_rest(generation),
             Some(Timer::TvUpdates { fast }) => self.tv_updates_tick(fast),
+            Some(Timer::TvApply) => {
+                self.tv.apply_wait = false;
+                self.tv_auto_apply();
+            }
             Some(Timer::Bg) => {
                 self.tv_tick();
                 self.bg_check();

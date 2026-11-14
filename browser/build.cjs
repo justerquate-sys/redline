@@ -102,6 +102,18 @@ function ytcBootFailed(e) {
   if (!ytcNative && !ytcExtension) { const u = new URL(location.href); u.searchParams.set('yt-native', '1'); location.replace(u.href); }
 }
 ${tvBoot ? bootServed : bootEmbedded}
+${tvBoot ? '' : `// Self-update (background.js): every minute this tab asks whether a newer release is in the folder. Once the
+// extension has reloaded, this old script's context is gone: the tab refreshes into the new release, waiting while a
+// video plays. (The development build checks more often, below.)
+if (!ytcExtension) {
+  let updPing = 0;
+  const updPlaying = () => [...document.querySelectorAll('video,audio')].some(m => !m.paused && !m.ended);
+  const updRefresh = () => { if (updPlaying() || document.querySelector('input:focus,textarea:focus')) setTimeout(updRefresh, 2000); else setTimeout(() => location.reload(), 1500); };
+  const updAsk = () => { try { chrome.runtime.sendMessage('ytc-update-check').catch(() => {}); } catch { clearInterval(updPing); updRefresh(); } };
+  // (\`ytc-test-update\`, localStorage, tests only: every second.)
+  let updEvery = 60000; try { if (localStorage.getItem('ytc-test-update')) updEvery = 1000; } catch {}
+  updPing = setInterval(updAsk, updEvery);
+}`}
 /* @dev-start */
 // Development auto-update (background.js): announce this tab and ask for a build check.
 // Once the extension has reloaded, this old script's context is invalidated; the

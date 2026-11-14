@@ -78,6 +78,10 @@ const NOTE_MS: f64 = 4000.0;
 const UPDATES_FIRST_MS: u32 = 20_000;
 const UPDATES_EVERY_MS: u32 = 10 * 60_000;
 const UPDATES_FAST_MS: u32 = 700;
+/// A downloaded interface loads by itself once the remote has rested this long, away from a video.
+const APPLY_IDLE_MS: f64 = 60_000.0;
+/// Until then it looks again this often.
+const APPLY_RECHECK_MS: u32 = 30_000;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Call {
@@ -157,6 +161,8 @@ pub(super) struct Tv {
     about: bool,
     about_note: String,
     noticed: u64,
+    /// A quiet-moment check for a downloaded interface is waiting (`Timer::TvApply`).
+    pub(super) apply_wait: bool,
     /// Telemetry: the shell's last answer (None with `tel_known`: an app without telemetry), the Developer section
     /// shown, → presses in a row with nothing to the right (they reveal it), the last action's outcome.
     tel: Option<tv::TelInfo>,
@@ -945,6 +951,31 @@ impl App {
         bridge::class_all("#ytc-side .rl[data-nav=about]", "upd", ready);
         let show = ready && !self.tv.about && self.tv.noticed != i.seq.max(1);
         bridge::attr(NOTICE, "class", if show { "tvup on" } else { "tvup" });
+        self.tv_auto_apply();
+    }
+
+    /// A newer interface the shell has downloaded and verified loads by itself, so nobody has to press Update now
+    /// after every release: at a quiet moment (no video open, the About screen closed, the remote untouched for
+    /// `APPLY_IDLE_MS`), the page loads again where it is. The sign-in lives in the shell. An app (APK) update still
+    /// needs the owner's OK on the TV: Android asks for it.
+    pub(super) fn tv_auto_apply(&mut self) {
+        let Some(i) = &self.tv.shell else { return };
+        if self.tv.running == 0 || i.seq <= self.tv.running {
+            return;
+        }
+        // (`ytc-test-applyidle`, localStorage, tests only: one second of rest, a check every half second.)
+        let test = bridge::local_flag("ytc-test-applyidle");
+        let quiet = self.player.is_none() && !self.tv.about && bridge::now() - self.last_input >= if test { 1000.0 } else { APPLY_IDLE_MS };
+        if quiet {
+            self.tv.running = i.seq;
+            bridge::replace_doc(&self.url.clone());
+            return;
+        }
+        if !self.tv.apply_wait {
+            self.tv.apply_wait = true;
+            let id = self.timer(Timer::TvApply);
+            bridge::timer(id, if test { 500 } else { APPLY_RECHECK_MS });
+        }
     }
 
     pub(super) fn tv_updates_tick(&mut self, fast: bool) {
